@@ -14,6 +14,13 @@
     "gs1"
   ],
   "homepage": "https://www.tracepass.eu",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/malinoto/tracepass-mcp-server.git"
+  },
+  "bugs": {
+    "url": "https://github.com/malinoto/tracepass-mcp-server/issues"
+  },
   "bin": {
     "tracepass-mcp-server": "dist/stdio.js"
   },
