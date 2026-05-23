@@ -1,0 +1,96 @@
+# Publishes tracepass-mcp-server to npm on every v*.*.* tag push, with
+# an npm provenance attestation. Provenance lets anyone cryptographically
+# verify the package was built by this exact workflow, from this exact
+# repository and commit — see https://docs.npmjs.com/generating-provenance-statements.
+#
+# ─── ONE-TIME SETUP ────────────────────────────────────────────────────────────
+#
+# OIDC Trusted Publishing (no long-lived secrets):
+#
+#   1. https://www.npmjs.com/package/tracepass-mcp-server/access (only works
+#      after the first publish creates the package record; for the very first
+#      publish, just don't add the publisher yet — it'll fall through cleanly
+#      and the local-publish path becomes the bootstrap).
+#   2. Trusted Publishers → Add a publisher → GitHub Actions.
+#   3. Organization or user: malinoto
+#      Repository:           tracepass-mcp-server
+#      Workflow filename:    publish.yml   (filename only, no .github/workflows/ prefix)
+#      Environment name:     (leave blank)
+#   4. Allowed actions: tick npm publish, leave npm stage publish unticked.
+#   5. Save.
+#
+# (For the literal first publish before the trusted publisher exists, use
+#  `npm publish` from a logged-in local terminal. Once 1.0.0 is in the
+#  registry, register the trusted publisher and every subsequent tag push
+#  goes through this workflow.)
+#
+# ─── RELEASE FLOW ──────────────────────────────────────────────────────────────
+#
+#   npm version patch        # or minor/major
+#   git push && git push origin v$(node -p "require('./package.json').version")
+#
+# That's it. The workflow runs lint → typecheck → test → build → publish.
+
+name: Publish
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+
+    permissions:
+      # Required to mint an OIDC token for npm provenance attestation.
+      id-token: write
+      # Scoped down from the default (write) for least-privilege publishing.
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+          # The OIDC handshake needs npm to know the registry it's auth'ing
+          # to. Without registry-url, `npm publish` 404s before it can attempt
+          # the OIDC exchange — that was the failure mode on the n8n node's
+          # v1.0.1/1.0.2 attempts.
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Upgrade npm
+        # Trusted publishing via OIDC needs npm CLI ≥ 11.5.1. Node 24 LTS
+        # ships 11.12.x which is fine, but pinning to @latest keeps the
+        # workflow robust across future runner-image changes.
+        run: npm install --global npm@latest
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Publish to npm
+        # No NODE_AUTH_TOKEN env entry: setup-node only writes _authToken to
+        # .npmrc when NODE_AUTH_TOKEN is set, and an empty token (which the
+        # ${{ secrets.NPM_TOKEN }} reference would resolve to if the secret
+        # doesn't exist) makes npm reject with ENEEDAUTH before attempting
+        # OIDC. Leaving it absent ⇒ no token ⇒ OIDC engages cleanly.
+        #
+        # Provenance comes from publishConfig.provenance: true in package.json,
+        # so no --provenance flag needed on the command line.
+        run: npm publish

@@ -24,6 +24,10 @@
   "bin": {
     "tracepass-mcp-server": "dist/stdio.js"
   },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "main": "dist/server.js",
   "types": "dist/server.d.ts",
   "files": [
