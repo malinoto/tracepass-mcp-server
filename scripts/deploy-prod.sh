@@ -31,7 +31,13 @@ REMOTE_PATH="/opt/tracepass-mcp-server"
 CONTAINER="tracepass-mcp"
 
 echo "=== 1/4 syncing repo to ${VPS_ALIAS}:${REMOTE_PATH} ==="
-rsync -azv --delete \
+# --inplace: see the same flag's rationale in tracepass-platform/
+# scripts/deploy-prod.sh. Briefly: default rsync renames a temp file
+# into place, changing the inode; any docker bind mount of that file
+# silently keeps reading the old inode until container restart.
+# --inplace edits the file directly, preserving the inode so bind
+# mounts see edits live.
+rsync -azv --delete --inplace \
   --exclude='.git/' \
   --exclude='node_modules/' \
   --exclude='dist/' \
