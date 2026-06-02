@@ -31,7 +31,7 @@ function stubClient(): {
 }
 
 describe("buildTools — tool surface", () => {
-  it("exposes exactly 5 grouped tools", () => {
+  it("exposes exactly 6 grouped tools", () => {
     const { client } = stubClient();
     const tools = buildTools(client);
     expect(tools.map((t) => t.name).sort()).toEqual([
@@ -40,6 +40,7 @@ describe("buildTools — tool surface", () => {
       "tracepass_passport_parties",
       "tracepass_passports",
       "tracepass_products",
+      "tracepass_templates",
     ]);
   });
 
@@ -165,5 +166,31 @@ describe("tracepass_epcis — actions", () => {
     const { tool, calls } = epcisTool();
     await tool.handler({ action: "query", args: { params: { EQ_bizStep: "shipping" } } });
     expect(calls[0]!.path).toBe("/api/v1/epcis/events?EQ_bizStep=shipping");
+  });
+});
+
+describe("tracepass_templates — regulatory schema routing", () => {
+  function templatesTool() {
+    const stub = stubClient();
+    const tool = buildTools(stub.client).find((t) => t.name === "tracepass_templates")!;
+    return { tool, calls: stub.calls };
+  }
+
+  it("list routes to GET /api/v1/templates", async () => {
+    const { tool, calls } = templatesTool();
+    await tool.handler({ action: "list", args: {} });
+    expect(calls[0]!.method).toBe("GET");
+    expect(calls[0]!.path).toBe("/api/v1/templates");
+  });
+
+  it("get routes to GET /api/v1/templates/{category}", async () => {
+    const { tool, calls } = templatesTool();
+    await tool.handler({ action: "get", args: { category: "battery" } });
+    expect(calls[0]!.path).toBe("/api/v1/templates/battery");
+  });
+
+  it("is marked read-only", () => {
+    const { tool } = templatesTool();
+    expect(tool.annotations?.readOnlyHint).toBe(true);
   });
 });

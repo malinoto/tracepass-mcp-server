@@ -87,6 +87,59 @@ export function registerPrompts(server: McpServer): void {
       ),
   );
 
+  // ── Explain a category's compliance requirements ──────────────
+  server.registerPrompt(
+    "explain_dpp_requirements",
+    {
+      title: "What does a compliant DPP require?",
+      description:
+        "Explain what a Digital Product Passport in a given category must contain to be compliant — the required fields and the EU regulation behind them — before you create anything.",
+      argsSchema: {
+        category: z
+          .string()
+          .describe(
+            "Category key — battery, textile, electronics, construction, steel, chemicals, packaging, furniture, tyres, jewelry, toys, or fmcg.",
+          ),
+      },
+    },
+    ({ category }) =>
+      userPrompt(
+        `Explain what a compliant "${category}" Digital Product Passport requires under EU regulation.\n\n` +
+          `1. Fetch the schema with tracepass_templates (action: get, args: { category: "${category}" }).\n` +
+          `2. State the governing regulation (name + number + mandatory date) and how many of the fields are REQUIRED vs optional.\n` +
+          `3. Group the required fields by their access level (public / restricted / authority) and, where a field cites a regulation article/annex, name it — so I understand WHY each field is needed, not just that it is.\n` +
+          `4. Call out anything that is commonly hard to source (e.g. supplier-held data, test reports) so I can plan ahead.\n` +
+          `This is advisory and read-only — do not create a product or passport.`,
+      ),
+  );
+
+  // ── Compliance gap-check a passport before publishing ─────────
+  server.registerPrompt(
+    "compliance_gap_check",
+    {
+      title: "Compliance gap-check before publish",
+      description:
+        "Cross-check a draft passport against its category's regulatory schema and produce an exact, prioritised list of what's missing before it can be published compliantly.",
+      argsSchema: {
+        passportId: z
+          .string()
+          .describe("The TracePass id of the passport to gap-check."),
+      },
+    },
+    ({ passportId }) =>
+      userPrompt(
+        `Do a compliance gap-check on the TracePass passport "${passportId}" against its category's regulatory schema.\n\n` +
+          `1. Fetch the passport with tracepass_passports (action: get, format: full) — note its category, field values, field statuses, and which economic-operator parties are set.\n` +
+          `2. Fetch that category's schema with tracepass_templates (action: get) to get the authoritative list of REQUIRED fields and the regulation behind them.\n` +
+          `3. Compare the two. Produce a prioritised gap list:\n` +
+          `   - REQUIRED fields that are empty or not yet approved (block publishing) — cite the regulation article/annex where the schema gives one.\n` +
+          `   - Required economic-operator parties that are missing.\n` +
+          `   - Optional-but-recommended fields worth adding.\n` +
+          `4. End with a one-line verdict: is it publishable now, and if not, the single most important thing to fix first.\n` +
+          `Read-only — do not change field values or publish. The reviewer decides.`,
+      ),
+  );
+
   // ── Reconcile EPCIS supply-chain events ───────────────────────
   server.registerPrompt(
     "review_epcis_events",

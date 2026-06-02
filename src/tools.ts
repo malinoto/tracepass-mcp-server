@@ -167,6 +167,9 @@ const SCHEMAS = {
   epcisCapture: z.object({ events: z.unknown() }),
   epcisCaptureJob: z.object({ jobId: z.string().min(1) }),
   epcisQuery: z.object({ params: z.record(z.string(), z.string()).optional() }),
+
+  templatesList: z.object({}),
+  templateGet: z.object({ category: z.string().min(1) }),
 } as const;
 
 /**
@@ -422,5 +425,42 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     },
   };
 
-  return [productsTool, passportsTool, fieldsTool, partiesTool, epcisTool];
+  // ─────────────────────────── templates ───────────────────────
+  // The regulatory schema layer: WHAT a compliant DPP in each category
+  // must contain. This is what turns the assistant from a CRUD client
+  // into a compliance copilot — it can tell a user which fields a
+  // battery / textile / … passport needs, and cite the regulation,
+  // BEFORE any product or passport exists.
+  const templatesTool: McpToolDefinition = {
+    name: "tracepass_templates",
+    title: "TracePass DPP templates (regulatory schemas)",
+    description:
+      "Discover the regulatory field schema for each DPP category — what a COMPLIANT passport must contain, per the governing EU regulation. Read-only reference data. Use this to advise on requirements before creating products/passports, and to gap-check a draft against the rules.\n\nActions (pass via `action`, with `args`):\n" +
+      "- list — args: {}. Lists all 12 categories with their field count, required-field count, and governing regulation (name + number + effective/mandatory dates).\n" +
+      "- get — args: { category }. Full field schema for one category: every field's key, label, dataType, whether it is REQUIRED, its access level (public/restricted/authority), enum options, validation bounds, and — where known — the regulation article/annex that mandates it. `category` is one of: battery, textile, electronics, construction, steel, chemicals, packaging, furniture, tyres, jewelry, toys, fmcg.",
+    inputSchema: {
+      action: z.enum(["list", "get"]),
+      args: z.record(z.string(), z.unknown()).optional()
+        .describe("Action-specific arguments — see the description for each action's shape."),
+    },
+    annotations: { idempotentHint: true, readOnlyHint: true },
+    handler: async (a) => {
+      const action = String(a.action);
+      switch (action) {
+        case "list": {
+          parseArgs(SCHEMAS.templatesList, a.args ?? {}, "tracepass_templates", action);
+          return apiResult(await client.get("/api/v1/templates"));
+        }
+        case "get": {
+          const p = parseArgs(SCHEMAS.templateGet, a.args, "tracepass_templates", action);
+          if (isErr(p)) return p;
+          return apiResult(await client.get(`/api/v1/templates/${seg(p.category)}`));
+        }
+        default:
+          return errorResult(`Unknown action "${action}" for tracepass_templates.`);
+      }
+    },
+  };
+
+  return [productsTool, passportsTool, fieldsTool, partiesTool, epcisTool, templatesTool];
 }

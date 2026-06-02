@@ -21,6 +21,11 @@
  * AI agent must see and act on, not errors to swallow.
  */
 
+/** Value sent in the `X-TracePass-Source` header on every request, so the
+ *  TracePass request log can attribute v1 traffic to this client. Keep in
+ *  sync with the package version on a release. */
+export const SOURCE_TAG = "mcp-server/1.1";
+
 export interface TracePassApiResponse {
   /** HTTP status code. */
   status: number;
@@ -74,6 +79,9 @@ export class TracePassClient {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.apiKey}`,
       Accept: "application/json",
+      // Identify this client to the TracePass request log so traffic can be
+      // attributed to the MCP server vs the n8n node vs raw API integrations.
+      "X-TracePass-Source": SOURCE_TAG,
     };
     const init: RequestInit = { method, headers };
 

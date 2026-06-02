@@ -132,4 +132,43 @@ export function registerResources(
         : errorContents(uri.href, res.status, res.body);
     },
   );
+
+  // ── Static resource: the DPP regulatory schemas (all categories) ──
+  server.registerResource(
+    "templates",
+    "tracepass://templates",
+    {
+      title: "DPP templates (regulatory schemas)",
+      description:
+        "All 12 DPP category schemas with field count, required-field count, and governing regulation. Attach this to ground the model in what each category's compliance requirements are.",
+      mimeType: "application/json",
+    },
+    async (uri) => {
+      const res = await client.get("/api/v1/templates");
+      return res.ok
+        ? jsonContents(uri.href, res.body)
+        : errorContents(uri.href, res.status, res.body);
+    },
+  );
+
+  // ── Template: one category's full field schema ────────────────
+  server.registerResource(
+    "template",
+    new ResourceTemplate("tracepass://template/{category}", { list: undefined }),
+    {
+      title: "DPP category schema",
+      description:
+        "The full regulatory field schema for one DPP category — every required/optional field with its data type, access level, and (where known) the regulation article/annex that mandates it. tracepass://template/{category} where category is battery, textile, electronics, construction, steel, chemicals, packaging, furniture, tyres, jewelry, toys, or fmcg.",
+      mimeType: "application/json",
+    },
+    async (uri, variables) => {
+      const category = String(variables.category);
+      const res = await client.get(
+        `/api/v1/templates/${encodeURIComponent(category)}`,
+      );
+      return res.ok
+        ? jsonContents(uri.href, res.body)
+        : errorContents(uri.href, res.status, res.body);
+    },
+  );
 }
