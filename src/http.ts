@@ -48,6 +48,14 @@ const SERVER_CARD_PATH = "/.well-known/mcp/server-card.json";
  * `authentication` is declared honestly: a static API-key Bearer scheme,
  * NOT OAuth. No `authorization_servers` / OAuth metadata is advertised
  * because none exists (see the WWW-Authenticate note on the 401 path).
+ *
+ * MIRROR: a byte-equivalent copy of this card is also served as a static
+ * file from the marketing site at
+ * `tracepass/public/.well-known/mcp/server-card.json`. The www copy
+ * exists because scanners (e.g. isitagentready.com) canonicalize
+ * ai.tracepass.eu to its redirect target (www) and only probe there.
+ * If you change capabilities/version here, update that file too — they
+ * must not drift.
  */
 const SERVER_CARD = {
   name: "tracepass",
