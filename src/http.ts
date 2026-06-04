@@ -31,6 +31,67 @@ const BASE_URL = process.env.TRACEPASS_BASE_URL?.trim() || DEFAULT_BASE_URL;
 /** The MCP endpoint path. `/mcp` is the conventional path. */
 const MCP_PATH = "/mcp";
 
+/** The MCP server card discovery path (SEP-1649). */
+const SERVER_CARD_PATH = "/.well-known/mcp/server-card.json";
+
+/**
+ * Static MCP server card (SEP-1649). Lets an agent discover what this
+ * server is and what it offers WITHOUT connecting — served unauthenticated
+ * because discovery precedes auth.
+ *
+ * Every value here mirrors the real server: `serverInfo` matches
+ * `SERVER_INFO` in server.ts (tracepass / 1.1.1); the capability lists are
+ * the exact tool names from tools.ts, resource URIs/templates from
+ * resources.ts, and prompt names from prompts.ts. Keep this in sync when
+ * capabilities change — a card that over-claims is worse than no card.
+ *
+ * `authentication` is declared honestly: a static API-key Bearer scheme,
+ * NOT OAuth. No `authorization_servers` / OAuth metadata is advertised
+ * because none exists (see the WWW-Authenticate note on the 401 path).
+ */
+const SERVER_CARD = {
+  name: "tracepass",
+  version: "1.1.1",
+  description:
+    "Model Context Protocol server for TracePass — the EU Digital Product Passport platform. Manage products, Digital Product Passports, economic-operator parties, and GS1 EPCIS 2.0 supply-chain events.",
+  serverInfo: { name: "tracepass", version: "1.1.1" },
+  transport: {
+    type: "streamable-http",
+    endpoint: `https://ai.tracepass.eu${MCP_PATH}`,
+  },
+  authentication: {
+    type: "http",
+    scheme: "bearer",
+    description:
+      "TracePass API key (tp_ prefix). Mint one in the dashboard under Developer -> API Keys, then send Authorization: Bearer <tp_ key>.",
+  },
+  capabilities: {
+    tools: [
+      "tracepass_products",
+      "tracepass_passports",
+      "tracepass_passport_fields",
+      "tracepass_passport_parties",
+      "tracepass_epcis",
+      "tracepass_templates",
+    ],
+    resources: ["tracepass://products", "tracepass://templates"],
+    resourceTemplates: [
+      "tracepass://product/{id}",
+      "tracepass://passport/{id}",
+      "tracepass://passport/{id}/epcis",
+      "tracepass://template/{category}",
+    ],
+    prompts: [
+      "audit_passport",
+      "onboard_product",
+      "explain_dpp_requirements",
+      "compliance_gap_check",
+      "review_epcis_events",
+    ],
+  },
+  documentation: "https://www.tracepass.eu/docs/mcp",
+} as const;
+
 /** Extract the tp_ API key from the Authorization header. */
 function extractApiKey(req: IncomingMessage): string | null {
   const auth = req.headers["authorization"];
@@ -89,6 +150,15 @@ const httpServer = createServer((req, res) => {
       // Health check — for the Hetzner container's liveness probe.
       if (url === "/health" || url === "/healthz") {
         sendJson(res, 200, { status: "ok", service: "tracepass-mcp" });
+        return;
+      }
+
+      // MCP server card discovery (SEP-1649). Public + unauthenticated —
+      // discovery precedes auth. NB: the edge (Caddy) catch-all redirect
+      // for ai.tracepass.eu must EXCLUDE this path, or the card never
+      // reaches this handler (see tracepass-ops Caddyfile).
+      if (url.split("?")[0] === SERVER_CARD_PATH) {
+        sendJson(res, 200, SERVER_CARD);
         return;
       }
 
