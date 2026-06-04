@@ -104,6 +104,26 @@ const httpServer = createServer((req, res) => {
       // API key required — no anonymous MCP access.
       const apiKey = extractApiKey(req);
       if (!apiKey) {
+        // RFC 6750 Bearer challenge. MCP clients that do spec-compliant
+        // auth discovery read WWW-Authenticate to learn the scheme;
+        // without it they can only fall back to the human-readable JSON
+        // below. TracePass auth is static dashboard-minted API keys, NOT
+        // OAuth — so this is the honest subset: advertise the Bearer
+        // scheme + realm + where to get a key, and deliberately DO NOT
+        // emit an OAuth `resource_metadata` / `authorization_uri` param
+        // pointing at /.well-known/oauth-protected-resource, because no
+        // OAuth authorization server exists. (Adding one would be a
+        // false discovery claim — same reason www skips the auth.md
+        // check.) If TracePass ever ships real OAuth client registration,
+        // add the resource_metadata param then.
+        // NB: HTTP header values are Latin-1 only — no non-ASCII (the
+        // "->" stays ASCII; the UTF-8 arrow used in the JSON body below
+        // would make Node throw "Invalid character in header content").
+        res.setHeader(
+          "WWW-Authenticate",
+          'Bearer realm="TracePass MCP", error="invalid_token", ' +
+            'error_description="Missing API key. Mint one in the TracePass dashboard (Developer -> API Keys), then send Authorization: Bearer <tp_ key>."',
+        );
         sendJson(res, 401, {
           error: "unauthorized",
           message:
