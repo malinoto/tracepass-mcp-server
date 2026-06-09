@@ -75,6 +75,22 @@ export class TracePassClient {
     path: string,
     body?: unknown,
   ): Promise<TracePassApiResponse> {
+    // The key is required to make any v1 call, but NOT to start the
+    // server or list its tools — so introspecting clients (Glama,
+    // Smithery, MCP inspectors) can enumerate capabilities key-less.
+    // The check lives here, at call time, returning a 401-shaped
+    // response the tool handlers already render as a readable error.
+    if (!this.apiKey || this.apiKey.trim() === "") {
+      return {
+        status: 401,
+        ok: false,
+        body: {
+          error:
+            "TRACEPASS_API_KEY is not set. Add a tp_ key (TracePass dashboard → Developer → API Keys) to the MCP server's env config before calling tools.",
+        },
+      };
+    }
+
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.apiKey}`,
       Accept: "application/json",
