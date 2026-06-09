@@ -84,6 +84,13 @@ const SERVER_CARD = {
     endpoint: `https://ai.tracepass.eu${MCP_PATH}`,
   },
   authentication: {
+    // SEP-1649 fields (required + schemes) so card readers (e.g. Smithery's
+    // URL publisher) detect static Bearer auth and DON'T default to OAuth.
+    // schemes intentionally lists only "bearer" — NOT "oauth2" — because we
+    // don't run an OAuth authorization server. The type/scheme/description
+    // fields are kept for human + non-SEP-1649 readers.
+    required: true,
+    schemes: ["bearer"],
     type: "http",
     scheme: "bearer",
     description:
