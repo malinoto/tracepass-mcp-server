@@ -1,0 +1,35 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "eu.tracepass/tracepass",
+  "title": "TracePass",
+  "description": "Manage products, EU Digital Product Passports, operator parties, and GS1 EPCIS supply-chain events.",
+  "version": "1.1.2",
+  "websiteUrl": "https://www.tracepass.eu",
+  "repository": {
+    "url": "https://github.com/malinoto/tracepass-mcp-server",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "tracepass-mcp-server",
+      "version": "1.1.2",
+      "transport": { "type": "stdio" }
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://ai.tracepass.eu/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "TracePass API key as a bearer token (tp_ prefix). Mint one in the dashboard under Developer -> API Keys.",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}

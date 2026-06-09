@@ -1,6 +1,7 @@
 {
   "name": "tracepass-mcp-server",
-  "version": "1.1.1",
+  "mcpName": "eu.tracepass/tracepass",
+  "version": "1.1.2",
   "description": "Model Context Protocol server for TracePass — the EU Digital Product Passport platform. Lets AI assistants manage products, passports, and EPCIS supply-chain events.",
   "license": "MIT",
   "type": "module",
