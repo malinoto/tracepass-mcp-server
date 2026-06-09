@@ -35,6 +35,22 @@ const MCP_PATH = "/mcp";
 const SERVER_CARD_PATH = "/.well-known/mcp/server-card.json";
 
 /**
+ * Glama connector ownership-claim path. Glama probes the CONNECTOR's
+ * own host (ai.tracepass.eu) for this file to verify we maintain the
+ * auto-imported connector listing at glama.ai/mcp/connectors/eu.tracepass/tracepass.
+ * Served here (not just on www) because the connector host is what Glama
+ * checks, and the Caddy catch-all redirect for ai.tracepass.eu must
+ * EXCLUDE this path too (see tracepass-ops Caddyfile) or it never reaches
+ * this handler. The `maintainers` email must match the Glama account login.
+ * A byte-equivalent copy also lives at tracepass/public/.well-known/glama.json.
+ */
+const GLAMA_CLAIM_PATH = "/.well-known/glama.json";
+const GLAMA_CLAIM = {
+  $schema: "https://glama.ai/mcp/schemas/connector.json",
+  maintainers: [{ email: "malinoto@gmail.com" }],
+} as const;
+
+/**
  * Static MCP server card (SEP-1649). Lets an agent discover what this
  * server is and what it offers WITHOUT connecting — served unauthenticated
  * because discovery precedes auth.
@@ -167,6 +183,15 @@ const httpServer = createServer((req, res) => {
       // reaches this handler (see tracepass-ops Caddyfile).
       if (url.split("?")[0] === SERVER_CARD_PATH) {
         sendJson(res, 200, SERVER_CARD);
+        return;
+      }
+
+      // Glama connector ownership claim. Public + unauthenticated. NB:
+      // the edge (Caddy) catch-all redirect for ai.tracepass.eu must
+      // EXCLUDE this path, or the claim file never reaches this handler
+      // (see tracepass-ops Caddyfile) — same requirement as the card above.
+      if (url.split("?")[0] === GLAMA_CLAIM_PATH) {
+        sendJson(res, 200, GLAMA_CLAIM);
         return;
       }
 
