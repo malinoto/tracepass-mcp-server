@@ -1,5 +1,7 @@
 # TracePass MCP Server
 
+[![Listed on Glama](https://glama.ai/mcp/servers/malinoto/tracepass-mcp-server/badges/score.svg)](https://glama.ai/mcp/servers/malinoto/tracepass-mcp-server)
+
 A [Model Context Protocol](https://modelcontextprotocol.io) server for
 **[TracePass](https://www.tracepass.eu)** — the EU Digital Product
 Passport platform. It lets AI assistants (Claude, Cursor, IDE agents)
@@ -118,6 +120,13 @@ The hosted service is a plain Node HTTP server (`dist/http.js`),
 stateless — each request carries its own API key and builds a fresh
 MCP session. It is containerised via the `Dockerfile` and deployed to
 Hetzner; see `tracepass-environment/docker-mcp.yml`.
+
+## Listed on Glama
+
+This server is published in the [official MCP Registry](https://registry.modelcontextprotocol.io)
+as `eu.tracepass/tracepass` and listed on [Glama](https://glama.ai/mcp/servers/malinoto/tracepass-mcp-server):
+
+[![TracePass MCP server](https://glama.ai/mcp/servers/malinoto/tracepass-mcp-server/badges/card.svg)](https://glama.ai/mcp/servers/malinoto/tracepass-mcp-server)
 
 ## License
 
