@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "required": ["TRACEPASS_API_KEY"],
+  "properties": {
+    "TRACEPASS_API_KEY": {
+      "type": "string",
+      "description": "Your TracePass API key (starts with tp_). Mint one in the dashboard under Developer → API Keys."
+    },
+    "TRACEPASS_BASE_URL": {
+      "type": "string",
+      "default": "https://app.tracepass.eu",
+      "description": "Base URL for the TracePass API (default: https://app.tracepass.eu)."
+    }
+  }
+}
