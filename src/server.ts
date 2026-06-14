@@ -23,7 +23,7 @@ import { errorResult } from "./result.js";
  *  meaningful tool-surface change. */
 export const MCP_SERVER_INFO = {
   name: "tracepass",
-  version: "1.4.2",
+  version: "1.4.3",
 } as const;
 
 export interface CreateMcpServerConfig {
@@ -77,6 +77,7 @@ export function createMcpServer(config: CreateMcpServerConfig): McpServer {
         title: tool.title,
         description: tool.description,
         inputSchema: tool.inputSchema,
+        outputSchema: tool.outputSchema,
         annotations: tool.annotations,
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
