@@ -66,11 +66,18 @@ each taking an `action` plus action-specific `args`:
 | Tool | Actions |
 |------|---------|
 | `tracepass_products` | `list`, `get`, `create`, `update` |
-| `tracepass_passports` | `list`, `get`, `get_by_serial`, `compliance`, `create`, `suspend`, `archive`, `get_qr` |
-| `tracepass_passport_fields` | `update` |
+| `tracepass_passports` | `list`, `get`, `get_by_serial`, `compliance`, `create`, `suspend`, `suspend_by_serial`, `archive`, `archive_by_serial`, `get_qr` |
+| `tracepass_passport_fields` | `update`, `update_by_serial` |
 | `tracepass_passport_parties` | `set`, `remove` |
-| `tracepass_epcis` | `export`, `capture`, `capture_job`, `query` |
+| `tracepass_epcis` | `export`, `export_by_serial`, `capture`, `capture_job`, `query` |
 | `tracepass_templates` | `list`, `get` |
+
+The **`*_by_serial`** actions address a passport by the customer's own serial
+number instead of its TracePass id. A serial is unique only *within a GTIN*, so
+if the same serial exists under two GTINs in your account a serial-only call
+returns **409 `ambiguous_serial`** — pass the optional `gtin` arg to disambiguate
+(or use the by-id action). The same `gtin` disambiguator applies to every
+`*_by_serial` action.
 
 The **`tracepass_passports` `compliance`** action returns a three-tier
 compliance verdict (`compliant` / `compliant_with_warnings` /

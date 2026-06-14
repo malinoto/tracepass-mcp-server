@@ -146,6 +146,44 @@ describe("tracepass_passports — billable + lifecycle actions", () => {
     await tool.handler({ action: "get_by_serial", args: { serial: "LOT 1/A" } });
     expect(calls[0]!.path).toContain("LOT%201%2FA");
   });
+
+  it("archive_by_serial routes to the by-serial archive endpoint", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({ action: "archive_by_serial", args: { serial: "SN-1" } });
+    expect(calls[0]!.path).toBe("/api/v1/passports/by-serial/SN-1/archive");
+    expect(calls[0]!.method).toBe("POST");
+  });
+
+  it("suspend_by_serial passes the gtin disambiguator as a query param", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({ action: "suspend_by_serial", args: { serial: "SN-1", gtin: "09506000134369" } });
+    expect(calls[0]!.path).toBe("/api/v1/passports/by-serial/SN-1/suspend?gtin=09506000134369");
+    expect(calls[0]!.method).toBe("POST");
+  });
+});
+
+describe("tracepass_passport_fields — actions", () => {
+  function fieldsTool() {
+    const stub = stubClient();
+    const tool = buildTools(stub.client).find((t) => t.name === "tracepass_passport_fields")!;
+    return { tool, calls: stub.calls };
+  }
+
+  it("update PATCHes the by-id field endpoint", async () => {
+    const { tool, calls } = fieldsTool();
+    await tool.handler({ action: "update", args: { id: "p1", fieldKey: "weight", value: 12 } });
+    expect(calls[0]!.path).toBe("/api/v1/passports/p1/fields/weight");
+    expect(calls[0]!.method).toBe("PATCH");
+    expect(calls[0]!.body).toEqual({ value: 12 });
+  });
+
+  it("update_by_serial PATCHes the by-serial field endpoint with gtin", async () => {
+    const { tool, calls } = fieldsTool();
+    await tool.handler({ action: "update_by_serial", args: { serial: "SN-1", fieldKey: "weight", value: 12, gtin: "09506000134369" } });
+    expect(calls[0]!.path).toBe("/api/v1/passports/by-serial/SN-1/fields/weight?gtin=09506000134369");
+    expect(calls[0]!.method).toBe("PATCH");
+    expect(calls[0]!.body).toEqual({ value: 12 });
+  });
 });
 
 describe("tracepass_epcis — actions", () => {
@@ -159,6 +197,13 @@ describe("tracepass_epcis — actions", () => {
     const { tool, calls } = epcisTool();
     await tool.handler({ action: "export", args: { id: "p1" } });
     expect(calls[0]!.path).toBe("/api/v1/passports/p1/epcis");
+  });
+
+  it("export_by_serial routes to the by-serial epcis endpoint (with optional gtin)", async () => {
+    const { tool, calls } = epcisTool();
+    await tool.handler({ action: "export_by_serial", args: { serial: "SN-1", gtin: "09506000134369" } });
+    expect(calls[0]!.path).toBe("/api/v1/passports/by-serial/SN-1/epcis?gtin=09506000134369");
+    expect(calls[0]!.method).toBe("GET");
   });
 
   it("capture POSTs the events payload", async () => {

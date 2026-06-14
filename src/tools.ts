@@ -142,6 +142,14 @@ const SCHEMAS = {
     confirmOverage: z.boolean().optional(),
   }),
   passportId: z.object({ id: z.string().min(1) }),
+  // By-serial addressing. `gtin` is the optional disambiguator: a serial is
+  // unique only WITHIN a GTIN, so if the same serial exists under two GTINs in
+  // the account, a serial-only call returns 409 ambiguous_serial — pass `gtin`
+  // (or use the by-id action) to resolve exactly.
+  passportSerial: z.object({
+    serial: z.string().min(1),
+    gtin: z.string().optional(),
+  }),
   passportQr: z.object({
     id: z.string().min(1),
     format: z.enum(["svg", "png"]).optional(),
@@ -151,6 +159,12 @@ const SCHEMAS = {
     id: z.string().min(1),
     fieldKey: z.string().min(1),
     value: z.unknown(),
+  }),
+  fieldUpdateBySerial: z.object({
+    serial: z.string().min(1),
+    fieldKey: z.string().min(1),
+    value: z.unknown(),
+    gtin: z.string().optional(),
   }),
 
   partySet: z.object({
@@ -164,6 +178,10 @@ const SCHEMAS = {
   partyRemove: z.object({ id: z.string().min(1), role: partyRoleEnum }),
 
   epcisExport: z.object({ id: z.string().min(1) }),
+  epcisExportBySerial: z.object({
+    serial: z.string().min(1),
+    gtin: z.string().optional(),
+  }),
   epcisCapture: z.object({ events: z.unknown() }),
   epcisCaptureJob: z.object({ jobId: z.string().min(1) }),
   epcisQuery: z.object({ params: z.record(z.string(), z.string()).optional() }),
@@ -232,11 +250,13 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "Actions (pass via `action`, with `args`):\n" +
       "- list — args: { page?, limit? (≤100), productId?, status?, search? }. status ∈ draft|in_review|approved|published|suspended|expired|archived. Read-only.\n" +
       "- get — args: { id, format? (summary|full), lang? }. Read-only.\n" +
-      "- get_by_serial — args: { serial, format?, lang? }. Read-only.\n" +
+      "- get_by_serial — args: { serial, format?, lang?, gtin? }. Read-only. Addresses the passport by your own serial. A serial is unique only WITHIN a GTIN — if the same serial exists under two GTINs in your account the call returns 409 ambiguous_serial; pass `gtin` (or use the by-id action) to resolve exactly.\n" +
       "- compliance — args: { id }. Read-only. Returns a three-tier compliance verdict (compliant | compliant_with_warnings | incomplete) with regulation-cited findings — use to gap-check a passport against the rules for its category, fix the cited fields/parties, then re-check.\n" +
       "- create — args: { productId, gtin, serialNumber, confirmOverage? }. BILLABLE.\n" +
       "- suspend — args: { id }. Reversible — public QR shows 'suspended'.\n" +
+      "- suspend_by_serial — args: { serial, gtin? }. Same as suspend, addressed by your serial. 409 ambiguous_serial if the serial isn't unique in your account — pass `gtin`.\n" +
       "- archive — args: { id }. IRREVERSIBLE — confirm with the user first.\n" +
+      "- archive_by_serial — args: { serial, gtin? }. IRREVERSIBLE, addressed by your serial — confirm first. 409 ambiguous_serial if the serial isn't unique — pass `gtin`.\n" +
       "- get_qr — args: { id, format? (svg|png) }. Read-only.",
     inputSchema: {
       action: z.enum([
@@ -246,7 +266,9 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
         "compliance",
         "create",
         "suspend",
+        "suspend_by_serial",
         "archive",
+        "archive_by_serial",
         "get_qr",
       ]),
       args: z.record(z.string(), z.unknown()).optional()
@@ -298,10 +320,24 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           if (isErr(p)) return p;
           return apiResult(await client.post(`/api/v1/passports/${seg(p.id)}/suspend`));
         }
+        case "suspend_by_serial": {
+          const p = parseArgs(SCHEMAS.passportSerial, a.args, "tracepass_passports", action);
+          if (isErr(p)) return p;
+          return apiResult(
+            await client.post(`/api/v1/passports/by-serial/${seg(p.serial)}/suspend${qs({ gtin: p.gtin })}`),
+          );
+        }
         case "archive": {
           const p = parseArgs(SCHEMAS.passportId, a.args, "tracepass_passports", action);
           if (isErr(p)) return p;
           return apiResult(await client.post(`/api/v1/passports/${seg(p.id)}/archive`));
+        }
+        case "archive_by_serial": {
+          const p = parseArgs(SCHEMAS.passportSerial, a.args, "tracepass_passports", action);
+          if (isErr(p)) return p;
+          return apiResult(
+            await client.post(`/api/v1/passports/by-serial/${seg(p.serial)}/archive${qs({ gtin: p.gtin })}`),
+          );
         }
         case "get_qr": {
           const p = parseArgs(SCHEMAS.passportQr, a.args, "tracepass_passports", action);
@@ -323,25 +359,39 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     description:
       "Update field values on a Digital Product Passport. Every change is recorded in the passport's audit trail, tagged as an API-key update.\n\n" +
       "Actions (pass via `action`, with `args`):\n" +
-      "- update — args: { id, fieldKey, value }. `value` type matches the field's dataType (string, number, boolean, array, object).",
+      "- update — args: { id, fieldKey, value }. `value` type matches the field's dataType (string, number, boolean, array, object).\n" +
+      "- update_by_serial — args: { serial, fieldKey, value, gtin? }. Same as update, addressed by your own serial. A serial is unique only WITHIN a GTIN — if it isn't unique in your account the call returns 409 ambiguous_serial; pass `gtin` (or use update by id) to resolve exactly.",
     inputSchema: {
-      action: z.enum(["update"]),
+      action: z.enum(["update", "update_by_serial"]),
       args: z.record(z.string(), z.unknown()).optional()
         .describe("Action-specific arguments — see the description."),
     },
     annotations: { idempotentHint: true },
     handler: async (a) => {
       const action = String(a.action);
-      if (action !== "update") {
-        return errorResult(`Unknown action "${action}" for tracepass_passport_fields.`);
+      switch (action) {
+        case "update": {
+          const p = parseArgs(SCHEMAS.fieldUpdate, a.args, "tracepass_passport_fields", action);
+          if (isErr(p)) return p;
+          return apiResult(
+            await client.patch(`/api/v1/passports/${seg(p.id)}/fields/${seg(p.fieldKey)}`, {
+              value: p.value,
+            }),
+          );
+        }
+        case "update_by_serial": {
+          const p = parseArgs(SCHEMAS.fieldUpdateBySerial, a.args, "tracepass_passport_fields", action);
+          if (isErr(p)) return p;
+          return apiResult(
+            await client.patch(
+              `/api/v1/passports/by-serial/${seg(p.serial)}/fields/${seg(p.fieldKey)}${qs({ gtin: p.gtin })}`,
+              { value: p.value },
+            ),
+          );
+        }
+        default:
+          return errorResult(`Unknown action "${action}" for tracepass_passport_fields.`);
       }
-      const p = parseArgs(SCHEMAS.fieldUpdate, a.args, "tracepass_passport_fields", action);
-      if (isErr(p)) return p;
-      return apiResult(
-        await client.patch(`/api/v1/passports/${seg(p.id)}/fields/${seg(p.fieldKey)}`, {
-          value: p.value,
-        }),
-      );
     },
   };
 
@@ -392,11 +442,12 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "GS1 EPCIS 2.0 supply-chain events. `export` is included on Starter plans and up; `capture`, `capture_job`, and `query` require the paid EPCIS add-on (those actions return a 403-style message without it).\n\n" +
       "Actions (pass via `action`, with `args`):\n" +
       "- export — args: { id }. Export a passport's events as an EPCIS 2.0 JSON-LD document. Read-only.\n" +
+      "- export_by_serial — args: { serial, gtin? }. Same as export, addressed by your own serial. A serial is unique only WITHIN a GTIN — if it isn't unique in your account the call returns 409 ambiguous_serial; pass `gtin` (or use export by id). Read-only.\n" +
       "- capture — args: { events }. `events` is an EPCISDocument, a single event, or an array of events (JSON-LD). Returns a 202 with a captureJobId.\n" +
       "- capture_job — args: { jobId }. Poll an async capture job. Read-only.\n" +
       "- query — args: { params? }. `params` is a key/value map of standard EPCIS query parameters (EQ_bizStep, GE_eventTime, MATCH_epc, …). Read-only.",
     inputSchema: {
-      action: z.enum(["export", "capture", "capture_job", "query"]),
+      action: z.enum(["export", "export_by_serial", "capture", "capture_job", "query"]),
       args: z.record(z.string(), z.unknown()).optional()
         .describe("Action-specific arguments — see the description."),
     },
@@ -408,6 +459,13 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           const p = parseArgs(SCHEMAS.epcisExport, a.args, "tracepass_epcis", action);
           if (isErr(p)) return p;
           return apiResult(await client.get(`/api/v1/passports/${seg(p.id)}/epcis`));
+        }
+        case "export_by_serial": {
+          const p = parseArgs(SCHEMAS.epcisExportBySerial, a.args, "tracepass_epcis", action);
+          if (isErr(p)) return p;
+          return apiResult(
+            await client.get(`/api/v1/passports/by-serial/${seg(p.serial)}/epcis${qs({ gtin: p.gtin })}`),
+          );
         }
         case "capture": {
           const p = parseArgs(SCHEMAS.epcisCapture, a.args, "tracepass_epcis", action);
