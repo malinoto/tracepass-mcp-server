@@ -59,8 +59,8 @@ const SERVER_CARD_PATH = "/.well-known/mcp/server-card.json";
  * RFC 9728 Protected Resource Metadata path. The MCP authorization spec has a
  * client fetch this (pointed to by the `resource_metadata` param on our 401
  * `WWW-Authenticate` challenge) to discover which authorization server protects
- * this resource. TracePass now runs a real OAuth2 authorization server on the
- * platform origin (its public app.tracepass.eu URL — see PUBLIC_AUTH_SERVER_URL), so we name it here. This is the
+ * this resource. TracePass runs a real OAuth2 authorization server at its public
+ * origin (PUBLIC_AUTH_SERVER_URL), which we name in the metadata. This is the
  * resource server (ai.tracepass.eu); the authorization server is a different
  * origin — RFC 9728 is exactly the indirection for that split.
  */
@@ -88,7 +88,7 @@ const GLAMA_CLAIM = {
  * because discovery precedes auth.
  *
  * Every value here mirrors the real server: `serverInfo` matches
- * `MCP_SERVER_INFO` in server.ts (tracepass / 1.4.1); the capability lists are
+ * `MCP_SERVER_INFO` in server.ts (tracepass / 1.4.2); the capability lists are
  * the exact tool names from tools.ts, resource URIs/templates from
  * resources.ts, and prompt names from prompts.ts. Keep this in sync when
  * capabilities change — a card that over-claims is worse than no card.
@@ -108,10 +108,10 @@ const GLAMA_CLAIM = {
  */
 const SERVER_CARD = {
   name: "tracepass",
-  version: "1.4.1",
+  version: "1.4.2",
   description:
     "Model Context Protocol server for TracePass — the EU Digital Product Passport platform. Manage products, Digital Product Passports, economic-operator parties, and GS1 EPCIS 2.0 supply-chain events.",
-  serverInfo: { name: "tracepass", version: "1.4.1" },
+  serverInfo: { name: "tracepass", version: "1.4.2" },
   transport: {
     type: "streamable-http",
     endpoint: `https://ai.tracepass.eu${MCP_PATH}`,
@@ -209,8 +209,10 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
-/** Convert a Node IncomingMessage to a Web `Request`. */
-async function toWebRequest(req: IncomingMessage): Promise<Request> {
+/** Convert a Node IncomingMessage to a Web `Request`, reusing an already-read
+ *  body string (the body stream can only be consumed once — we read it up front
+ *  to inspect the JSON-RPC method, then hand the buffered copy here). */
+function toWebRequest(req: IncomingMessage, body: string | undefined): Request {
   const host = req.headers["host"] ?? `localhost:${PORT}`;
   const url = `http://${host}${req.url ?? "/"}`;
   const headers = new Headers();
@@ -219,9 +221,71 @@ async function toWebRequest(req: IncomingMessage): Promise<Request> {
     headers.set(k, Array.isArray(v) ? v.join(", ") : v);
   }
   const method = req.method ?? "GET";
-  const hasBody = method !== "GET" && method !== "HEAD";
-  const body = hasBody ? await readBody(req) : undefined;
   return new Request(url, { method, headers, body: body || undefined });
+}
+
+/**
+ * Emit the RFC 6750 Bearer challenge + RFC 9728 resource_metadata as a real HTTP
+ * 401. Used for BOTH a missing credential and a present-but-rejected one, so an
+ * OAuth-capable client always learns it should (re-)authenticate via the
+ * authorization server named in the protected-resource metadata. `reason`
+ * tailors the human-readable description.
+ * NB: HTTP header values are Latin-1 only — keep this ASCII (use "->" not the
+ * UTF-8 arrow, which makes Node throw "Invalid character in header content").
+ */
+function sendAuthChallenge(res: ServerResponse, reason: "missing" | "invalid"): void {
+  const desc =
+    reason === "missing"
+      ? "Authenticate with a TracePass API key (Developer -> API Keys, send Authorization: Bearer <tp_ key>) or via OAuth (see resource_metadata)."
+      : "The credential was rejected (expired or invalid). Refresh your OAuth token or re-authenticate (see resource_metadata), or check your API key.";
+  res.setHeader(
+    "WWW-Authenticate",
+    'Bearer realm="TracePass MCP", error="invalid_token", ' +
+      `resource_metadata="https://ai.tracepass.eu${PROTECTED_RESOURCE_METADATA_PATH}", ` +
+      `error_description="${desc}"`,
+  );
+  sendJson(res, 401, {
+    error: "unauthorized",
+    message:
+      reason === "missing"
+        ? "Missing credential. Send Authorization: Bearer <tp_ key> (Developer -> API Keys) or connect via OAuth."
+        : "The credential was rejected. Refresh your OAuth token or check your API key.",
+  });
+}
+
+/** True if the JSON-RPC body is an `initialize` request — the first call an MCP
+ *  client makes when connecting. We validate the credential here so a
+ *  present-but-invalid token fails fast with a proper 401 challenge at connect
+ *  time, rather than every tool call paying an extra round-trip. */
+function isInitializeRequest(body: string | undefined): boolean {
+  if (!body) return false;
+  try {
+    const parsed = JSON.parse(body);
+    const msgs = Array.isArray(parsed) ? parsed : [parsed];
+    return msgs.some((m) => m && typeof m === "object" && m.method === "initialize");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Probe whether a present credential is actually valid, with a cheap read
+ * against the v1 API (the same endpoint the credential test uses). Returns true
+ * if the API accepts it, false on a 401/403 (rejected), and — deliberately —
+ * true on any other failure (network blip, 5xx) so we DON'T block a connect over
+ * a transient error; the real call will surface that later as an isError result.
+ */
+async function credentialAccepted(bearerToken: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE_URL}/api/v1/products?limit=1`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${bearerToken}`, Accept: "application/json", "X-Source": "mcp" },
+    });
+    // Only a hard auth rejection blocks the connect. Everything else passes.
+    return res.status !== 401 && res.status !== 403;
+  } catch {
+    return true; // transient/network — don't block on it
+  }
 }
 
 /** Write a Web `Response` back through a Node ServerResponse. */
@@ -291,30 +355,28 @@ const httpServer = createServer((req, res) => {
 
       // A credential is required — no anonymous MCP access. Accepts either a
       // tp_ API key or an OAuth access token (forwarded verbatim to the v1 API).
+      // A MISSING credential → real 401 + WWW-Authenticate so a discovery-capable
+      // client learns the scheme + the OAuth resource_metadata pointer.
       const bearerToken = extractBearerToken(req);
       if (!bearerToken) {
-        // RFC 6750 Bearer challenge + RFC 9728 resource_metadata. MCP clients
-        // that do spec-compliant auth discovery read WWW-Authenticate to learn
-        // the scheme + (now) where to find the OAuth protected-resource
-        // metadata, which names the authorization server they can run the
-        // authorization-code flow against. TracePass now supports BOTH a static
-        // tp_ API key AND OAuth, so we advertise the resource_metadata param —
-        // a Connect-capable client uses OAuth; a simpler client falls back to a
-        // pasted key per the human-readable JSON below.
-        // NB: HTTP header values are Latin-1 only — no non-ASCII (the
-        // "->" stays ASCII; the UTF-8 arrow used in the JSON body below
-        // would make Node throw "Invalid character in header content").
-        res.setHeader(
-          "WWW-Authenticate",
-          'Bearer realm="TracePass MCP", error="invalid_token", ' +
-            `resource_metadata="https://ai.tracepass.eu${PROTECTED_RESOURCE_METADATA_PATH}", ` +
-            'error_description="Authenticate with a TracePass API key (Developer -> API Keys, send Authorization: Bearer <tp_ key>) or via OAuth (see resource_metadata)."',
-        );
-        sendJson(res, 401, {
-          error: "unauthorized",
-          message:
-            "Missing API key. Send Authorization: Bearer <tp_ key>. Mint a key in the TracePass dashboard → Developer → API Keys.",
-        });
+        sendAuthChallenge(res, "missing");
+        return;
+      }
+
+      // Read the body once (the stream is single-use); we both inspect it for
+      // the JSON-RPC method and hand the buffered copy to the transport below.
+      const method = req.method ?? "GET";
+      const bodyStr =
+        method !== "GET" && method !== "HEAD" ? await readBody(req) : undefined;
+
+      // On `initialize` (the first call of an MCP session), validate the token
+      // up front. A PRESENT-but-rejected credential gets a real 401 +
+      // WWW-Authenticate challenge — so an OAuth client knows to refresh /
+      // re-authenticate rather than only seeing an isError tool result. We probe
+      // ONLY on initialize, so tool calls don't pay an extra round-trip; a token
+      // that expires mid-session still surfaces as an isError result on the call.
+      if (isInitializeRequest(bodyStr) && !(await credentialAccepted(bearerToken))) {
+        sendAuthChallenge(res, "invalid");
         return;
       }
 
@@ -329,7 +391,7 @@ const httpServer = createServer((req, res) => {
       });
       await server.connect(transport);
 
-      const webReq = await toWebRequest(req);
+      const webReq = toWebRequest(req, bodyStr);
       const webRes = await transport.handleRequest(webReq);
       await writeWebResponse(webRes, res);
 
