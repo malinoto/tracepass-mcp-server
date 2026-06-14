@@ -75,7 +75,7 @@ const GLAMA_CLAIM = {
  * because discovery precedes auth.
  *
  * Every value here mirrors the real server: `serverInfo` matches
- * `SERVER_INFO` in server.ts (tracepass / 1.1.1); the capability lists are
+ * `MCP_SERVER_INFO` in server.ts (tracepass / 1.4.0); the capability lists are
  * the exact tool names from tools.ts, resource URIs/templates from
  * resources.ts, and prompt names from prompts.ts. Keep this in sync when
  * capabilities change — a card that over-claims is worse than no card.
@@ -95,10 +95,10 @@ const GLAMA_CLAIM = {
  */
 const SERVER_CARD = {
   name: "tracepass",
-  version: "1.1.1",
+  version: "1.4.0",
   description:
     "Model Context Protocol server for TracePass — the EU Digital Product Passport platform. Manage products, Digital Product Passports, economic-operator parties, and GS1 EPCIS 2.0 supply-chain events.",
-  serverInfo: { name: "tracepass", version: "1.1.1" },
+  serverInfo: { name: "tracepass", version: "1.4.0" },
   transport: {
     type: "streamable-http",
     endpoint: `https://ai.tracepass.eu${MCP_PATH}`,
