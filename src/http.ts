@@ -35,6 +35,17 @@ const MCP_PATH = "/mcp";
 const SERVER_CARD_PATH = "/.well-known/mcp/server-card.json";
 
 /**
+ * RFC 9728 Protected Resource Metadata path. The MCP authorization spec has a
+ * client fetch this (pointed to by the `resource_metadata` param on our 401
+ * `WWW-Authenticate` challenge) to discover which authorization server protects
+ * this resource. TracePass now runs a real OAuth2 authorization server on the
+ * platform origin (BASE_URL, app.tracepass.eu), so we name it here. This is the
+ * resource server (ai.tracepass.eu); the authorization server is a different
+ * origin — RFC 9728 is exactly the indirection for that split.
+ */
+const PROTECTED_RESOURCE_METADATA_PATH = "/.well-known/oauth-protected-resource";
+
+/**
  * Glama connector ownership-claim path. Glama probes the CONNECTOR's
  * own host (ai.tracepass.eu) for this file to verify we maintain the
  * auto-imported connector listing at glama.ai/mcp/connectors/eu.tracepass/tracepass.
@@ -61,9 +72,10 @@ const GLAMA_CLAIM = {
  * resources.ts, and prompt names from prompts.ts. Keep this in sync when
  * capabilities change — a card that over-claims is worse than no card.
  *
- * `authentication` is declared honestly: a static API-key Bearer scheme,
- * NOT OAuth. No `authorization_servers` / OAuth metadata is advertised
- * because none exists (see the WWW-Authenticate note on the 401 path).
+ * `authentication` declares BOTH supported methods: a static API-key Bearer
+ * scheme AND OAuth2 (the platform now runs a real authorization server). The
+ * `resourceMetadata` URL points at our RFC 9728 protected-resource document
+ * (see the WWW-Authenticate note on the 401 path).
  *
  * MIRROR: a byte-equivalent copy of this card is also served as a static
  * file from the marketing site at
@@ -84,17 +96,22 @@ const SERVER_CARD = {
     endpoint: `https://ai.tracepass.eu${MCP_PATH}`,
   },
   authentication: {
-    // SEP-1649 fields (required + schemes) so card readers (e.g. Smithery's
-    // URL publisher) detect static Bearer auth and DON'T default to OAuth.
-    // schemes intentionally lists only "bearer" — NOT "oauth2" — because we
-    // don't run an OAuth authorization server. The type/scheme/description
-    // fields are kept for human + non-SEP-1649 readers.
+    // SEP-1649 fields. TracePass now supports BOTH auth methods, so schemes
+    // lists both: "bearer" (a static tp_ API key — simplest, server-to-server)
+    // and "oauth2" (user-authorized, via the platform's authorization server —
+    // discovery at the resource-metadata URL below). A client that can do the
+    // OAuth flow gets a "Connect" experience; one that can't falls back to a
+    // pasted API key. The type/scheme fields describe the Bearer default for
+    // human + non-SEP-1649 readers.
     required: true,
-    schemes: ["bearer"],
+    schemes: ["bearer", "oauth2"],
     type: "http",
     scheme: "bearer",
+    // RFC 9728 resource-metadata URL — where an OAuth-capable client learns
+    // which authorization server protects this resource.
+    resourceMetadata: `https://ai.tracepass.eu${PROTECTED_RESOURCE_METADATA_PATH}`,
     description:
-      "TracePass API key (tp_ prefix). Mint one in the dashboard under Developer -> API Keys, then send Authorization: Bearer <tp_ key>.",
+      "TracePass API key (tp_ prefix, Authorization: Bearer <tp_ key>) OR OAuth 2.0 (authorization-code + PKCE; a user Connects the server and grants scopes). Mint a key or register an app in the dashboard under Developer.",
   },
   capabilities: {
     tools: [
@@ -122,6 +139,29 @@ const SERVER_CARD = {
     ],
   },
   documentation: "https://www.tracepass.eu/docs/mcp",
+} as const;
+
+/**
+ * RFC 9728 Protected Resource Metadata. Declares that this resource
+ * (ai.tracepass.eu/mcp) is protected by the TracePass authorization server on
+ * the platform origin (BASE_URL). An OAuth-capable MCP client fetches this after
+ * a 401, then drives the authorization-code flow against the named auth server.
+ * `scopes_supported` mirrors the platform's OAuth scopes so a client can request
+ * least-privilege.
+ */
+const PROTECTED_RESOURCE_METADATA = {
+  resource: `https://ai.tracepass.eu${MCP_PATH}`,
+  authorization_servers: [BASE_URL],
+  scopes_supported: [
+    "passports:read",
+    "passports:write",
+    "documents:read",
+    "documents:write",
+    "suppliers:read",
+    "suppliers:write",
+    "offline_access",
+  ],
+  bearer_methods_supported: ["header"],
 } as const;
 
 /** Extract the tp_ API key from the Authorization header. */
@@ -194,6 +234,16 @@ const httpServer = createServer((req, res) => {
         return;
       }
 
+      // RFC 9728 Protected Resource Metadata. Public + unauthenticated —
+      // an OAuth-capable client fetches this (pointed here by the 401
+      // WWW-Authenticate `resource_metadata` param) to discover the
+      // authorization server. NB: the edge catch-all redirect must EXCLUDE
+      // this path too (same as the card / glama paths).
+      if (url.split("?")[0] === PROTECTED_RESOURCE_METADATA_PATH) {
+        sendJson(res, 200, PROTECTED_RESOURCE_METADATA);
+        return;
+      }
+
       // Glama connector ownership claim. Public + unauthenticated. NB:
       // the edge (Caddy) catch-all redirect for ai.tracepass.eu must
       // EXCLUDE this path, or the claim file never reaches this handler
@@ -215,25 +265,22 @@ const httpServer = createServer((req, res) => {
       // API key required — no anonymous MCP access.
       const apiKey = extractApiKey(req);
       if (!apiKey) {
-        // RFC 6750 Bearer challenge. MCP clients that do spec-compliant
-        // auth discovery read WWW-Authenticate to learn the scheme;
-        // without it they can only fall back to the human-readable JSON
-        // below. TracePass auth is static dashboard-minted API keys, NOT
-        // OAuth — so this is the honest subset: advertise the Bearer
-        // scheme + realm + where to get a key, and deliberately DO NOT
-        // emit an OAuth `resource_metadata` / `authorization_uri` param
-        // pointing at /.well-known/oauth-protected-resource, because no
-        // OAuth authorization server exists. (Adding one would be a
-        // false discovery claim — same reason www skips the auth.md
-        // check.) If TracePass ever ships real OAuth client registration,
-        // add the resource_metadata param then.
+        // RFC 6750 Bearer challenge + RFC 9728 resource_metadata. MCP clients
+        // that do spec-compliant auth discovery read WWW-Authenticate to learn
+        // the scheme + (now) where to find the OAuth protected-resource
+        // metadata, which names the authorization server they can run the
+        // authorization-code flow against. TracePass now supports BOTH a static
+        // tp_ API key AND OAuth, so we advertise the resource_metadata param —
+        // a Connect-capable client uses OAuth; a simpler client falls back to a
+        // pasted key per the human-readable JSON below.
         // NB: HTTP header values are Latin-1 only — no non-ASCII (the
         // "->" stays ASCII; the UTF-8 arrow used in the JSON body below
         // would make Node throw "Invalid character in header content").
         res.setHeader(
           "WWW-Authenticate",
           'Bearer realm="TracePass MCP", error="invalid_token", ' +
-            'error_description="Missing API key. Mint one in the TracePass dashboard (Developer -> API Keys), then send Authorization: Bearer <tp_ key>."',
+            `resource_metadata="https://ai.tracepass.eu${PROTECTED_RESOURCE_METADATA_PATH}", ` +
+            'error_description="Authenticate with a TracePass API key (Developer -> API Keys, send Authorization: Bearer <tp_ key>) or via OAuth (see resource_metadata)."',
         );
         sendJson(res, 401, {
           error: "unauthorized",

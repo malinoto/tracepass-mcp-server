@@ -20,8 +20,18 @@ The same server core ships two ways:
 2. **Local (npm)** — run `tracepass-mcp-server` via `npx`. The MCP
    client launches it as a subprocess and speaks MCP over stdio.
 
-Both need a TracePass API key — mint one in the dashboard under
-**Developer → API Keys** (a `tp_…` key).
+**Authentication — two options:**
+- **API key** (simplest, works for both hosted + local) — mint a `tp_…`
+  key in the dashboard under **Developer → API Keys** and send it as a
+  Bearer token. Best for a single user / server-to-server.
+- **OAuth 2.0** (hosted endpoint only) — MCP clients that support OAuth
+  (e.g. Claude.ai, ChatGPT) can "Connect" to `https://ai.tracepass.eu/mcp`
+  without pasting a key: the user authorizes the server on a TracePass
+  consent screen and grants specific scopes. Discovery is automatic via
+  the server's RFC 9728 metadata
+  (`/.well-known/oauth-protected-resource`) → the platform's
+  authorization server. Register an app under **Developer → OAuth Apps**
+  if you're distributing your own client.
 
 ## Configuration
 
