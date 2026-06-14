@@ -23,7 +23,7 @@ import { errorResult } from "./result.js";
  *  meaningful tool-surface change. */
 export const MCP_SERVER_INFO = {
   name: "tracepass",
-  version: "1.4.0",
+  version: "1.4.1",
 } as const;
 
 export interface CreateMcpServerConfig {

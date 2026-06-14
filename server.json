@@ -3,7 +3,7 @@
   "name": "eu.tracepass/tracepass",
   "title": "TracePass",
   "description": "Manage products, EU Digital Product Passports, operator parties, and GS1 EPCIS supply-chain events.",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "websiteUrl": "https://www.tracepass.eu",
   "icons": [
     {
@@ -24,7 +24,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "tracepass-mcp-server",
-      "version": "1.4.0",
+      "version": "1.4.1",
       "transport": {
         "type": "stdio"
       }

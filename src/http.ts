@@ -25,7 +25,12 @@
  * Env:
  *   PORT                (optional) — listen port, default 8080
  *   TRACEPASS_BASE_URL  (optional) — the TracePass API base URL the
- *                       tools call, default https://app.tracepass.eu
+ *                       tools call, default https://app.tracepass.eu. In prod
+ *                       this is the INTERNAL Docker address (platform:3000).
+ *   TRACEPASS_AUTH_SERVER_URL (optional) — the PUBLIC authorization-server
+ *                       origin advertised in OAuth discovery metadata, default
+ *                       https://app.tracepass.eu. Set this when BASE_URL is an
+ *                       internal address so clients get a reachable auth server.
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -34,7 +39,15 @@ import { createMcpServer } from "./server.js";
 
 const PORT = Number(process.env.PORT) || 8080;
 const DEFAULT_BASE_URL = "https://app.tracepass.eu";
+// The API base the TOOLS call. In prod this is the INTERNAL Docker address
+// (http://platform:3000) — a private loopback, never exposed to clients.
 const BASE_URL = process.env.TRACEPASS_BASE_URL?.trim() || DEFAULT_BASE_URL;
+// The PUBLIC origin of the TracePass authorization server, used ONLY in the
+// OAuth discovery metadata (RFC 9728 `authorization_servers`). MUST be a URL the
+// client's browser can reach — distinct from BASE_URL, which in prod is the
+// internal loopback. Defaults to the public app origin.
+const PUBLIC_AUTH_SERVER_URL =
+  process.env.TRACEPASS_AUTH_SERVER_URL?.trim() || DEFAULT_BASE_URL;
 
 /** The MCP endpoint path. `/mcp` is the conventional path. */
 const MCP_PATH = "/mcp";
@@ -47,7 +60,7 @@ const SERVER_CARD_PATH = "/.well-known/mcp/server-card.json";
  * client fetch this (pointed to by the `resource_metadata` param on our 401
  * `WWW-Authenticate` challenge) to discover which authorization server protects
  * this resource. TracePass now runs a real OAuth2 authorization server on the
- * platform origin (BASE_URL, app.tracepass.eu), so we name it here. This is the
+ * platform origin (its public app.tracepass.eu URL — see PUBLIC_AUTH_SERVER_URL), so we name it here. This is the
  * resource server (ai.tracepass.eu); the authorization server is a different
  * origin — RFC 9728 is exactly the indirection for that split.
  */
@@ -75,7 +88,7 @@ const GLAMA_CLAIM = {
  * because discovery precedes auth.
  *
  * Every value here mirrors the real server: `serverInfo` matches
- * `MCP_SERVER_INFO` in server.ts (tracepass / 1.4.0); the capability lists are
+ * `MCP_SERVER_INFO` in server.ts (tracepass / 1.4.1); the capability lists are
  * the exact tool names from tools.ts, resource URIs/templates from
  * resources.ts, and prompt names from prompts.ts. Keep this in sync when
  * capabilities change — a card that over-claims is worse than no card.
@@ -95,10 +108,10 @@ const GLAMA_CLAIM = {
  */
 const SERVER_CARD = {
   name: "tracepass",
-  version: "1.4.0",
+  version: "1.4.1",
   description:
     "Model Context Protocol server for TracePass — the EU Digital Product Passport platform. Manage products, Digital Product Passports, economic-operator parties, and GS1 EPCIS 2.0 supply-chain events.",
-  serverInfo: { name: "tracepass", version: "1.4.0" },
+  serverInfo: { name: "tracepass", version: "1.4.1" },
   transport: {
     type: "streamable-http",
     endpoint: `https://ai.tracepass.eu${MCP_PATH}`,
@@ -151,15 +164,16 @@ const SERVER_CARD = {
 
 /**
  * RFC 9728 Protected Resource Metadata. Declares that this resource
- * (ai.tracepass.eu/mcp) is protected by the TracePass authorization server on
- * the platform origin (BASE_URL). An OAuth-capable MCP client fetches this after
+ * (ai.tracepass.eu/mcp) is protected by the TracePass authorization server at
+ * its PUBLIC origin (PUBLIC_AUTH_SERVER_URL — NOT the internal BASE_URL the
+ * tools call). An OAuth-capable MCP client fetches this after
  * a 401, then drives the authorization-code flow against the named auth server.
  * `scopes_supported` mirrors the platform's OAuth scopes so a client can request
  * least-privilege.
  */
 const PROTECTED_RESOURCE_METADATA = {
   resource: `https://ai.tracepass.eu${MCP_PATH}`,
-  authorization_servers: [BASE_URL],
+  authorization_servers: [PUBLIC_AUTH_SERVER_URL],
   scopes_supported: [
     "passports:read",
     "passports:write",
