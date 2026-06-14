@@ -20,22 +20,49 @@ The same server core ships two ways:
 2. **Local (npm)** — run `tracepass-mcp-server` via `npx`. The MCP
    client launches it as a subprocess and speaks MCP over stdio.
 
-**Authentication — two options:**
-- **API key** (simplest, works for both hosted + local) — mint a `tp_…`
-  key in the dashboard under **Developer → API Keys** and send it as a
-  Bearer token. Best for a single user / server-to-server.
-- **OAuth 2.0** (hosted endpoint only) — MCP clients that support OAuth
-  (e.g. Claude.ai, ChatGPT) can "Connect" to `https://ai.tracepass.eu/mcp`
-  without pasting a key: the user authorizes the server on a TracePass
-  consent screen and grants specific scopes. Discovery is automatic via
-  the server's RFC 9728 metadata
-  (`/.well-known/oauth-protected-resource`) → the platform's
-  authorization server. Register an app under **Developer → OAuth Apps**
-  if you're distributing your own client.
+## Authentication
 
-## Configuration
+The server accepts **either** of TracePass's two v1 auth methods on the
+same `Authorization: Bearer …` header — it forwards whatever you send to
+the API, which decides. Pick the one that fits how you're connecting:
 
-### Hosted
+| | **API key** | **OAuth 2.0** |
+|---|---|---|
+| Best for | A single user, scripts, server-to-server | AI assistants / apps acting **on a user's behalf** |
+| What you send | A static `tp_…` key as a Bearer token | A scoped access token obtained via the OAuth flow |
+| Setup | Mint at **Developer → API Keys** | The user clicks **Connect** and approves scopes |
+| Scope | All-or-nothing (the whole workspace) | Exactly the scopes the user granted; revocable |
+| Works with | Hosted **and** local (npx) | Hosted endpoint only (needs a browser consent step) |
+
+**Which should an AI assistant use?** If your MCP client supports OAuth
+(Claude.ai, ChatGPT, and others), prefer **OAuth** — the user authorizes
+the connection once on a TracePass consent screen, you never handle a
+secret, and access is least-privilege and revocable. If your client only
+takes a header/token, use an **API key**.
+
+### OAuth 2.0 (recommended for hosted clients)
+
+No config beyond pointing your client at the hosted endpoint — discovery
+is automatic. On the first unauthenticated request the server returns a
+`401` whose `WWW-Authenticate` header carries a `resource_metadata` URL
+(RFC 9728) pointing at `/.well-known/oauth-protected-resource`, which
+names the TracePass authorization server. The client runs the standard
+**authorization-code flow with PKCE** (`/api/oauth/authorize` →
+`/api/oauth/token`), the user approves scopes, and the client stores +
+refreshes the token. If you distribute your own client, register an app
+under **Developer → OAuth Apps** to get a `client_id`; many hosted
+clients self-register via Dynamic Client Registration automatically.
+
+Request only the scopes you need, e.g. `passports:read passports:write
+offline_access`. Users manage connected apps (and revoke) under
+**Developer → OAuth Apps → Connected Apps**.
+
+### API key
+
+Mint a `tp_…` key under **Developer → API Keys** and send it as a Bearer
+token.
+
+**Hosted:**
 
 ```json
 {
@@ -48,7 +75,8 @@ The same server core ships two ways:
 }
 ```
 
-### Local (npx / stdio)
+**Local (npx / stdio)** — the local subprocess can't do an interactive
+OAuth consent step, so it's API-key only, via the `TRACEPASS_API_KEY` env:
 
 ```json
 {

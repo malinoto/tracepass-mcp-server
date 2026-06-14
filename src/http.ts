@@ -3,12 +3,20 @@
  *
  * Runs as a standalone Node service (deployed to Hetzner, served at
  * https://ai.tracepass.eu/mcp). An MCP client connects over
- * Streamable HTTP; the customer's TracePass API key travels in the
- * `Authorization: Bearer tp_...` header of every request.
+ * Streamable HTTP; the caller's TracePass credential travels in the
+ * `Authorization: Bearer <token>` header of every request.
+ *
+ * BOTH v1 auth methods work here, transparently — we forward the
+ * Bearer token to the v1 API unchanged and the platform's unified gate
+ * decides: a `tp_…` API key (service account) OR an OAuth 2.0 access
+ * token (user-authorized, scoped). The server neither parses nor cares
+ * which; it's a pass-through. OAuth-capable MCP clients (Claude.ai,
+ * ChatGPT) discover the flow via the 401 `resource_metadata` param and
+ * the server card; simpler clients paste a tp_ key.
  *
  * Stateless by design: each MCP request is self-contained, so we
  * build a fresh server + transport per request, bound to that
- * request's API key. No server-side session state — which means the
+ * request's token. No server-side session state — which means the
  * service scales horizontally and a restart drops nothing.
  *
  * This is the SAME server core (`createMcpServer`) the stdio
@@ -111,7 +119,7 @@ const SERVER_CARD = {
     // which authorization server protects this resource.
     resourceMetadata: `https://ai.tracepass.eu${PROTECTED_RESOURCE_METADATA_PATH}`,
     description:
-      "TracePass API key (tp_ prefix, Authorization: Bearer <tp_ key>) OR OAuth 2.0 (authorization-code + PKCE; a user Connects the server and grants scopes). Mint a key or register an app in the dashboard under Developer.",
+      "Two ways to authenticate, pick one. (1) OAuth 2.0 (recommended for AI assistants acting for a user): if your client supports OAuth, Connect the server and the user approves scopes on a TracePass consent screen — no secret to handle, access is scoped and revocable. Discovery is automatic via this card's resourceMetadata and the 401 WWW-Authenticate challenge (authorization-code + PKCE). (2) API key (simplest for a single user / scripts): the user mints a tp_ key at Developer -> API Keys and you send it as Authorization: Bearer <tp_ key>. The server forwards whichever you send; both reach the same v1 API.",
   },
   capabilities: {
     tools: [
@@ -164,8 +172,13 @@ const PROTECTED_RESOURCE_METADATA = {
   bearer_methods_supported: ["header"],
 } as const;
 
-/** Extract the tp_ API key from the Authorization header. */
-function extractApiKey(req: IncomingMessage): string | null {
+/**
+ * Extract the Bearer credential from the Authorization header. This is EITHER a
+ * `tp_…` API key OR an OAuth 2.0 access token — we don't distinguish here. The
+ * token is forwarded verbatim to the v1 API, whose unified auth gate branches on
+ * the token shape (`tp_` prefix → API key, else → OAuth). Both are valid.
+ */
+function extractBearerToken(req: IncomingMessage): string | null {
   const auth = req.headers["authorization"];
   if (typeof auth !== "string") return null;
   const m = auth.match(/^Bearer\s+(.+)$/i);
@@ -262,9 +275,10 @@ const httpServer = createServer((req, res) => {
         return;
       }
 
-      // API key required — no anonymous MCP access.
-      const apiKey = extractApiKey(req);
-      if (!apiKey) {
+      // A credential is required — no anonymous MCP access. Accepts either a
+      // tp_ API key or an OAuth access token (forwarded verbatim to the v1 API).
+      const bearerToken = extractBearerToken(req);
+      if (!bearerToken) {
         // RFC 6750 Bearer challenge + RFC 9728 resource_metadata. MCP clients
         // that do spec-compliant auth discovery read WWW-Authenticate to learn
         // the scheme + (now) where to find the OAuth protected-resource
@@ -290,10 +304,12 @@ const httpServer = createServer((req, res) => {
         return;
       }
 
-      // Fresh, stateless server + transport per request, bound to
-      // this request's key. The transport's handleRequest takes a
-      // Web Request and returns a Web Response.
-      const server = createMcpServer({ apiKey, baseUrl: BASE_URL });
+      // Fresh, stateless server + transport per request, bound to this
+      // request's credential. The `apiKey` config field carries whatever Bearer
+      // token arrived (tp_ key OR OAuth access token) — it's forwarded verbatim;
+      // the v1 API's unified gate validates it. The transport's handleRequest
+      // takes a Web Request and returns a Web Response.
+      const server = createMcpServer({ apiKey: bearerToken, baseUrl: BASE_URL });
       const transport = new WebStandardStreamableHTTPServerTransport({
         sessionIdGenerator: undefined, // stateless
       });
