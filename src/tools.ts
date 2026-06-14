@@ -233,6 +233,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "- list — args: { page?, limit? (≤100), productId?, status?, search? }. status ∈ draft|in_review|approved|published|suspended|expired|archived. Read-only.\n" +
       "- get — args: { id, format? (summary|full), lang? }. Read-only.\n" +
       "- get_by_serial — args: { serial, format?, lang? }. Read-only.\n" +
+      "- compliance — args: { id }. Read-only. Returns a three-tier compliance verdict (compliant | compliant_with_warnings | incomplete) with regulation-cited findings — use to gap-check a passport against the rules for its category, fix the cited fields/parties, then re-check.\n" +
       "- create — args: { productId, gtin, serialNumber, confirmOverage? }. BILLABLE.\n" +
       "- suspend — args: { id }. Reversible — public QR shows 'suspended'.\n" +
       "- archive — args: { id }. IRREVERSIBLE — confirm with the user first.\n" +
@@ -242,6 +243,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
         "list",
         "get",
         "get_by_serial",
+        "compliance",
         "create",
         "suspend",
         "archive",
@@ -274,6 +276,11 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
               `/api/v1/passports/by-serial/${seg(p.serial)}${qs({ format: p.format, lang: p.lang })}`,
             ),
           );
+        }
+        case "compliance": {
+          const p = parseArgs(SCHEMAS.passportId, a.args, "tracepass_passports", action);
+          if (isErr(p)) return p;
+          return apiResult(await client.get(`/api/v1/passports/${seg(p.id)}/compliance`));
         }
         case "create": {
           const p = parseArgs(SCHEMAS.passportCreate, a.args, "tracepass_passports", action);

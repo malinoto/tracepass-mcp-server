@@ -133,6 +133,29 @@ export function registerResources(
     },
   );
 
+  // ── Template: a passport's compliance verdict ─────────────────
+  server.registerResource(
+    "passport-compliance",
+    new ResourceTemplate("tracepass://passport/{id}/compliance", {
+      list: undefined,
+    }),
+    {
+      title: "Passport compliance verdict",
+      description:
+        "A passport's three-tier compliance verdict (compliant | compliant_with_warnings | incomplete) with regulation-cited findings — missing/unapproved required fields, missing economic-operator parties, format issues, and per-category conditional rules. Attach this to ground the model in exactly what's blocking a passport's compliant publication. tracepass://passport/{id}/compliance.",
+      mimeType: "application/json",
+    },
+    async (uri, variables) => {
+      const id = String(variables.id);
+      const res = await client.get(
+        `/api/v1/passports/${encodeURIComponent(id)}/compliance`,
+      );
+      return res.ok
+        ? jsonContents(uri.href, res.body)
+        : errorContents(uri.href, res.status, res.body);
+    },
+  );
+
   // ── Static resource: the DPP regulatory schemas (all categories) ──
   server.registerResource(
     "templates",

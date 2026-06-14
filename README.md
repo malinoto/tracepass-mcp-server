@@ -60,16 +60,24 @@ TracePass deployment.
 
 ## Tools
 
-The ~23 TracePass v1 API operations are grouped into **5 tools**,
+The TracePass v1 API operations are grouped into **6 tools**,
 each taking an `action` plus action-specific `args`:
 
 | Tool | Actions |
 |------|---------|
 | `tracepass_products` | `list`, `get`, `create`, `update` |
-| `tracepass_passports` | `list`, `get`, `get_by_serial`, `create`, `suspend`, `archive`, `get_qr` |
+| `tracepass_passports` | `list`, `get`, `get_by_serial`, `compliance`, `create`, `suspend`, `archive`, `get_qr` |
 | `tracepass_passport_fields` | `update` |
 | `tracepass_passport_parties` | `set`, `remove` |
 | `tracepass_epcis` | `export`, `capture`, `capture_job`, `query` |
+| `tracepass_templates` | `list`, `get` |
+
+The **`tracepass_passports` `compliance`** action returns a three-tier
+compliance verdict (`compliant` / `compliant_with_warnings` /
+`incomplete`) with regulation-cited findings — missing required fields,
+missing economic-operator parties, format issues, and per-category
+conditional rules. Read-only; use it to gap-check a passport, fix the
+cited gaps, then re-check.
 
 ### A note on writes
 
@@ -94,6 +102,9 @@ Read-only entity data you can attach as conversation context:
 - `tracepass://product/{id}` — one product
 - `tracepass://passport/{id}` — one passport, full field detail
 - `tracepass://passport/{id}/epcis` — a passport's EPCIS 2.0 events
+- `tracepass://passport/{id}/compliance` — a passport's compliance verdict
+- `tracepass://templates` — all 12 DPP category regulatory schemas
+- `tracepass://template/{category}` — one category's full field schema
 
 ## Prompts
 
@@ -102,6 +113,10 @@ Reusable DPP workflows the client surfaces as slash-commands:
 - `audit_passport` — review a passport for completeness and
   compliance readiness
 - `onboard_product` — create a product and its first passport
+- `explain_dpp_requirements` — explain what a category's compliant DPP
+  must contain, and the regulation behind each field
+- `compliance_gap_check` — produce a prioritised, regulation-cited list
+  of what's blocking a passport's compliant publication
 - `review_epcis_events` — summarise a passport's supply-chain trail
 
 ## Development

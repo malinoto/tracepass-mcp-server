@@ -110,6 +110,7 @@ const SERVER_CARD = {
       "tracepass://product/{id}",
       "tracepass://passport/{id}",
       "tracepass://passport/{id}/epcis",
+      "tracepass://passport/{id}/compliance",
       "tracepass://template/{category}",
     ],
     prompts: [

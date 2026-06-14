@@ -134,6 +134,13 @@ describe("tracepass_passports — billable + lifecycle actions", () => {
     expect(calls[0]!.method).toBe("POST");
   });
 
+  it("compliance routes to a read of the compliance endpoint", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({ action: "compliance", args: { id: "x1" } });
+    expect(calls[0]!.path).toBe("/api/v1/passports/x1/compliance");
+    expect(calls[0]!.method).toBe("GET");
+  });
+
   it("get_by_serial URL-encodes the serial", async () => {
     const { tool, calls } = passportsTool();
     await tool.handler({ action: "get_by_serial", args: { serial: "LOT 1/A" } });

@@ -51,11 +51,10 @@ export function registerPrompts(server: McpServer): void {
     ({ passportId }) =>
       userPrompt(
         `Audit the TracePass Digital Product Passport with id "${passportId}".\n\n` +
-          `1. Fetch it with the tracepass_passports tool (action: get, format: full).\n` +
-          `2. Report: which required template fields are still empty or unapproved; ` +
-          `which economic-operator parties (manufacturer / importer / recycler / etc.) are missing; ` +
-          `the passport's status and completion percentage.\n` +
-          `3. State plainly whether the passport is ready to publish, and if not, the exact gaps to close.\n` +
+          `1. Run tracepass_passports (action: compliance, args: { id: "${passportId}" }) for the authoritative verdict — missing/unapproved required fields, missing economic-operator parties, format issues, and per-category conditional rules, each with the regulation it cites.\n` +
+          `2. For the status + completion percentage (and full field detail if you need it), also fetch tracepass_passports (action: get, format: full).\n` +
+          `3. Report the verdict (compliant | compliant_with_warnings | incomplete), the prioritised critical gaps, then the warnings.\n` +
+          `4. State plainly whether the passport is ready to publish, and if not, the exact gaps to close.\n` +
           `Do not change anything — this is a read-only audit.`,
       ),
   );
@@ -128,14 +127,11 @@ export function registerPrompts(server: McpServer): void {
     },
     ({ passportId }) =>
       userPrompt(
-        `Do a compliance gap-check on the TracePass passport "${passportId}" against its category's regulatory schema.\n\n` +
-          `1. Fetch the passport with tracepass_passports (action: get, format: full) — note its category, field values, field statuses, and which economic-operator parties are set.\n` +
-          `2. Fetch that category's schema with tracepass_templates (action: get) to get the authoritative list of REQUIRED fields and the regulation behind them.\n` +
-          `3. Compare the two. Produce a prioritised gap list:\n` +
-          `   - REQUIRED fields that are empty or not yet approved (block publishing) — cite the regulation article/annex where the schema gives one.\n` +
-          `   - Required economic-operator parties that are missing.\n` +
-          `   - Optional-but-recommended fields worth adding.\n` +
-          `4. End with a one-line verdict: is it publishable now, and if not, the single most important thing to fix first.\n` +
+        `Do a compliance gap-check on the TracePass passport "${passportId}".\n\n` +
+          `1. Run tracepass_passports (action: compliance, args: { id: "${passportId}" }). This returns the authoritative verdict — \`verdict\` (compliant | compliant_with_warnings | incomplete), \`critical\` and \`warnings\` findings (each with the regulation + article it cites), and \`conditionalCoverage\` (whether per-category conditional rules ran, or the category is "static-only" with no binding conditionals yet).\n` +
+          `2. Present the findings as a prioritised list: every \`critical\` finding first (these block compliant publishing — show its target field/party, why, the cited regulation/article, and the fix), then the \`warnings\` (format issues, recommended-not-mandatory gaps, and any "unverifiable_conditional" where data was missing to evaluate a rule).\n` +
+          `3. If you want optional-but-recommended fields beyond what the verdict flags, fetch the category schema with tracepass_templates (action: get) and note high-value optional fields — clearly separated from the mandatory gaps above.\n` +
+          `4. End with the one-line verdict and the single most important thing to fix first. If \`conditionalCoverage\` is "static-only", say so — it means no binding conditional rules exist for this category yet, not that the passport is fully future-proof.\n` +
           `Read-only — do not change field values or publish. The reviewer decides.`,
       ),
   );
