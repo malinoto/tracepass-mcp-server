@@ -88,7 +88,7 @@ const GLAMA_CLAIM = {
  * because discovery precedes auth.
  *
  * Every value here mirrors the real server: `serverInfo` matches
- * `MCP_SERVER_INFO` in server.ts (tracepass / 1.4.2); the capability lists are
+ * `MCP_SERVER_INFO` in server.ts (tracepass / 1.4.4); the capability lists are
  * the exact tool names from tools.ts, resource URIs/templates from
  * resources.ts, and prompt names from prompts.ts. Keep this in sync when
  * capabilities change — a card that over-claims is worse than no card.
@@ -108,10 +108,10 @@ const GLAMA_CLAIM = {
  */
 const SERVER_CARD = {
   name: "tracepass",
-  version: "1.4.2",
+  version: "1.4.4",
   description:
     "Model Context Protocol server for TracePass — the EU Digital Product Passport platform. Manage products, Digital Product Passports, economic-operator parties, and GS1 EPCIS 2.0 supply-chain events.",
-  serverInfo: { name: "tracepass", version: "1.4.2" },
+  serverInfo: { name: "tracepass", version: "1.4.4" },
   transport: {
     type: "streamable-http",
     endpoint: `https://ai.tracepass.eu${MCP_PATH}`,
@@ -253,19 +253,49 @@ function sendAuthChallenge(res: ServerResponse, reason: "missing" | "invalid"): 
   });
 }
 
-/** True if the JSON-RPC body is an `initialize` request — the first call an MCP
- *  client makes when connecting. We validate the credential here so a
- *  present-but-invalid token fails fast with a proper 401 challenge at connect
- *  time, rather than every tool call paying an extra round-trip. */
-function isInitializeRequest(body: string | undefined): boolean {
-  if (!body) return false;
+/**
+ * JSON-RPC methods that DON'T touch the v1 API — pure MCP protocol / discovery.
+ * These are allowed without a credential so catalogs, scanners, and clients can
+ * complete the handshake and enumerate capabilities before the user provides a
+ * token. Everything else (tools/call, resources/read, prompts/get — the methods
+ * whose handlers call the v1 API) requires auth.
+ */
+const PUBLIC_METHODS: ReadonlySet<string> = new Set([
+  "initialize",
+  "notifications/initialized",
+  "ping",
+  "tools/list",
+  "resources/list",
+  "resources/templates/list",
+  "prompts/list",
+  "completion/complete",
+  "logging/setLevel",
+]);
+
+/**
+ * Decide whether the request needs a credential. We require auth unless EVERY
+ * message in the (possibly batched) body is a public, non-API method. A batch
+ * mixing a public method with a tools/call still requires auth (fail closed).
+ * A body we can't parse → require auth (fail closed). Empty/GET bodies (the
+ * transport's SSE stream open) are treated as public so a token-less client can
+ * still establish the stream; the actual tools/call within it is gated.
+ */
+function requestRequiresAuth(body: string | undefined): boolean {
+  if (!body) return false; // GET/SSE open or empty — gate the method calls, not the stream
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(body);
-    const msgs = Array.isArray(parsed) ? parsed : [parsed];
-    return msgs.some((m) => m && typeof m === "object" && m.method === "initialize");
+    parsed = JSON.parse(body);
   } catch {
-    return false;
+    return true; // unparseable → fail closed
   }
+  const msgs = Array.isArray(parsed) ? parsed : [parsed];
+  // Any message that is NOT a recognised public method → needs auth.
+  return msgs.some((m) => {
+    if (!m || typeof m !== "object") return true;
+    const method = (m as { method?: unknown }).method;
+    if (typeof method !== "string") return true; // a response/unknown → fail closed
+    return !PUBLIC_METHODS.has(method);
+  });
 }
 
 /**
@@ -353,29 +383,36 @@ const httpServer = createServer((req, res) => {
         return;
       }
 
-      // A credential is required — no anonymous MCP access. Accepts either a
-      // tp_ API key or an OAuth access token (forwarded verbatim to the v1 API).
-      // A MISSING credential → real 401 + WWW-Authenticate so a discovery-capable
-      // client learns the scheme + the OAuth resource_metadata pointer.
-      const bearerToken = extractBearerToken(req);
-      if (!bearerToken) {
-        sendAuthChallenge(res, "missing");
-        return;
-      }
-
       // Read the body once (the stream is single-use); we both inspect it for
-      // the JSON-RPC method and hand the buffered copy to the transport below.
+      // the JSON-RPC method (to decide auth) and hand the buffered copy to the
+      // transport below.
       const method = req.method ?? "GET";
       const bodyStr =
         method !== "GET" && method !== "HEAD" ? await readBody(req) : undefined;
 
-      // On `initialize` (the first call of an MCP session), validate the token
-      // up front. A PRESENT-but-rejected credential gets a real 401 +
-      // WWW-Authenticate challenge — so an OAuth client knows to refresh /
-      // re-authenticate rather than only seeing an isError tool result. We probe
-      // ONLY on initialize, so tool calls don't pay an extra round-trip; a token
-      // that expires mid-session still surfaces as an isError result on the call.
-      if (isInitializeRequest(bodyStr) && !(await credentialAccepted(bearerToken))) {
+      // Method-aware auth. The MCP HANDSHAKE + DISCOVERY (initialize,
+      // tools/list, prompts/list, resources/list, ping, …) are PUBLIC — no
+      // credential needed — so catalogs/scanners (mcppedia, Glama) and clients
+      // can enumerate capabilities before the user supplies a token. Only the
+      // methods whose handlers actually hit the v1 API (tools/call,
+      // resources/read, prompts/get) require a credential. See PUBLIC_METHODS.
+      const bearerToken = extractBearerToken(req);
+      const needsAuth = requestRequiresAuth(bodyStr);
+
+      // A MISSING credential on an auth-required method → real 401 +
+      // WWW-Authenticate so a discovery-capable client learns the scheme + the
+      // OAuth resource_metadata pointer.
+      if (needsAuth && !bearerToken) {
+        sendAuthChallenge(res, "missing");
+        return;
+      }
+
+      // A PRESENT-but-rejected credential on an auth-required method gets a real
+      // 401 + challenge — so an OAuth client knows to refresh / re-authenticate
+      // rather than only seeing an isError tool result. (Previously probed on
+      // `initialize`; initialize is now public, so we validate on the first
+      // auth-required method instead.)
+      if (needsAuth && bearerToken && !(await credentialAccepted(bearerToken))) {
         sendAuthChallenge(res, "invalid");
         return;
       }
@@ -383,9 +420,11 @@ const httpServer = createServer((req, res) => {
       // Fresh, stateless server + transport per request, bound to this
       // request's credential. The `apiKey` config field carries whatever Bearer
       // token arrived (tp_ key OR OAuth access token) — it's forwarded verbatim;
-      // the v1 API's unified gate validates it. The transport's handleRequest
-      // takes a Web Request and returns a Web Response.
-      const server = createMcpServer({ apiKey: bearerToken, baseUrl: BASE_URL });
+      // the v1 API's unified gate validates it. For a PUBLIC method (no token
+      // required) this is "" — discovery (tools/list etc.) never calls the API,
+      // and the api-client renders a readable 401 if a key-less tool call ever
+      // slips through.
+      const server = createMcpServer({ apiKey: bearerToken ?? "", baseUrl: BASE_URL });
       const transport = new WebStandardStreamableHTTPServerTransport({
         sessionIdGenerator: undefined, // stateless
       });
