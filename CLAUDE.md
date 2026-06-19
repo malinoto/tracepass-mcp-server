@@ -38,6 +38,19 @@ has a token, plus token-expiry retries. A 401 here is not a fault; the path is
 verified working with both `api_key` and `oauth` 200s in prod
 (`apiRequestLog`, 2026-06-18). Don't "fix" the 401s by removing the challenge.
 
+**Auth is METHOD-AWARE, not blanket (since v1.4.4).** The MCP handshake +
+discovery — `initialize`, `tools/list`, `prompts/list`, `resources/list`,
+`ping`, etc. (`PUBLIC_METHODS` in `src/http.ts`) — are served WITHOUT a
+credential; only methods whose handlers hit the v1 API (`tools/call`,
+`resources/read`, `prompts/get`) require a Bearer token. **Why:** MCP catalogs
++ scanners (mcppedia, Glama) probe unauthenticated — when `tools/list` was
+gated behind auth, they got 401 and listed the server as **"0 tools"** (mcppedia
+scored it Grade F) despite 6 tools existing. Discovery must precede auth. The
+gate is fail-closed (unparseable / unknown / batched-mixed body → require auth),
+and `tools/call` still returns a real 401 + `WWW-Authenticate`. Don't re-gate
+`tools/list`/`initialize` — you'll re-break catalog discovery. Verified live
+2026-06-19: anon `tools/list` → 6 tools, `tools/call` → 401.
+
 **Tools call the v1 API over HTTP, not `lib/` in-process** (`src/api-client.ts`).
 Deliberate: the v1 route handlers already own API-key auth, idempotency, the 402
 overage flow, plan-gating, and rate-limit counters — re-implementing that in the
