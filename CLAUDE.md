@@ -60,7 +60,9 @@ negligible. Don't "optimize" this into direct lib calls.
 
 ## Tool/result conventions to preserve
 
-- **5 resource tools, not ~23 flat ones** (`src/tools.ts`). Each takes `action`
+- **6 resource tools, not ~23 flat ones** (`src/tools.ts`: `tracepass_products`,
+  `tracepass_passports`, `tracepass_passport_fields`, `tracepass_passport_parties`,
+  `tracepass_epcis`, `tracepass_templates` — 25 actions total). Each takes `action`
   (enum) + `args` (shape depends on `action`). MCP `inputSchema` can't branch on
   `action`, so `args` is declared permissively and each handler validates against
   the specific per-action Zod schema (`ACTION_SCHEMAS`). When adding an endpoint,
@@ -73,9 +75,12 @@ negligible. Don't "optimize" this into direct lib calls.
 - **Billable / irreversible actions are spelled out in the tool description** so
   the model warns the user first. Keep that discipline when adding actions —
   especially anything that creates passports (billable) or publishes.
-- Resources = read-only context (`tracepass://…` URIs); prompts = workflow seeds
-  that encode TracePass's intended approach (review before publish, no bulk-billable
-  creation without consent). Keep both pure / IO-free where they already are.
+- Resources = read-only context (`tracepass://…` URIs) — they DO I/O (GET-only
+  fetches against the v1 API via the shared client) but never mutate; keep them
+  side-effect-free (no writes, no billable calls). Prompts = workflow seeds that
+  encode TracePass's intended approach (review before publish, no bulk-billable
+  creation without consent) and are genuinely pure (static `GetPromptResult` text,
+  no I/O at registration or get). Keep prompts pure and resources read-only.
 
 ## Releasing (THREE independent channels)
 
