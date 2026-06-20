@@ -6,9 +6,10 @@ v1 REST API. Speaks the full MCP protocol: tools, resources, resource templates,
 prompts. Read `README.md` for usage; this file is the agent guardrail layer.
 
 > **This is a PUBLIC npm package** (`tracepass-mcp-server`, integrators `npx` it).
-> Nothing internal — no prod paths, SSH aliases, secrets, or operational
-> fingerprint — belongs in this repo. That's why ops lives in `tracepass-ops` and
-> the registry key lives in `setup/`, both outside here.
+> Nothing internal — no prod paths, SSH aliases, secrets, hosting details, or
+> operational fingerprint — belongs in this repo. Deploy/ops artefacts and
+> release keys live in private repos kept outside this one. Keep it that way when
+> editing this file.
 
 ## Architecture (the one rule everything serves)
 
@@ -17,7 +18,7 @@ the hosted endpoint and the local package.**
 
 - `src/server.ts` — `createMcpServer(config)`: builds the `McpServer` with all
   tools/resources/prompts. **Transport-agnostic** — knows nothing about stdio vs HTTP.
-- `src/http.ts` — hosted entrypoint (Node service on Hetzner, `https://ai.tracepass.eu/mcp`).
+- `src/http.ts` — hosted entrypoint (the Node service behind `https://ai.tracepass.eu/mcp`).
   Stateless: fresh server+transport per request, credential from `Authorization: Bearer …`.
 - `src/stdio.ts` — local/`npx` entrypoint. Client launches it as a subprocess; key
   from `TRACEPASS_API_KEY` env.
@@ -76,24 +77,23 @@ negligible. Don't "optimize" this into direct lib calls.
   that encode TracePass's intended approach (review before publish, no bulk-billable
   creation without consent). Keep both pure / IO-free where they already are.
 
-## Releasing (THREE independent channels — see the `publish-npm-package` skill)
+## Releasing (THREE independent channels)
 
 A release ships over **three separate channels off the same `src/`** — doing one
-does NOT do the others:
+does NOT do the others, and **publishing to npm does NOT update the hosted
+endpoint**:
 
 1. **npm** — `v*.*.*` git tag push → `.github/workflows/publish.yml` (OIDC), never
    laptop `npm publish`. Bump `package.json` AND `server.json` — note `server.json`
    carries the version in **two** spots (top-level `version` + `packages[0].version`);
    keep `"mcpName": "eu.tracepass/tracepass"`.
-2. **MCP Registry** (`eu.tracepass/tracepass`) — separate manual step: re-auth +
-   `mcp-publisher validate && publish` with the Ed25519 key at
-   `~/projects/dpp/setup/mcp-registry-key/key.pem` (public half is the `tracepass.eu`
-   DNS TXT record; same key re-auths every version — never lose or commit it).
-3. **Hosted endpoint** (`ai.tracepass.eu/mcp`) — `bash ../tracepass-ops/mcp/deploy.sh`
-   rsyncs THIS source tree and rebuilds `src/http.ts` in-image. It does **not** pull
-   the npm version — so **publishing to npm leaves the hosted server stale until you
-   run this deploy**. PROD; get explicit go. Verify the live container reports the new
-   version + routes any new path.
+2. **MCP Registry** (`eu.tracepass/tracepass`) — separate `mcp-publisher` step,
+   DNS-namespace auth.
+3. **Hosted endpoint** (`ai.tracepass.eu/mcp`) — a separate redeploy of this source.
+
+The exact release/deploy procedure (auth, keys, deploy mechanics) is internal —
+it is **not** documented in this public repo. Run the `publish-npm-package` skill,
+which holds the full steps.
 
 ## Before changing anything
 
@@ -104,4 +104,6 @@ does NOT do the others:
   those in sync if tool/config surface changes.
 
 ---
-*Part of the **TracePass workspace** (`~/projects/dpp`). Workspace-wide map, skills, and conventions live in `../.claude/` (CLAUDE.md + skills/ + agents/). Check there for cross-repo procedures (releases, category templates, locale passes, brand images) before reinventing them.*
+*The v1 API contract is owned by the TracePass platform; release procedures and
+cross-repo conventions live in the private workspace tooling, not in this public
+repo.*
