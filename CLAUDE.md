@@ -44,13 +44,27 @@ discovery — `initialize`, `tools/list`, `prompts/list`, `resources/list`,
 `ping`, etc. (`PUBLIC_METHODS` in `src/http.ts`) — are served WITHOUT a
 credential; only methods whose handlers hit the v1 API (`tools/call`,
 `resources/read`, `prompts/get`) require a Bearer token. **Why:** MCP catalogs
-+ scanners (mcppedia, Glama) probe unauthenticated — when `tools/list` was
-gated behind auth, they got 401 and listed the server as **"0 tools"** (mcppedia
-scored it Grade F) despite 6 tools existing. Discovery must precede auth. The
-gate is fail-closed (unparseable / unknown / batched-mixed body → require auth),
-and `tools/call` still returns a real 401 + `WWW-Authenticate`. Don't re-gate
-`tools/list`/`initialize` — you'll re-break catalog discovery. Verified live
-2026-06-19: anon `tools/list` → 6 tools, `tools/call` → 401.
++ scanners (Glama and some others) probe unauthenticated — when `tools/list` was
+gated behind auth, they got 401 and listed the server as **"0 tools"** despite 6
+tools existing. Discovery must precede auth. The gate is fail-closed (unparseable
+/ unknown / batched-mixed body → require auth), and `tools/call` still returns a
+real 401 + `WWW-Authenticate`. Don't re-gate `tools/list`/`initialize` — you'll
+re-break catalog discovery. Verified live 2026-06-19: anon `tools/list` → 6
+tools, `tools/call` → 401.
+
+**mcppedia is a SEPARATE case — it does NOT introspect the live server; it parses
+the GitHub README.** Its `bots/extract-schemas.ts` feeds the README to Claude
+Haiku (regex fallback if that fails) and writes the result to a `servers.tools` DB
+column; the daily score bot reads that column, never the endpoint. So making
+`tools/list` public did nothing for mcppedia's "0 tools" Grade-F — the lever is
+the **README**. The 6 tools must appear as parseable ``\`tool_name\` — description``
+lines (Haiku's format and the regex fallback) **within the first 8000 chars** of
+`README.md` — the extractor only reads `readme.slice(0, 8000)`. Keep that block
+early and don't let README growth push it past 8000 bytes. mcppedia re-extracts
+rows whose `tools` column is `[]` daily, so a parseable README self-heals the
+score on the next run; no maintainer action needed. (Their `refresh-score`
+endpoint is maintainer-gated AND only recomputes from the stored column — it
+won't re-extract, so it can't fix this either.)
 
 **Tools call the v1 API over HTTP, not `lib/` in-process** (`src/api-client.ts`).
 Deliberate: the v1 route handlers already own API-key auth, idempotency, the 402

@@ -99,8 +99,17 @@ TracePass deployment.
 
 ## Tools
 
-The TracePass v1 API operations are grouped into **6 tools**,
-each taking an `action` plus action-specific `args`:
+The TracePass v1 API operations are grouped into **6 tools**.
+Each takes an action enum plus action-specific arguments. The tools are:
+
+- `tracepass_products` - manage the product catalogue (list, get, create, update products).
+- `tracepass_passports` - manage Digital Product Passports (list, get, compliance check, create, suspend, archive, get QR), by id or by serial.
+- `tracepass_passport_fields` - update a passport's category-specific data fields, by id or by serial.
+- `tracepass_passport_parties` - set or remove a passport's economic-operator parties (manufacturer, importer, etc.).
+- `tracepass_epcis` - export, capture, and query a passport's GS1 EPCIS 2.0 supply-chain events.
+- `tracepass_templates` - list and get the DPP category regulatory field schemas.
+
+Each tool's full action set:
 
 | Tool | Actions |
 |------|---------|
