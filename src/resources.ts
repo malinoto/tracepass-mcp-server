@@ -156,6 +156,29 @@ export function registerResources(
     },
   );
 
+  // ── Template: a passport's registry-readiness verdict ─────────
+  server.registerResource(
+    "passport-registry-readiness",
+    new ResourceTemplate("tracepass://passport/{id}/registry-readiness", {
+      list: undefined,
+    }),
+    {
+      title: "Passport registry-readiness verdict",
+      description:
+        "Whether a passport would pass the EU DPP Registry's FORMAL submission gate — { ready, findings[] } covering mandatory-field presence, correct formatting, and a resolvable public link. This is the registry's mechanical pre-submission check, NOT the substantive compliance verdict; a passport can be registry-ready yet not substantively compliant. Battery passports only. tracepass://passport/{id}/registry-readiness.",
+      mimeType: "application/json",
+    },
+    async (uri, variables) => {
+      const id = String(variables.id);
+      const res = await client.get(
+        `/api/v1/passports/${encodeURIComponent(id)}/registry-readiness`,
+      );
+      return res.ok
+        ? jsonContents(uri.href, res.body)
+        : errorContents(uri.href, res.status, res.body);
+    },
+  );
+
   // ── Static resource: the DPP regulatory schemas (all categories) ──
   server.registerResource(
     "templates",

@@ -306,6 +306,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "- get — args: { id, format? (summary|full), lang? }. Read-only.\n" +
       "- get_by_serial — args: { serial, format?, lang?, gtin? }. Read-only. Addresses the passport by your own serial. A serial is unique only WITHIN a GTIN — if the same serial exists under two GTINs in your account the call returns 409 ambiguous_serial; pass `gtin` (or use the by-id action) to resolve exactly.\n" +
       "- compliance — args: { id }. Read-only. Returns a three-tier compliance verdict (compliant | compliant_with_warnings | incomplete) with regulation-cited findings — use to gap-check a passport against the rules for its category, fix the cited fields/parties, then re-check.\n" +
+      "- registry_readiness — args: { id }. Read-only. Returns { ready, findings[] } — whether the passport would pass the EU DPP Registry's FORMAL submission gate (mandatory fields present, correct formatting, a resolvable public link). This is the registry's mechanical pre-submission check, NOT the substantive compliance verdict; a passport can be registry-ready yet not substantively compliant. Battery passports only.\n" +
       "- create — args: { productId, gtin, serialNumber, confirmOverage? }. BILLABLE.\n" +
       "- suspend — args: { id }. Reversible — public QR shows 'suspended'.\n" +
       "- suspend_by_serial — args: { serial, gtin? }. Same as suspend, addressed by your serial. 409 ambiguous_serial if the serial isn't unique in your account — pass `gtin`.\n" +
@@ -319,6 +320,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           "get",
           "get_by_serial",
           "compliance",
+          "registry_readiness",
           "create",
           "suspend",
           "suspend_by_serial",
@@ -327,7 +329,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           "get_qr",
         ])
         .describe(
-          "Which passport operation to run. Reads: list | get | get_by_serial | compliance | get_qr. Lifecycle: create (BILLABLE) | suspend (reversible) | archive (IRREVERSIBLE), each with a _by_serial variant.",
+          "Which passport operation to run. Reads: list | get | get_by_serial | compliance | registry_readiness | get_qr. Lifecycle: create (BILLABLE) | suspend (reversible) | archive (IRREVERSIBLE), each with a _by_serial variant.",
         ),
       args: z
         .object({
@@ -378,6 +380,11 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           const p = parseArgs(SCHEMAS.passportId, a.args, "tracepass_passports", action);
           if (isErr(p)) return p;
           return apiResult(await client.get(`/api/v1/passports/${seg(p.id)}/compliance`));
+        }
+        case "registry_readiness": {
+          const p = parseArgs(SCHEMAS.passportId, a.args, "tracepass_passports", action);
+          if (isErr(p)) return p;
+          return apiResult(await client.get(`/api/v1/passports/${seg(p.id)}/registry-readiness`));
         }
         case "create": {
           const p = parseArgs(SCHEMAS.passportCreate, a.args, "tracepass_passports", action);

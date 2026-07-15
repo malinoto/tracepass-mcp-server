@@ -103,7 +103,7 @@ The TracePass v1 API operations are grouped into **6 tools**.
 Each takes an action enum plus action-specific arguments. The tools are:
 
 - `tracepass_products` - manage the product catalogue (list, get, create, update products).
-- `tracepass_passports` - manage Digital Product Passports (list, get, compliance check, create, suspend, archive, get QR), by id or by serial.
+- `tracepass_passports` - manage Digital Product Passports (list, get, compliance check, registry-readiness check, create, suspend, archive, get QR), by id or by serial.
 - `tracepass_passport_fields` - update a passport's category-specific data fields, by id or by serial.
 - `tracepass_passport_parties` - set or remove a passport's economic-operator parties (manufacturer, importer, etc.).
 - `tracepass_epcis` - export, capture, and query a passport's GS1 EPCIS 2.0 supply-chain events.
@@ -114,7 +114,7 @@ Each tool's full action set:
 | Tool | Actions |
 |------|---------|
 | `tracepass_products` | `list`, `get`, `create`, `update` |
-| `tracepass_passports` | `list`, `get`, `get_by_serial`, `compliance`, `create`, `suspend`, `suspend_by_serial`, `archive`, `archive_by_serial`, `get_qr` |
+| `tracepass_passports` | `list`, `get`, `get_by_serial`, `compliance`, `registry_readiness`, `create`, `suspend`, `suspend_by_serial`, `archive`, `archive_by_serial`, `get_qr` |
 | `tracepass_passport_fields` | `update`, `update_by_serial` |
 | `tracepass_passport_parties` | `set`, `remove` |
 | `tracepass_epcis` | `export`, `export_by_serial`, `capture`, `capture_job`, `query` |
@@ -158,6 +158,7 @@ Read-only entity data you can attach as conversation context:
 - `tracepass://passport/{id}` — one passport, full field detail
 - `tracepass://passport/{id}/epcis` — a passport's EPCIS 2.0 events
 - `tracepass://passport/{id}/compliance` — a passport's compliance verdict
+- `tracepass://passport/{id}/registry-readiness` — whether a passport would pass the EU DPP Registry's formal submission gate (battery only)
 - `tracepass://templates` — all 12 DPP category regulatory schemas
 - `tracepass://template/{category}` — one category's full field schema
 

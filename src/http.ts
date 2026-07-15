@@ -108,10 +108,10 @@ const GLAMA_CLAIM = {
  */
 const SERVER_CARD = {
   name: "tracepass",
-  version: "1.4.4",
+  version: "1.5.0",
   description:
     "Model Context Protocol server for TracePass — the EU Digital Product Passport platform. Manage products, Digital Product Passports, economic-operator parties, and GS1 EPCIS 2.0 supply-chain events.",
-  serverInfo: { name: "tracepass", version: "1.4.4" },
+  serverInfo: { name: "tracepass", version: "1.5.0" },
   transport: {
     type: "streamable-http",
     endpoint: `https://ai.tracepass.eu${MCP_PATH}`,
@@ -149,6 +149,7 @@ const SERVER_CARD = {
       "tracepass://passport/{id}",
       "tracepass://passport/{id}/epcis",
       "tracepass://passport/{id}/compliance",
+      "tracepass://passport/{id}/registry-readiness",
       "tracepass://template/{category}",
     ],
     prompts: [
