@@ -192,6 +192,11 @@ const SCHEMAS = {
     id: z.string().min(1),
     format: z.enum(["svg", "png"]).optional(),
   }),
+  passportQrBySerial: z.object({
+    serial: z.string().min(1),
+    format: z.enum(["svg", "png"]).optional(),
+    gtin: z.string().optional(),
+  }),
 
   fieldUpdate: z.object({
     id: z.string().min(1),
@@ -312,7 +317,8 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "- suspend_by_serial — args: { serial, gtin? }. Same as suspend, addressed by your serial. 409 ambiguous_serial if the serial isn't unique in your account — pass `gtin`.\n" +
       "- archive — args: { id }. IRREVERSIBLE — confirm with the user first.\n" +
       "- archive_by_serial — args: { serial, gtin? }. IRREVERSIBLE, addressed by your serial — confirm first. 409 ambiguous_serial if the serial isn't unique — pass `gtin`.\n" +
-      "- get_qr — args: { id, format? (svg|png) }. Read-only.",
+      "- get_qr — args: { id, format? (svg|png) }. Read-only.\n" +
+      "- get_qr_by_serial — args: { serial, format? (svg|png), gtin? }. Read-only. Same as get_qr, addressed by your own serial. A serial is unique only WITHIN a GTIN — if the same serial exists under two GTINs in your account the call returns 409 ambiguous_serial; pass `gtin` (or use get_qr by id) to resolve exactly.",
     inputSchema: {
       action: z
         .enum([
@@ -327,9 +333,10 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           "archive",
           "archive_by_serial",
           "get_qr",
+          "get_qr_by_serial",
         ])
         .describe(
-          "Which passport operation to run. Reads: list | get | get_by_serial | compliance | registry_readiness | get_qr. Lifecycle: create (BILLABLE) | suspend (reversible) | archive (IRREVERSIBLE), each with a _by_serial variant.",
+          "Which passport operation to run. Reads: list | get | get_by_serial | compliance | registry_readiness | get_qr | get_qr_by_serial. Lifecycle: create (BILLABLE) | suspend (reversible) | archive (IRREVERSIBLE), each with a _by_serial variant.",
         ),
       args: z
         .object({
@@ -339,7 +346,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           productId: z.string().optional().describe("Parent product id. Required for create."),
           serialNumber: z.string().optional().describe("Serial for the new passport. Required for create."),
           confirmOverage: z.boolean().optional().describe("Set true to accept a per-passport overage charge when create is over the plan quota (402)."),
-          format: z.string().optional().describe("get/get_by_serial: summary|full. get_qr: svg|png."),
+          format: z.string().optional().describe("get/get_by_serial: summary|full. get_qr/get_qr_by_serial: svg|png."),
           lang: z.string().optional().describe("Resolve field values to one of the 24 EU locales server-side (get/get_by_serial)."),
           page: z.number().optional().describe("Page number for list (1-based)."),
           limit: z.number().optional().describe("Page size for list, max 100."),
@@ -426,6 +433,15 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           if (isErr(p)) return p;
           return apiResult(
             await client.get(`/api/v1/passports/${seg(p.id)}/qr${qs({ format: p.format })}`),
+          );
+        }
+        case "get_qr_by_serial": {
+          const p = parseArgs(SCHEMAS.passportQrBySerial, a.args, "tracepass_passports", action);
+          if (isErr(p)) return p;
+          return apiResult(
+            await client.get(
+              `/api/v1/passports/by-serial/${seg(p.serial)}/qr${qs({ format: p.format, gtin: p.gtin })}`,
+            ),
           );
         }
         default:

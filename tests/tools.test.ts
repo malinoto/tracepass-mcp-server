@@ -160,6 +160,16 @@ describe("tracepass_passports — billable + lifecycle actions", () => {
     expect(calls[0]!.path).toBe("/api/v1/passports/by-serial/SN-1/suspend?gtin=09506000134369");
     expect(calls[0]!.method).toBe("POST");
   });
+
+  it("get_qr_by_serial GETs the by-serial qr endpoint with format + gtin", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({
+      action: "get_qr_by_serial",
+      args: { serial: "SN-1", format: "png", gtin: "09506000134369" },
+    });
+    expect(calls[0]!.path).toBe("/api/v1/passports/by-serial/SN-1/qr?format=png&gtin=09506000134369");
+    expect(calls[0]!.method).toBe("GET");
+  });
 });
 
 describe("tracepass_passport_fields — actions", () => {

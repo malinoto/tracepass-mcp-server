@@ -76,7 +76,7 @@ negligible. Don't "optimize" this into direct lib calls.
 
 - **6 resource tools, not ~23 flat ones** (`src/tools.ts`: `tracepass_products`,
   `tracepass_passports`, `tracepass_passport_fields`, `tracepass_passport_parties`,
-  `tracepass_epcis`, `tracepass_templates` — 25 actions total). Each takes `action`
+  `tracepass_epcis`, `tracepass_templates` — 26 actions total). Each takes `action`
   (enum) + `args` (shape depends on `action`). MCP `inputSchema` can't branch on
   `action`, so `args` is declared permissively and each handler validates against
   the specific per-action Zod schema (`ACTION_SCHEMAS`). When adding an endpoint,
