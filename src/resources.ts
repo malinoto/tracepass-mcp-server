@@ -165,7 +165,7 @@ export function registerResources(
     {
       title: "Passport registry-readiness verdict",
       description:
-        "Whether a passport would pass the EU DPP Registry's FORMAL submission gate — { ready, findings[] } covering mandatory-field presence, correct formatting, and a resolvable public link. This is the registry's mechanical pre-submission check, NOT the substantive compliance verdict; a passport can be registry-ready yet not substantively compliant. Battery passports only. tracepass://passport/{id}/registry-readiness.",
+        "Whether a passport would pass the EU DPP Registry's FORMAL submission gate — { ready, findings[] } covering mandatory-field presence, correct formatting, a resolvable public link, item-level granularity (a serial number), and a well-formed commodity code where the category carries one. This is the registry's mechanical pre-submission check, NOT the substantive compliance verdict; a passport can be registry-ready yet not substantively compliant. Battery passports only. tracepass://passport/{id}/registry-readiness.",
       mimeType: "application/json",
     },
     async (uri, variables) => {
