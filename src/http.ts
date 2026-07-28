@@ -35,7 +35,7 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { createMcpServer } from "./server.js";
+import { createMcpServer, MCP_SERVER_INFO } from "./server.js";
 
 const PORT = Number(process.env.PORT) || 8080;
 const DEFAULT_BASE_URL = "https://app.tracepass.eu";
@@ -87,8 +87,9 @@ const GLAMA_CLAIM = {
  * server is and what it offers WITHOUT connecting — served unauthenticated
  * because discovery precedes auth.
  *
- * Every value here mirrors the real server: `serverInfo` matches
- * `MCP_SERVER_INFO` in server.ts (tracepass / 1.6.0); the capability lists are
+ * Every value here mirrors the real server: `serverInfo` reuses
+ * `MCP_SERVER_INFO` from server.ts rather than re-typing the version, so a
+ * release can't leave the card reporting a stale one; the capability lists are
  * the exact tool names from tools.ts, resource URIs/templates from
  * resources.ts, and prompt names from prompts.ts. Keep this in sync when
  * capabilities change — a card that over-claims is worse than no card.
@@ -107,11 +108,11 @@ const GLAMA_CLAIM = {
  * must not drift.
  */
 const SERVER_CARD = {
-  name: "tracepass",
-  version: "1.6.0",
+  name: MCP_SERVER_INFO.name,
+  version: MCP_SERVER_INFO.version,
   description:
     "Model Context Protocol server for TracePass — the EU Digital Product Passport platform. Manage products, Digital Product Passports, economic-operator parties, and GS1 EPCIS 2.0 supply-chain events.",
-  serverInfo: { name: "tracepass", version: "1.6.0" },
+  serverInfo: { name: MCP_SERVER_INFO.name, version: MCP_SERVER_INFO.version },
   transport: {
     type: "streamable-http",
     endpoint: `https://ai.tracepass.eu${MCP_PATH}`,

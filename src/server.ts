@@ -19,11 +19,16 @@ import { registerResources } from "./resources.js";
 import { registerPrompts } from "./prompts.js";
 import { errorResult } from "./result.js";
 
-/** Server identity reported to MCP clients. Bump `version` on a
- *  meaningful tool-surface change. */
+/** Server identity reported to MCP clients.
+ *
+ *  THIS IS THE ONLY PLACE THE VERSION IS WRITTEN. `http.ts` reads it for both
+ *  the server card and the initialize response — do not re-type the literal
+ *  there. Keep it in step with `package.json` + `server.json` on a release;
+ *  a stale value here makes a correct deploy look like a failed one, because
+ *  the endpoint keeps reporting the old version while serving the new code. */
 export const MCP_SERVER_INFO = {
   name: "tracepass",
-  version: "1.6.0",
+  version: "1.7.1",
 } as const;
 
 export interface CreateMcpServerConfig {
