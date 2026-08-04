@@ -106,7 +106,7 @@ export function registerPrompts(server: McpServer): void {
       userPrompt(
         `Explain what a compliant "${category}" Digital Product Passport requires under EU regulation.\n\n` +
           `1. Fetch the schema with tracepass_templates (action: get, args: { category: "${category}" }).\n` +
-          `2. State the governing regulation (name + number + mandatory date) and how many of the fields are REQUIRED vs optional.\n` +
+          `2. State the governing regulation (name + number + mandatory date) and how many of the fields are REQUIRED vs optional. If the response carries requiredFieldCountByCategory, required-ness VARIES by product category — give the per-category figures, not the flat requiredFieldCount, and say which category each applies to. For battery specifically: only EV, LMT and industrial >2 kWh owe a passport at all (Art. 77(1)); if I named a portable or SLI battery, say it is out of scope rather than listing required fields.\n` +
           `3. Group the required fields by their access level (public / restricted / authority) and, where a field cites a regulation article/annex, name it — so I understand WHY each field is needed, not just that it is.\n` +
           `4. Call out anything that is commonly hard to source (e.g. supplier-held data, test reports) so I can plan ahead.\n` +
           `This is advisory and read-only — do not create a product or passport.`,
