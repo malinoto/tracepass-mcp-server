@@ -638,7 +638,12 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     description:
       "Discover the regulatory field schema for each DPP category — what a COMPLIANT passport must contain, per the governing EU regulation. Read-only reference data. Use this to advise on requirements before creating products/passports, and to gap-check a draft against the rules.\n\nActions (pass via `action`, with `args`):\n" +
       "- list — args: {}. Lists all 12 categories with their field count, required-field count, and governing regulation (name + number + effective/mandatory dates).\n" +
-      "- get — args: { category }. Full field schema for one category: every field's key, label, dataType, whether it is REQUIRED, its access level (public/restricted/authority), enum options, validation bounds, and — where known — the regulation article/annex that mandates it. `category` is one of: battery, textile, electronics, construction, steel, chemicals, packaging, furniture, tyres, jewelry, toys, fmcg.",
+      "- get — args: { category }. Full field schema for one category: every field's key, label, dataType, whether it is REQUIRED, its access level (public/restricted/authority), enum options, validation bounds, and — where known — the regulation article/annex that mandates it. `category` is one of: battery, textile, electronics, construction, steel, chemicals, packaging, furniture, tyres, jewelry, toys, fmcg.\n\n" +
+      "BATTERY — required-ness is per-category, so `required` alone is the wrong answer. Resolve it in this order:\n" +
+      "  1. SCOPE FIRST. Only EV, LMT and industrial_gt_2kwh batteries owe a passport at all (Art. 77(1), Reg (EU) 2023/1542). For portable, SLI or industrial_lte_2kwh, NO field is required — do not list mandatory fields for them; say the battery is out of scope.\n" +
+      "  2. Then `requiredBy[batteryCategory]` where the field carries that map (required | conditional | notApplicable).\n" +
+      "  3. Then fall back to `required`.\n" +
+      "The map is keyed ONLY by the three in-scope categories, so skipping step 1 falls through to `required` and invents an obligation the Regulation does not impose. Note also that EV and LMT report state-of-health through MUTUALLY EXCLUSIVE field sets — an EV battery must leave the remaining-capacity cluster empty and an LMT battery must leave stateOfCertifiedEnergy empty, so no single battery ever fills every field.",
     inputSchema: {
       action: z
         .enum(["list", "get"])
