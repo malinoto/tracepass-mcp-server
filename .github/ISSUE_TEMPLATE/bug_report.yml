@@ -1,0 +1,42 @@
+name: Bug report
+description: Something in this package behaves differently from its documentation
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. This package is a thin client over the TracePass v1
+        REST API — if the API itself returned the wrong data, say so and we'll
+        route it to the platform rather than fixing it here.
+
+        **Never paste a real API key.** Redact it as `tp_REDACTED`.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: input
+    id: surface
+    attributes:
+      label: Tool + action (e.g. tracepass_products / create_batch)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: "Transport: hosted (ai.tracepass.eu/mcp) or local stdio (npx)?"
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: MCP client (Claude Desktop, Claude.ai, Cursor, mcp-inspector…) and its version
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Request and response (redact any key)
+      description: The arguments you passed and what came back, including the HTTP status if you have it.
+      render: text

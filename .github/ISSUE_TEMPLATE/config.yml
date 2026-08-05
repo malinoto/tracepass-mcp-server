@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/malinoto/tracepass-mcp-server/blob/master/SECURITY.md
+    about: Do NOT open a public issue. Report privately per the security policy.
+  - name: Question about the TracePass API or your account
+    url: https://www.tracepass.eu/docs
+    about: API behaviour, plans and account questions are handled in the docs or at support@tracepass.eu.
