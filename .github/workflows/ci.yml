@@ -1,0 +1,61 @@
+# Runs the same gates as the publish workflow, but on every push and pull
+# request instead of only on a `v*.*.*` tag.
+#
+# WHY: publishing was previously the FIRST time anything was checked. An external
+# pull request got no automated feedback at all, and a regression was only caught
+# at release time — by which point the tag is already cut. CONTRIBUTING.md asks
+# contributors to run these locally; this makes that verifiable rather than
+# trusted.
+#
+# Deliberately NOT a release path: no OIDC token, no publish step, `contents:
+# read` only. A fork PR can run this safely because it can do nothing but report.
+
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  # A new push to the same branch/PR supersedes an in-flight run — no point
+  # finishing a check against code that has already been replaced.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Lint, typecheck, test, build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          # Matches the `engines.node` floor in package.json.
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      # Last, because it is the slowest and the earlier steps localise a failure
+      # better — a type error reported by `typecheck` is clearer than the same
+      # error surfacing from `tsc` during a build.
+      - name: Build
+        run: npm run build
