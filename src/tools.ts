@@ -155,6 +155,23 @@ const SCHEMAS = {
     .refine((v) => v.name || v.model || v.description !== undefined, {
       message: "pass at least one of name, model, description",
     }),
+  productArchive: z.object({ id: z.string().min(1) }),
+  productCreateBatch: z.object({
+    // The platform caps a batch at 100 and rejects the WHOLE request with 429
+    // if it would exceed the daily write cap — so validating the length here
+    // turns a wasted round-trip into an immediate, explainable error.
+    products: z
+      .array(
+        z.object({
+          name: z.string().min(1).max(200),
+          model: z.string().min(1).max(100),
+          category: z.string().min(1),
+          description: z.string().max(2000).optional(),
+        }),
+      )
+      .min(1)
+      .max(100),
+  }),
 
   passportList: z.object({
     page: z.number().int().positive().optional(),
@@ -246,11 +263,15 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "- list — args: { page?, limit? (≤100), category?, status?, search? }. Read-only.\n" +
       "- get — args: { id }. Read-only.\n" +
       "- create — args: { name, model, category, description? }. `category` is one of: battery, textile, electronics, construction, steel, chemicals, packaging, furniture, tyres, jewelry, toys, fmcg.\n" +
-      "- update — args: { id, name?, model?, description? }; pass at least one field to change.",
+      "- update — args: { id, name?, model?, description? }; pass at least one field to change.\n" +
+      "- create_batch — args: { products: [ { name, model, category, description? }, … ] }, up to 100. Partial-success: the response carries a per-item status, so some items can be created while others error. The whole batch consumes N writes upfront; if that would exceed the daily cap NOTHING is created (429).\n" +
+      "- archive — args: { id }. Soft-archive a product. Blocked with 409 while any non-archived passport still references it — archive those passports first. This is reversible and is NOT deletion.",
     inputSchema: {
       action: z
-        .enum(["list", "get", "create", "update"])
-        .describe("Which product operation to run: list | get | create | update."),
+        .enum(["list", "get", "create", "create_batch", "update", "archive"])
+        .describe(
+          "Which product operation to run: list | get | create | create_batch | update | archive.",
+        ),
       args: z
         .object({
           id: z.string().optional().describe("Product id. Required for get and update."),
@@ -262,6 +283,12 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           limit: z.number().optional().describe("Page size for list, max 100."),
           status: z.string().optional().describe("Filter list by product status."),
           search: z.string().optional().describe("Filter list by a search term."),
+          products: z
+            .array(z.record(z.string(), z.unknown()))
+            .optional()
+            .describe(
+              "Products to create for create_batch: [{ name, model, category, description? }], max 100.",
+            ),
         })
         .partial()
         .optional()
@@ -287,11 +314,21 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           if (isErr(p)) return p;
           return apiResult(await client.post("/api/v1/products", p));
         }
+        case "create_batch": {
+          const p = parseArgs(SCHEMAS.productCreateBatch, a.args, "tracepass_products", action);
+          if (isErr(p)) return p;
+          return apiResult(await client.post("/api/v1/products/batch", p));
+        }
         case "update": {
           const p = parseArgs(SCHEMAS.productUpdate, a.args, "tracepass_products", action);
           if (isErr(p)) return p;
           const { id, ...patch } = p;
           return apiResult(await client.patch(`/api/v1/products/${seg(id)}`, patch));
+        }
+        case "archive": {
+          const p = parseArgs(SCHEMAS.productArchive, a.args, "tracepass_products", action);
+          if (isErr(p)) return p;
+          return apiResult(await client.post(`/api/v1/products/${seg(p.id)}/archive`));
         }
         default:
           return errorResult(`Unknown action "${action}" for tracepass_products.`);

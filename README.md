@@ -102,7 +102,7 @@ TracePass deployment.
 The TracePass v1 API operations are grouped into **6 tools**.
 Each takes an action enum plus action-specific arguments. The tools are:
 
-- `tracepass_products` - manage the product catalogue (list, get, create, update products).
+- `tracepass_products` - manage the product catalogue (list, get, create, create_batch, update, archive products).
 - `tracepass_passports` - manage Digital Product Passports (list, get, compliance check, registry-readiness check, create, suspend, archive, get QR), by id or by serial.
 - `tracepass_passport_fields` - update a passport's category-specific data fields, by id or by serial.
 - `tracepass_passport_parties` - set or remove a passport's economic-operator parties (manufacturer, importer, etc.).
@@ -113,7 +113,7 @@ Each tool's full action set:
 
 | Tool | Actions |
 |------|---------|
-| `tracepass_products` | `list`, `get`, `create`, `update` |
+| `tracepass_products` | `list`, `get`, `create`, `create_batch`, `update`, `archive` |
 | `tracepass_passports` | `list`, `get`, `get_by_serial`, `compliance`, `registry_readiness`, `create`, `suspend`, `suspend_by_serial`, `archive`, `archive_by_serial`, `get_qr`, `get_qr_by_serial` |
 | `tracepass_passport_fields` | `update`, `update_by_serial` |
 | `tracepass_passport_parties` | `set`, `remove` |
