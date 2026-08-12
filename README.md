@@ -107,7 +107,7 @@ Each takes an action enum plus action-specific arguments. The tools are:
 - `tracepass_passport_fields` - update a passport's category-specific data fields, by id or by serial.
 - `tracepass_passport_parties` - set or remove a passport's economic-operator parties (manufacturer, importer, etc.).
 - `tracepass_epcis` - export, capture, and query a passport's GS1 EPCIS 2.0 supply-chain events.
-- `tracepass_templates` - list and get the DPP category regulatory field schemas.
+- `tracepass_templates` - list and get the DPP category field schemas, each field traced to the EU instrument that mandates it.
 
 Each tool's full action set:
 
@@ -134,6 +134,11 @@ missing economic-operator parties, format issues, and per-category
 conditional rules. Read-only; use it to gap-check a passport, fix the
 cited gaps, then re-check.
 
+A **`compliant` verdict means this passport satisfies the rules encoded here**,
+not *this product may be placed on the market*. The field specifications are
+hand-authored from the regulations, not an official EU artefact, and delegated
+acts are still landing. It is not legal advice.
+
 ### A note on writes
 
 Some actions **cost money or are irreversible** — the server's tool
@@ -158,8 +163,8 @@ Read-only entity data you can attach as conversation context:
 - `tracepass://passport/{id}` — one passport, full field detail
 - `tracepass://passport/{id}/epcis` — a passport's EPCIS 2.0 events
 - `tracepass://passport/{id}/compliance` — a passport's compliance verdict
-- `tracepass://passport/{id}/registry-readiness` — whether a passport would pass the EU DPP Registry's formal submission gate (battery only)
-- `tracepass://templates` — all 12 DPP category regulatory schemas
+- `tracepass://passport/{id}/registry-readiness` — a mechanical pre-submission check modelled on the EU DPP Registry's formal gate: mandatory-field presence, formatting, a resolvable public link, item-level granularity, a well-formed commodity code. Not the substantive compliance verdict, and not a prediction of the real registry's response — its registration API has no published spec. Battery only.
+- `tracepass://templates` — all 12 DPP category field schemas
 - `tracepass://template/{category}` — one category's full field schema
 
 ## Prompts
