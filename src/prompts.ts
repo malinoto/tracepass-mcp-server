@@ -72,7 +72,7 @@ export function registerPrompts(server: McpServer): void {
         category: z
           .string()
           .describe(
-            "Category key — battery, textile, electronics, construction, steel, chemicals, packaging, furniture, tyres, jewelry, toys, or fmcg.",
+            "Category key — battery, textile, electronics, construction, steel, detergents, paints-coatings, packaging, furniture, tyres, jewelry, toys, or fmcg.",
           ),
       },
     },
@@ -98,7 +98,7 @@ export function registerPrompts(server: McpServer): void {
         category: z
           .string()
           .describe(
-            "Category key — battery, textile, electronics, construction, steel, chemicals, packaging, furniture, tyres, jewelry, toys, or fmcg.",
+            "Category key — battery, textile, electronics, construction, steel, detergents, paints-coatings, packaging, furniture, tyres, jewelry, toys, or fmcg.",
           ),
       },
     },

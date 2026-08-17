@@ -164,7 +164,7 @@ Read-only entity data you can attach as conversation context:
 - `tracepass://passport/{id}/epcis` — a passport's EPCIS 2.0 events
 - `tracepass://passport/{id}/compliance` — a passport's compliance verdict
 - `tracepass://passport/{id}/registry-readiness` — a mechanical pre-submission check modelled on the EU DPP Registry's formal gate: mandatory-field presence, formatting, a resolvable public link, item-level granularity, a well-formed commodity code. Not the substantive compliance verdict, and not a prediction of the real registry's response — its registration API has no published spec. Battery only.
-- `tracepass://templates` — all 12 DPP category field schemas
+- `tracepass://templates` — all 13 DPP category field schemas
 - `tracepass://template/{category}` — one category's full field schema
 
 ## Prompts

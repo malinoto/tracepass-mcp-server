@@ -262,7 +262,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "Manage the TracePass product catalogue. A product is the catalogue layer — one product can have many passports (one per serialised unit). Products are not billable on their own.\n\nActions (pass via `action`, with `args`):\n" +
       "- list — args: { page?, limit? (≤100), category?, status?, search? }. Read-only.\n" +
       "- get — args: { id }. Read-only.\n" +
-      "- create — args: { name, model, category, description? }. `category` is one of: battery, textile, electronics, construction, steel, chemicals, packaging, furniture, tyres, jewelry, toys, fmcg.\n" +
+      "- create — args: { name, model, category, description? }. `category` is one of: battery, textile, electronics, construction, steel, detergents, paints-coatings, packaging, furniture, tyres, jewelry, toys, fmcg.\n" +
       "- update — args: { id, name?, model?, description? }; pass at least one field to change.\n" +
       "- create_batch — args: { products: [ { name, model, category, description? }, … ] }, up to 100. Partial-success: the response carries a per-item status, so some items can be created while others error. The whole batch consumes N writes upfront; if that would exceed the daily cap NOTHING is created (429).\n" +
       "- archive — args: { id }. Soft-archive a product. Blocked with 409 while any non-archived passport still references it — archive those passports first. This is reversible and is NOT deletion.",
@@ -277,7 +277,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           id: z.string().optional().describe("Product id. Required for get and update."),
           name: z.string().optional().describe("Product name. Required for create; optional on update."),
           model: z.string().optional().describe("Manufacturer model / SKU. Required for create; optional on update."),
-          category: z.string().optional().describe("DPP category for create: battery | textile | electronics | construction | steel | chemicals | packaging | furniture | tyres | jewelry | toys | fmcg."),
+          category: z.string().optional().describe("DPP category for create: battery | textile | electronics | construction | steel | detergents | paints-coatings | packaging | furniture | tyres | jewelry | toys | fmcg."),
           description: z.string().optional().describe("Free-text product description (create/update)."),
           page: z.number().optional().describe("Page number for list (1-based)."),
           limit: z.number().optional().describe("Page size for list, max 100."),
@@ -674,8 +674,8 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     title: "TracePass DPP templates (regulatory schemas)",
     description:
       "Discover the regulatory field schema for each DPP category — what a COMPLIANT passport must contain, per the governing EU regulation. Read-only reference data. Use this to advise on requirements before creating products/passports, and to gap-check a draft against the rules.\n\nActions (pass via `action`, with `args`):\n" +
-      "- list — args: {}. Lists all 12 categories with their field count, required-field count, and governing regulation (name + number + effective/mandatory dates).\n" +
-      "- get — args: { category }. Full field schema for one category: every field's key, label, dataType, whether it is REQUIRED, its access level (public/restricted/authority), enum options, validation bounds, and — where known — the regulation article/annex that mandates it. `category` is one of: battery, textile, electronics, construction, steel, chemicals, packaging, furniture, tyres, jewelry, toys, fmcg.\n\n" +
+      "- list — args: {}. Lists all 13 categories with their field count, required-field count, and governing regulation (name + number + effective/mandatory dates).\n" +
+      "- get — args: { category }. Full field schema for one category: every field's key, label, dataType, whether it is REQUIRED, its access level (public/restricted/authority), enum options, validation bounds, and — where known — the regulation article/annex that mandates it. `category` is one of: battery, textile, electronics, construction, steel, detergents, paints-coatings, packaging, furniture, tyres, jewelry, toys, fmcg.\n\n" +
       "BATTERY — required-ness is per-category, so `required` alone is the wrong answer. Resolve it in this order:\n" +
       "  1. SCOPE FIRST. Only EV, LMT and industrial_gt_2kwh batteries owe a passport at all (Art. 77(1), Reg (EU) 2023/1542). For portable, SLI or industrial_lte_2kwh, NO field is required — do not list mandatory fields for them; say the battery is out of scope.\n" +
       "  2. Then `requiredBy[batteryCategory]` where the field carries that map (required | conditional | notApplicable).\n" +
@@ -687,7 +687,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
         .describe("List all DPP category templates, or get one template by category."),
       args: z
         .object({
-          category: z.string().optional().describe("DPP category to fetch (required for get): battery | textile | electronics | construction | steel | chemicals | packaging | furniture | tyres | jewelry | toys | fmcg."),
+          category: z.string().optional().describe("DPP category to fetch (required for get): battery | textile | electronics | construction | steel | detergents | paints-coatings | packaging | furniture | tyres | jewelry | toys | fmcg."),
         })
         .partial()
         .optional()

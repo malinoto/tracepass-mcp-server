@@ -186,7 +186,7 @@ export function registerResources(
     {
       title: "DPP templates (regulatory schemas)",
       description:
-        "All 12 DPP category schemas with field count, required-field count, and governing regulation. Attach this to ground the model in what each category's compliance requirements are.",
+        "All 13 DPP category schemas with field count, required-field count, and governing regulation. Attach this to ground the model in what each category's compliance requirements are.",
       mimeType: "application/json",
     },
     async (uri) => {
@@ -204,7 +204,7 @@ export function registerResources(
     {
       title: "DPP category schema",
       description:
-        "The full regulatory field schema for one DPP category — every required/optional field with its data type, access level, and (where known) the regulation article/annex that mandates it. For battery, required-ness varies by battery type: read `requiredBy` per field and `requiredFieldCountByCategory` rather than the flat `required` / `requiredFieldCount`, and note that portable and SLI batteries owe no passport at all. tracepass://template/{category} where category is battery, textile, electronics, construction, steel, chemicals, packaging, furniture, tyres, jewelry, toys, or fmcg.",
+        "The full regulatory field schema for one DPP category — every required/optional field with its data type, access level, and (where known) the regulation article/annex that mandates it. For battery, required-ness varies by battery type: read `requiredBy` per field and `requiredFieldCountByCategory` rather than the flat `required` / `requiredFieldCount`, and note that portable and SLI batteries owe no passport at all. tracepass://template/{category} where category is battery, textile, electronics, construction, steel, detergents, paints-coatings, packaging, furniture, tyres, jewelry, toys, or fmcg.",
       mimeType: "application/json",
     },
     async (uri, variables) => {
