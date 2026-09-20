@@ -106,8 +106,12 @@ const GLAMA_CLAIM = {
  * ai.tracepass.eu to its redirect target (www) and only probe there.
  * If you change capabilities/version here, update that file too — they
  * must not drift.
+ *
+ * GENERATED: the www copy is written from THIS object by
+ * `scripts/build-server-card.ts` (hence the export) — don't hand-edit it.
+ * `npm run build:server-card` writes it; `--check` verifies it.
  */
-const SERVER_CARD = {
+export const SERVER_CARD = {
   name: MCP_SERVER_INFO.name,
   version: MCP_SERVER_INFO.version,
   description:

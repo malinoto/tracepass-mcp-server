@@ -2,7 +2,7 @@
   "name": "tracepass-mcp-server",
   "mcpName": "eu.tracepass/tracepass",
   "version": "1.7.4",
-  "description": "Model Context Protocol server for TracePass — the EU Digital Product Passport platform. Lets AI assistants manage products, passports, and EPCIS supply-chain events.",
+  "description": "Model Context Protocol server for TracePass \u2014 the EU Digital Product Passport platform. Lets AI assistants manage products, passports, and EPCIS supply-chain events.",
   "license": "MIT",
   "type": "module",
   "keywords": [
@@ -46,6 +46,8 @@
     "start:stdio": "node dist/stdio.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "build:server-card": "npm run build --silent && node scripts/build-server-card.mjs",
+    "check:server-card": "npm run build --silent && node scripts/build-server-card.mjs --check",
     "lint": "eslint src"
   },
   "dependencies": {
