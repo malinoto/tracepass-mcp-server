@@ -3,7 +3,7 @@
  *
  * The v1 surface has ~23 endpoints. Exposing 23 flat MCP tools would
  * swamp the model's tool list and slow tool selection. Instead the
- * surface is grouped into FIVE resource tools, each taking:
+ * surface is grouped into SIX resource tools, each taking:
  *   - `action` — a required enum naming the operation;
  *   - `args`   — an object whose required shape DEPENDS on `action`.
  *
