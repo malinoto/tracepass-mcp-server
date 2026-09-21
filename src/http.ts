@@ -108,7 +108,7 @@ const GLAMA_CLAIM = {
  * must not drift.
  *
  * GENERATED: the www copy is written from THIS object by
- * `scripts/build-server-card.ts` (hence the export) — don't hand-edit it.
+ * `scripts/build-server-card.mjs` (hence the export) — don't hand-edit it.
  * `npm run build:server-card` writes it; `--check` verifies it.
  */
 export const SERVER_CARD = {
