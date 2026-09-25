@@ -36,6 +36,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { createMcpServer, MCP_SERVER_INFO } from "./server.js";
+import { createSupplierMcpServer, matchSupplierPath } from "./supplier-server.js";
 
 const PORT = Number(process.env.PORT) || 8080;
 const DEFAULT_BASE_URL = "https://app.tracepass.eu";
@@ -377,6 +378,24 @@ const httpServer = createServer((req, res) => {
       // (see tracepass-ops Caddyfile) — same requirement as the card above.
       if (url.split("?")[0] === GLAMA_CLAIM_PATH) {
         sendJson(res, 200, GLAMA_CLAIM);
+        return;
+      }
+
+      // The supplier endpoint. Deliberately NO auth gate and NO
+      // WWW-Authenticate challenge here: a supplier has no account, so an
+      // OAuth prompt would be a dead end. An invalid or missing token reaches
+      // the tools, which explain it in plain words (supplier-server.ts).
+      const supplier = matchSupplierPath(url.split("?")[0]!);
+      if (supplier) {
+        const method = req.method ?? "GET";
+        const bodyStr = method !== "GET" && method !== "HEAD" ? await readBody(req) : undefined;
+        const token = supplier.pathToken || extractBearerToken(req) || "";
+        const server = createSupplierMcpServer({ token, baseUrl: BASE_URL });
+        const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+        await server.connect(transport);
+        const webRes = await transport.handleRequest(toWebRequest(req, bodyStr));
+        await writeWebResponse(webRes, res);
+        await server.close();
         return;
       }
 

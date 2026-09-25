@@ -180,6 +180,32 @@ Reusable DPP workflows the client surfaces as slash-commands:
   of what's blocking a passport's compliant publication
 - `review_epcis_events` — summarise a passport's supply-chain trail
 
+## For suppliers: answering a data request
+
+A second, separate endpoint serves **suppliers** who receive a TracePass data
+request. It is not part of the tools above. The request email carries a
+personal address:
+
+```
+https://ai.tracepass.eu/supplier/mcp/<token>
+```
+
+Add it to an AI assistant as a custom connector. For clients that can set
+headers, `https://ai.tracepass.eu/supplier/mcp` with
+`Authorization: Bearer <token>` works too. The token authorises that one
+request only; there is no account and no OAuth. The assistant can then:
+
+| Tool | What it does |
+|---|---|
+| `get_request` | The fields asked for, each with its meaning, unit, format and legal source |
+| `validate_answers` | A dry run: what would be stored, and what does not fit |
+| `upload_evidence` | Attach a datasheet or certificate (up to 10 MB) |
+| `submit_answers` | Send answers with evidence per value; can be repeated until reviewed |
+| `get_review_status` | Whether the requester has reviewed them, and the outcome |
+
+Answers go to the requester's human review; they never publish anything on
+their own.
+
 ## Development
 
 ```bash

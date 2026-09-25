@@ -24,6 +24,18 @@ the hosted endpoint and the local package.**
   from `TRACEPASS_API_KEY` env.
 - Both call the **same** `createMcpServer`. Only the transport + key source differ.
   Any change to the tool surface must go through the core so both forms stay identical.
+- `src/supplier-server.ts` — a **second, separate server** for suppliers answering
+  one data request, served only by `http.ts` at `/supplier/mcp/<token>` (token in
+  the path, for URL-only connectors) and `/supplier/mcp` (Bearer header). Its
+  credential is the request token, not an account: **no auth gate and no
+  `WWW-Authenticate` challenge on that path**, because an OAuth prompt is a dead
+  end for someone with no TracePass account. A bad or missing token becomes a
+  readable tool error (`supplierResult`). Five tools over the platform's
+  `/api/supplier/v1/*`, which owns every rule (requested keys only, merge until
+  review, rate limit). It is not in the `eu.tracepass/tracepass` listing, the
+  server card or the tool count above, and its README table deliberately avoids
+  the `` `name` — description `` pattern so mcppedia does not count its tools as
+  the main server's.
 
 **Auth: the hosted server supports BOTH a `tp_` API key AND OAuth 2.0 — and it's
 a pass-through, not a branch.** `src/http.ts` forwards the client's
