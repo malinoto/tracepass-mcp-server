@@ -20,7 +20,14 @@ const tool = (tools: ReturnType<typeof buildSupplierTools>, name: string) => too
 describe("supplier tool surface", () => {
   it("exposes exactly the five supplier tools and none of the customer tools", () => {
     const names = buildSupplierTools(stubClient().client, true).map((t) => t.name).sort();
-    expect(names).toEqual(["get_request", "get_review_status", "submit_answers", "upload_evidence", "validate_answers"]);
+    expect(names).toEqual([
+      "get_request",
+      "get_review_status",
+      "get_upload_command",
+      "submit_answers",
+      "upload_evidence",
+      "validate_answers",
+    ]);
   });
 
   it("routes each tool to its supplier API endpoint", async () => {
@@ -97,4 +104,29 @@ describe("matchSupplierPath", () => {
     expect(matchSupplierPath("/supplier/mcp/..%2F..%2Fetc")).toBeNull();
   });
   it("does not match the customer endpoint", () => expect(matchSupplierPath("/mcp")).toBeNull());
+});
+
+describe("get_upload_command", () => {
+  const upload = { token: "tok_abc123", publicBaseUrl: "https://app.tracepass.eu/" };
+  const run = (path: string) =>
+    tool(buildSupplierTools(stubClient().client, true, upload), "get_upload_command").handler({ path });
+
+  it("builds a curl upload with the token, the MIME type and the public URL", async () => {
+    const r = await run("./Data Sheet.pdf");
+    const cmd = (r.structuredContent as { command: string }).command;
+    expect(cmd).toBe(
+      "curl -sS -H 'Authorization: Bearer tok_abc123' -F 'file=@./Data Sheet.pdf;type=application/pdf' 'https://app.tracepass.eu/api/supplier/v1/documents'",
+    );
+  });
+
+  it("quotes a path containing a single quote safely", async () => {
+    const cmd = ((await run("./it's.pdf")).structuredContent as { command: string }).command;
+    expect(cmd).toContain(`'file=@./it'\\''s.pdf;type=application/pdf'`);
+  });
+
+  it("refuses a file type the upload does not accept", async () => {
+    const r = await run("./notes.txt");
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/not accepted/);
+  });
 });

@@ -34,6 +34,9 @@ export const SUPPLIER_SERVER_INFO = {
 
 export interface CreateSupplierMcpServerConfig {
   baseUrl: string;
+  /** The platform's PUBLIC origin, for commands the supplier's own machine
+   *  runs (get_upload_command). `baseUrl` is internal when hosted. */
+  publicBaseUrl?: string;
   /** The supplier request token, from the connection URL or the Bearer header.
    *  Empty when the client connected without one: discovery still works, and
    *  every tool explains how to connect. */
@@ -118,7 +121,28 @@ interface SupplierTool {
   handler: (args: Record<string, unknown>) => Promise<ToolResult>;
 }
 
-export function buildSupplierTools(client: TracePassClient, hasToken: boolean): SupplierTool[] {
+/** MIME types the upload accepts, by extension (see the platform's ALLOWED_MIME_TYPES). */
+const MIME_BY_EXTENSION: Record<string, string> = {
+  pdf: "application/pdf",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  xls: "application/vnd.ms-excel",
+  csv: "text/csv",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  doc: "application/msword",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+};
+
+/** Quote a value for a POSIX shell. */
+const shellQuote = (v: string) => `'${v.replace(/'/g, `'\\''`)}'`;
+
+export function buildSupplierTools(
+  client: TracePassClient,
+  hasToken: boolean,
+  upload?: { token: string; publicBaseUrl: string },
+): SupplierTool[] {
   const guard =
     (fn: (args: Record<string, unknown>) => Promise<ToolResult>) =>
     async (args: Record<string, unknown>): Promise<ToolResult> =>
@@ -159,10 +183,40 @@ export function buildSupplierTools(client: TracePassClient, hasToken: boolean): 
       ),
     },
     {
-      name: "upload_evidence",
-      title: "Attach a supporting document",
+      name: "get_upload_command",
+      title: "Get a command to upload a file",
       description:
-        "Upload one file (a datasheet, certificate, test report, SDS) as evidence. Returns a documentId to cite in submit_answers. PDF, Office files, CSV and images; at most 10 MB. The requester can open it.",
+        "The best way to attach a supporting document if you can run shell commands: returns a curl command that uploads the file straight from disk, and prints a documentId to cite in submit_answers. Accepts PDF, Office files, CSV and images (PNG, JPEG, WebP). If you cannot run commands, cite a public URL or a note as evidence instead, or use upload_evidence for a very small file.",
+      inputSchema: {
+        path: z.string().min(1).describe("Path of the file on the supplier's machine, e.g. ./datasheet.pdf"),
+      },
+      annotations: { readOnlyHint: true, idempotentHint: true },
+      handler: guard(async (args) => {
+        const path = String(args.path ?? "");
+        const ext = path.split(".").pop()?.toLowerCase() ?? "";
+        const mime = MIME_BY_EXTENSION[ext];
+        if (!mime) {
+          return errorResult(
+            `Files of type .${ext || "?"} are not accepted. Use PDF, Word, Excel, CSV, PNG, JPEG or WebP, or cite the source as a URL or note.`,
+          );
+        }
+        if (!upload) return errorResult("Uploading by command is not available on this connection. Use upload_evidence or cite a URL or note.");
+        const command =
+          `curl -sS -H ${shellQuote(`Authorization: Bearer ${upload.token}`)} ` +
+          `-F ${shellQuote(`file=@${path};type=${mime}`)} ` +
+          shellQuote(`${upload.publicBaseUrl.replace(/\/+$/, "")}/api/supplier/v1/documents`);
+        return jsonResult({
+          command,
+          expectedOutput: '{"documentId":"..."}',
+          note: "The command carries this request's personal token; run it on the supplier's machine and do not share it.",
+        });
+      }),
+    },
+    {
+      name: "upload_evidence",
+      title: "Attach a small supporting document inline",
+      description:
+        "Upload one file sent inline as base64. Only for very small files (a few kilobytes): the whole file must be written out as base64 in the call, which is slow and error-prone for anything larger. Prefer get_upload_command if you can run commands, otherwise cite a URL or a note. Returns a documentId to cite in submit_answers.",
       inputSchema: {
         filename: z.string().min(1).max(255),
         mimeType: z.string().describe("e.g. application/pdf, image/png"),
@@ -243,13 +297,14 @@ export function createSupplierMcpServer(config: CreateSupplierMcpServerConfig): 
       "You are helping a supplier answer one product-data request from a TracePass customer, usually for an EU Digital Product Passport. " +
       "Call get_request first to see what is asked and why (each field carries its definition, unit and legal source). " +
       "Find each value in the supplier's own documents or records; never estimate or invent a value, and leave out any field you cannot source. " +
-      "Use validate_answers to check, upload_evidence for supporting files, and cite a document, URL or note as evidence for each value. " +
+      "Use validate_answers to check. For supporting files, use get_upload_command if you can run shell commands; otherwise cite a public URL or a note. Give evidence for each value. " +
       "Show the user the answers and get their confirmation before submit_answers: they are sent to another company for review. " +
       "Answers can be corrected until the requester reviews them; get_review_status shows the outcome.",
   });
   const hasToken = config.token.trim() !== "";
   const client = new TracePassClient({ baseUrl: config.baseUrl, apiKey: config.token });
-  for (const tool of buildSupplierTools(client, hasToken)) {
+  const upload = hasToken ? { token: config.token, publicBaseUrl: config.publicBaseUrl ?? config.baseUrl } : undefined;
+  for (const tool of buildSupplierTools(client, hasToken, upload)) {
     const cb = async (args: Record<string, unknown>) => {
       try {
         return await tool.handler(args ?? {});

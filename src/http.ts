@@ -390,7 +390,7 @@ const httpServer = createServer((req, res) => {
         const method = req.method ?? "GET";
         const bodyStr = method !== "GET" && method !== "HEAD" ? await readBody(req) : undefined;
         const token = supplier.pathToken || extractBearerToken(req) || "";
-        const server = createSupplierMcpServer({ token, baseUrl: BASE_URL });
+        const server = createSupplierMcpServer({ token, baseUrl: BASE_URL, publicBaseUrl: PUBLIC_AUTH_SERVER_URL });
         const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
         await server.connect(transport);
         const webRes = await transport.handleRequest(toWebRequest(req, bodyStr));
