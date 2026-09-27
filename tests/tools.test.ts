@@ -227,61 +227,6 @@ describe("tracepass_passports — billable + lifecycle actions", () => {
     expect(calls).toHaveLength(0);
   });
 
-  // ── create_batch ──
-  it("create_batch POSTs a batch with legacy gs1 items", async () => {
-    const { tool, calls } = passportsTool();
-    await tool.handler({
-      action: "create_batch",
-      args: {
-        passports: [
-          { productId: "p1", gtin: "09506000134369", serialNumber: "SN-1" },
-          { productId: "p2", gtin: "09506000134369", serialNumber: "SN-2" },
-        ],
-      },
-    });
-    expect(calls[0]!.method).toBe("POST");
-    expect(calls[0]!.path).toBe("/api/v1/passports/batch");
-    const body = calls[0]!.body as { passports: Array<Record<string, unknown>> };
-    expect(body.passports).toHaveLength(2);
-    expect(body.passports[0]).toMatchObject({ gs1: { gtin: "09506000134369", serialNumber: "SN-1" } });
-  });
-
-  it("create_batch maps identifier items to the identifier path", async () => {
-    const { tool, calls } = passportsTool();
-    await tool.handler({
-      action: "create_batch",
-      args: {
-        passports: [
-          {
-            productId: "p1",
-            identifier: { scheme: "iec61406", uri: "https://id.example.com/1" },
-          },
-        ],
-        confirmOverage: true,
-      },
-    });
-    const body = calls[0]!.body as { passports: Array<Record<string, unknown>>; confirmOverage?: boolean };
-    expect(body.passports[0]).toMatchObject({ identifier: { scheme: "iec61406" } });
-    expect(body.confirmOverage).toBe(true);
-  });
-
-  it("create_batch rejects items missing identifier and gtin/serial", async () => {
-    const { tool, calls } = passportsTool();
-    const r = await tool.handler({
-      action: "create_batch",
-      args: { passports: [{ productId: "p1" }] },
-    });
-    expect(r.isError).toBe(true);
-    expect(calls).toHaveLength(0);
-  });
-
-  it("create_batch rejects an empty passports array", async () => {
-    const { tool, calls } = passportsTool();
-    const r = await tool.handler({ action: "create_batch", args: { passports: [] } });
-    expect(r.isError).toBe(true);
-    expect(calls).toHaveLength(0);
-  });
-
   it("archive routes to the archive endpoint", async () => {
     const { tool, calls } = passportsTool();
     await tool.handler({ action: "archive", args: { id: "x1" } });
