@@ -121,6 +121,57 @@ function isErr(v: unknown): v is ToolResult {
 // Reused by the handlers as validators. Kept here, one per action,
 // so the per-action contract is explicit and testable.
 
+/**
+ * EN 18219 product-identifier discriminated union.
+ * Mirrors the `ProductIdentifier` schema in the OpenAPI spec.
+ * Battery passports accept only gs1 and iso15459 (Art. 77(3)).
+ */
+const productIdentifierSchema = z.discriminatedUnion("scheme", [
+  z.object({
+    scheme: z.literal("gs1"),
+    gtin: z.string().min(1),
+    serialNumber: z.string().min(1).max(100),
+  }),
+  z.object({
+    scheme: z.literal("iso15459"),
+    issuingAgencyCode: z.string().min(1).max(3),
+    primaryId: z.string().min(1),
+    serial: z.string().optional(),
+    raw: z.string().min(1),
+  }),
+  z.object({
+    scheme: z.literal("iec61406"),
+    uri: z.string().url(),
+  }),
+  z.object({
+    scheme: z.literal("did"),
+    did: z.string().min(1),
+    method: z.string().min(1),
+  }),
+  z.object({
+    scheme: z.literal("doi"),
+    doi: z.string().regex(/^10\./),
+  }),
+]);
+
+/** One item in a passport batch — same choices as passportCreate. */
+const passportItemSchema = z
+  .object({
+    productId: z.string().min(1),
+    identifier: productIdentifierSchema.optional(),
+    gtin: z.string().optional(),
+    serialNumber: z.string().min(1).max(100).optional(),
+  })
+  .refine(
+    (v) =>
+      v.identifier !== undefined ||
+      (v.gtin !== undefined && v.serialNumber !== undefined),
+    {
+      message:
+        "each passport item needs either identifier (with scheme) or the legacy gtin + serialNumber",
+    },
+  );
+
 const partyRoleEnum = z.enum([
   "manufacturer",
   "importer",
@@ -190,10 +241,32 @@ const SCHEMAS = {
     format: z.enum(["summary", "full"]).optional(),
     lang: z.string().optional(),
   }),
-  passportCreate: z.object({
-    productId: z.string().min(1),
-    gtin: z.string().min(1),
-    serialNumber: z.string().min(1).max(100),
+  passportCreate: z
+    .object({
+      productId: z.string().min(1),
+      // EN 18219 scheme-tagged identifier (preferred on new integrations).
+      identifier: productIdentifierSchema.optional(),
+      // Legacy GS1 flat fields — accepted as a deprecated alias for
+      // identifier with scheme:"gs1". One of identifier or gtin+serialNumber
+      // must be present.
+      gtin: z.string().optional(),
+      serialNumber: z.string().min(1).max(100).optional(),
+      confirmOverage: z.boolean().optional(),
+    })
+    .refine(
+      (v) =>
+        v.identifier !== undefined ||
+        (v.gtin !== undefined && v.serialNumber !== undefined),
+      {
+        message:
+          "provide either identifier (with scheme) or the legacy gtin + serialNumber",
+      },
+    ),
+  passportCreateBatch: z.object({
+    // Platform cap: 100 items. The whole batch returns 402/429 if the
+    // DPP quota or daily write budget would be exceeded — nothing is
+    // created (no partial billing).
+    passports: z.array(passportItemSchema).min(1).max(100),
     confirmOverage: z.boolean().optional(),
   }),
   passportId: z.object({ id: z.string().min(1) }),
@@ -342,14 +415,22 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     title: "TracePass passports",
     description:
       "Manage Digital Product Passports — create, read, and run lifecycle actions.\n\n" +
-      "IMPORTANT: `create` consumes a DPP slot on the account's plan and IS BILLABLE. Creating a passport beyond the included quota incurs a per-passport overage charge; if over quota the tool returns a 402-style message — only re-run with args.confirmOverage=true after the user explicitly agrees to the charge. `archive` is IRREVERSIBLE (the public QR permanently 404s); prefer `suspend` when a change might be undone.\n\n" +
+      "IMPORTANT: `create` and `create_batch` consume DPP slots and ARE BILLABLE. Over-quota creation incurs a per-passport charge; the tool surfaces a 402-style message — only re-run with args.confirmOverage=true after the user explicitly agrees. `archive` is IRREVERSIBLE (the public QR permanently 404s); prefer `suspend` when a change might be undone.\n\n" +
+      "IDENTIFIER SCHEMES (EN 18219): passports are identified by one of five schemes. Battery passports (Battery Regulation Art. 77(3)) accept ONLY gs1 and iso15459.\n" +
+      "  • gs1 — { scheme:\"gs1\", gtin, serialNumber } — GS1 GTIN + serial; gtin is 8/12/13/14 digits, stored as GTIN-14.\n" +
+      "  • iso15459 — { scheme:\"iso15459\", issuingAgencyCode, primaryId, serial?, raw } — ISO/IEC 15459; raw = IAC + primaryId + serial concatenated.\n" +
+      "  • iec61406 — { scheme:\"iec61406\", uri } — IEC 61406 Identification Link (https URI). Not valid for batteries.\n" +
+      "  • did — { scheme:\"did\", did, method } — W3C DID Core. Not valid for batteries.\n" +
+      "  • doi — { scheme:\"doi\", doi } — ISO 26324 DOI, stored as bare 10.<registrant>/<suffix>. Not valid for batteries.\n" +
+      "The legacy top-level gtin + serialNumber pair is still accepted as a deprecated alias for scheme:\"gs1\".\n\n" +
       "Actions (pass via `action`, with `args`):\n" +
       "- list — args: { page?, limit? (≤100), productId?, status?, search? }. status ∈ draft|in_review|approved|published|suspended|expired|archived. Read-only.\n" +
-      "- get — args: { id, format? (summary|full), lang? }. Read-only.\n" +
+      "- get — args: { id, format? (summary|full), lang? }. Read-only. Response includes `identifier`, `identifierKey`, and (for GS1 passports) `gs1`.\n" +
       "- get_by_serial — args: { serial, format?, lang?, gtin? }. Read-only. Addresses the passport by your own serial. A serial is unique only WITHIN a GTIN — if the same serial exists under two GTINs in your account the call returns 409 ambiguous_serial; pass `gtin` (or use the by-id action) to resolve exactly.\n" +
       "- compliance — args: { id }. Read-only. Returns a three-tier compliance verdict (compliant | compliant_with_warnings | incomplete) with regulation-cited findings — use to gap-check a passport against the rules for its category, fix the cited fields/parties, then re-check. Also returns byRegulation[]: the same findings grouped per regulation, worst first, so you can tell WHICH regime is failing instead of reading one `incomplete` as everything being wrong. A regulation absent from that array raised no finding — that is not the same as it having passed.\n" +
       "- registry_readiness — args: { id }. Read-only. Returns { ready, findings[] } — whether the passport would pass the EU DPP Registry's FORMAL submission gate (mandatory fields present, correct formatting, a resolvable public link, item-level granularity via a serial number, and a well-formed commodity code where the category carries one). This is the registry's mechanical pre-submission check, NOT the substantive compliance verdict; a passport can be registry-ready yet not substantively compliant. Battery passports only.\n" +
-      "- create — args: { productId, gtin, serialNumber, confirmOverage? }. BILLABLE.\n" +
+      "- create — args: { productId, identifier?, gtin?, serialNumber?, confirmOverage? }. BILLABLE. Provide identifier (preferred) or legacy gtin + serialNumber. Battery passports accept only gs1 and iso15459 schemes — other schemes return 400. A duplicate identifier returns 409.\n" +
+      "- create_batch — args: { passports: [...], confirmOverage? }. BILLABLE. Batch of up to 100 passports; each item has the same identifier options as create. Partial-success per item; the whole batch consumes N DPP slots and N writes — if either budget would overflow, NOTHING is created (402/429 with no partial billing).\n" +
       "- suspend — args: { id }. Reversible — public QR shows 'suspended'.\n" +
       "- suspend_by_serial — args: { serial, gtin? }. Same as suspend, addressed by your serial. 409 ambiguous_serial if the serial isn't unique in your account — pass `gtin`.\n" +
       "- archive — args: { id }. IRREVERSIBLE — confirm with the user first.\n" +
@@ -365,6 +446,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           "compliance",
           "registry_readiness",
           "create",
+          "create_batch",
           "suspend",
           "suspend_by_serial",
           "archive",
@@ -373,16 +455,33 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           "get_qr_by_serial",
         ])
         .describe(
-          "Which passport operation to run. Reads: list | get | get_by_serial | compliance | registry_readiness | get_qr | get_qr_by_serial. Lifecycle: create (BILLABLE) | suspend (reversible) | archive (IRREVERSIBLE), each with a _by_serial variant.",
+          "Which passport operation to run. Reads: list | get | get_by_serial | compliance | registry_readiness | get_qr | get_qr_by_serial. Writes (BILLABLE): create | create_batch. Lifecycle: suspend (reversible) | archive (IRREVERSIBLE), each with a _by_serial variant.",
         ),
       args: z
         .object({
-          id: z.string().optional().describe("Passport id. Required for get/compliance/create-result/suspend/archive/get_qr (the by-id actions)."),
+          id: z.string().optional().describe("Passport id. Required for get/compliance/suspend/archive/get_qr (the by-id actions)."),
           serial: z.string().optional().describe("Your own serial number. Required for the *_by_serial actions."),
-          gtin: z.string().optional().describe("GTIN disambiguator for *_by_serial actions when a serial isn't unique across GTINs (else 409 ambiguous_serial)."),
-          productId: z.string().optional().describe("Parent product id. Required for create."),
-          serialNumber: z.string().optional().describe("Serial for the new passport. Required for create."),
-          confirmOverage: z.boolean().optional().describe("Set true to accept a per-passport overage charge when create is over the plan quota (402)."),
+          gtin: z
+            .string()
+            .optional()
+            .describe(
+              "For create/create_batch (legacy): GS1 GTIN. Also used as a disambiguator for *_by_serial actions when a serial isn't unique (else 409 ambiguous_serial).",
+            ),
+          productId: z.string().optional().describe("Parent product id. Required for create and each item in create_batch."),
+          identifier: z
+            .record(z.string(), z.unknown())
+            .optional()
+            .describe(
+              "EN 18219 scheme-tagged identifier for create. Must have `scheme` plus scheme-specific fields. Schemes: gs1 {gtin, serialNumber} | iso15459 {issuingAgencyCode, primaryId, serial?, raw} | iec61406 {uri} | did {did, method} | doi {doi}. Battery passports: gs1 and iso15459 only.",
+            ),
+          passports: z
+            .array(z.record(z.string(), z.unknown()))
+            .optional()
+            .describe(
+              "Passport items for create_batch. Each needs productId + identifier (or legacy gtin + serialNumber). Max 100.",
+            ),
+          serialNumber: z.string().optional().describe("Serial for the new passport (create, legacy gs1 path). Also used for each item in create_batch."),
+          confirmOverage: z.boolean().optional().describe("Set true to accept per-passport overage charges when over the plan quota (402). Applies to create and create_batch."),
           format: z.string().optional().describe("get/get_by_serial: summary|full. get_qr/get_qr_by_serial: svg|png."),
           lang: z.string().optional().describe("Resolve field values to one of the 24 EU locales server-side (get/get_by_serial)."),
           page: z.number().optional().describe("Page number for list (1-based)."),
@@ -433,13 +532,33 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
         case "create": {
           const p = parseArgs(SCHEMAS.passportCreate, a.args, "tracepass_passports", action);
           if (isErr(p)) return p;
-          return apiResult(
-            await client.post("/api/v1/passports", {
-              productId: p.productId,
-              gs1: { gtin: p.gtin, serialNumber: p.serialNumber },
-              ...(p.confirmOverage ? { confirmOverage: true } : {}),
-            }),
-          );
+          const body: Record<string, unknown> = { productId: p.productId };
+          if (p.identifier) {
+            // EN 18219 scheme-tagged path (preferred for all new integrations).
+            body.identifier = p.identifier;
+          } else {
+            // Legacy flat GS1 fields — still accepted as a deprecated alias.
+            body.gs1 = { gtin: p.gtin, serialNumber: p.serialNumber };
+          }
+          if (p.confirmOverage) body.confirmOverage = true;
+          return apiResult(await client.post("/api/v1/passports", body));
+        }
+        case "create_batch": {
+          const p = parseArgs(SCHEMAS.passportCreateBatch, a.args, "tracepass_passports", action);
+          if (isErr(p)) return p;
+          // Normalise each item: identifier (preferred) or legacy gs1.
+          const passports = p.passports.map((item) => {
+            const pi: Record<string, unknown> = { productId: item.productId };
+            if (item.identifier) {
+              pi.identifier = item.identifier;
+            } else {
+              pi.gs1 = { gtin: item.gtin, serialNumber: item.serialNumber };
+            }
+            return pi;
+          });
+          const batchBody: Record<string, unknown> = { passports };
+          if (p.confirmOverage) batchBody.confirmOverage = true;
+          return apiResult(await client.post("/api/v1/passports/batch", batchBody));
         }
         case "suspend": {
           const p = parseArgs(SCHEMAS.passportId, a.args, "tracepass_passports", action);

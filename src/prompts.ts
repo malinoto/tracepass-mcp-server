@@ -80,9 +80,15 @@ export function registerPrompts(server: McpServer): void {
       userPrompt(
         `Help me onboard a new product into TracePass: "${productName}" in the "${category}" category.\n\n` +
           `1. Confirm the product details with me (model / SKU, description), then create it with tracepass_products (action: create).\n` +
-          `2. Ask me for the first unit's GTIN and serial number.\n` +
+          `2. Ask me for the first unit's identifier. Explain the five EN 18219 schemes and let me choose:\n` +
+          `   • gs1 — GS1 GTIN + serial number (e.g. GTIN "04012345000015", serial "SN-001").\n` +
+          `   • iso15459 — ISO/IEC 15459: issuing agency code, primary ID, optional serial, and the raw concatenated string.\n` +
+          `   • iec61406 — an IEC 61406 Identification Link (https URI).\n` +
+          `   • did — a W3C Decentralised Identifier (DID string + method).\n` +
+          `   • doi — an ISO 26324 Digital Object Identifier (bare "10.<registrant>/<suffix>" form).\n` +
+          `   Note: battery passports accept ONLY gs1 or iso15459 (Battery Regulation Art. 77(3)).\n` +
           `3. Before creating the passport, remind me that a passport is BILLABLE and consumes a plan DPP slot. ` +
-          `Only after I confirm, create it with tracepass_passports (action: create).\n` +
+          `Only after I confirm, create it with tracepass_passports (action: create, args: { productId, identifier: {...} }).\n` +
           `4. If the account is over its plan quota, tell me the overage cost and wait for my explicit go-ahead before retrying with confirmOverage.`,
       ),
   );

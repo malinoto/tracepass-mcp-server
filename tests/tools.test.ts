@@ -106,7 +106,8 @@ describe("tracepass_passports — billable + lifecycle actions", () => {
     return { tool, calls: stub.calls };
   }
 
-  it("create builds the gs1 nested body", async () => {
+  // ── legacy GS1 path (backward-compat) ──
+  it("create builds the gs1 nested body when legacy gtin+serialNumber provided", async () => {
     const { tool, calls } = passportsTool();
     await tool.handler({
       action: "create",
@@ -116,6 +117,8 @@ describe("tracepass_passports — billable + lifecycle actions", () => {
       productId: "p1",
       gs1: { gtin: "09506000134369", serialNumber: "SN-1" },
     });
+    // identifier must NOT be present on the legacy path
+    expect((calls[0]!.body as Record<string, unknown>).identifier).toBeUndefined();
   });
 
   it("create forwards confirmOverage only when true", async () => {
@@ -125,6 +128,158 @@ describe("tracepass_passports — billable + lifecycle actions", () => {
       args: { productId: "p1", gtin: "1", serialNumber: "s", confirmOverage: true },
     });
     expect(calls[0]!.body).toMatchObject({ confirmOverage: true });
+  });
+
+  // ── EN 18219 identifier paths ──
+  it("create with identifier gs1 sends identifier (not legacy gs1 block)", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({
+      action: "create",
+      args: {
+        productId: "p1",
+        identifier: { scheme: "gs1", gtin: "09506000134369", serialNumber: "SN-1" },
+      },
+    });
+    expect(calls[0]!.body).toMatchObject({
+      productId: "p1",
+      identifier: { scheme: "gs1", gtin: "09506000134369", serialNumber: "SN-1" },
+    });
+    expect((calls[0]!.body as Record<string, unknown>).gs1).toBeUndefined();
+  });
+
+  it("create with identifier iso15459 sends identifier block", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({
+      action: "create",
+      args: {
+        productId: "p2",
+        identifier: {
+          scheme: "iso15459",
+          issuingAgencyCode: "MFR",
+          primaryId: "1234567890",
+          raw: "MFR1234567890",
+        },
+      },
+    });
+    expect(calls[0]!.body).toMatchObject({
+      productId: "p2",
+      identifier: { scheme: "iso15459", issuingAgencyCode: "MFR", primaryId: "1234567890" },
+    });
+  });
+
+  it("create with identifier iec61406 sends identifier block", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({
+      action: "create",
+      args: {
+        productId: "p3",
+        identifier: { scheme: "iec61406", uri: "https://id.example.com/product/42" },
+      },
+    });
+    expect(calls[0]!.body).toMatchObject({
+      identifier: { scheme: "iec61406", uri: "https://id.example.com/product/42" },
+    });
+  });
+
+  it("create with identifier did sends identifier block", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({
+      action: "create",
+      args: {
+        productId: "p4",
+        identifier: { scheme: "did", did: "did:example:123abc", method: "example" },
+      },
+    });
+    expect(calls[0]!.body).toMatchObject({
+      identifier: { scheme: "did", did: "did:example:123abc", method: "example" },
+    });
+  });
+
+  it("create with identifier doi sends identifier block", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({
+      action: "create",
+      args: {
+        productId: "p5",
+        identifier: { scheme: "doi", doi: "10.1234/example" },
+      },
+    });
+    expect(calls[0]!.body).toMatchObject({
+      identifier: { scheme: "doi", doi: "10.1234/example" },
+    });
+  });
+
+  it("create without identifier AND without gtin/serialNumber returns an error", async () => {
+    const { tool, calls } = passportsTool();
+    const r = await tool.handler({ action: "create", args: { productId: "p1" } });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/Invalid args/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("create with identifier with unknown scheme returns an error", async () => {
+    const { tool, calls } = passportsTool();
+    const r = await tool.handler({
+      action: "create",
+      args: { productId: "p1", identifier: { scheme: "rfid", code: "ABCDEF" } },
+    });
+    expect(r.isError).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  // ── create_batch ──
+  it("create_batch POSTs a batch with legacy gs1 items", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({
+      action: "create_batch",
+      args: {
+        passports: [
+          { productId: "p1", gtin: "09506000134369", serialNumber: "SN-1" },
+          { productId: "p2", gtin: "09506000134369", serialNumber: "SN-2" },
+        ],
+      },
+    });
+    expect(calls[0]!.method).toBe("POST");
+    expect(calls[0]!.path).toBe("/api/v1/passports/batch");
+    const body = calls[0]!.body as { passports: Array<Record<string, unknown>> };
+    expect(body.passports).toHaveLength(2);
+    expect(body.passports[0]).toMatchObject({ gs1: { gtin: "09506000134369", serialNumber: "SN-1" } });
+  });
+
+  it("create_batch maps identifier items to the identifier path", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({
+      action: "create_batch",
+      args: {
+        passports: [
+          {
+            productId: "p1",
+            identifier: { scheme: "iec61406", uri: "https://id.example.com/1" },
+          },
+        ],
+        confirmOverage: true,
+      },
+    });
+    const body = calls[0]!.body as { passports: Array<Record<string, unknown>>; confirmOverage?: boolean };
+    expect(body.passports[0]).toMatchObject({ identifier: { scheme: "iec61406" } });
+    expect(body.confirmOverage).toBe(true);
+  });
+
+  it("create_batch rejects items missing identifier and gtin/serial", async () => {
+    const { tool, calls } = passportsTool();
+    const r = await tool.handler({
+      action: "create_batch",
+      args: { passports: [{ productId: "p1" }] },
+    });
+    expect(r.isError).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("create_batch rejects an empty passports array", async () => {
+    const { tool, calls } = passportsTool();
+    const r = await tool.handler({ action: "create_batch", args: { passports: [] } });
+    expect(r.isError).toBe(true);
+    expect(calls).toHaveLength(0);
   });
 
   it("archive routes to the archive endpoint", async () => {

@@ -103,7 +103,7 @@ The TracePass v1 API operations are grouped into **6 tools**.
 Each takes an action enum plus action-specific arguments. The tools are:
 
 - `tracepass_products` - manage the product catalogue (list, get, create, create_batch, update, archive products).
-- `tracepass_passports` - manage Digital Product Passports (list, get, compliance check, registry-readiness check, create, suspend, archive, get QR), by id or by serial.
+- `tracepass_passports` - manage Digital Product Passports (list, get, compliance check, registry-readiness check, create, create_batch, suspend, archive, get QR), by id or by serial. Passports are identified via GS1 or four additional EN 18219 schemes (iso15459, iec61406, did, doi); battery passports accept only gs1 and iso15459 (Art. 77(3)).
 - `tracepass_passport_fields` - update a passport's category-specific data fields, by id or by serial.
 - `tracepass_passport_parties` - set or remove a passport's economic-operator parties (manufacturer, importer, etc.).
 - `tracepass_epcis` - export, capture, and query a passport's GS1 EPCIS 2.0 supply-chain events.
@@ -114,7 +114,7 @@ Each tool's full action set:
 | Tool | Actions |
 |------|---------|
 | `tracepass_products` | `list`, `get`, `create`, `create_batch`, `update`, `archive` |
-| `tracepass_passports` | `list`, `get`, `get_by_serial`, `compliance`, `registry_readiness`, `create`, `suspend`, `suspend_by_serial`, `archive`, `archive_by_serial`, `get_qr`, `get_qr_by_serial` |
+| `tracepass_passports` | `list`, `get`, `get_by_serial`, `compliance`, `registry_readiness`, `create`, `create_batch`, `suspend`, `suspend_by_serial`, `archive`, `archive_by_serial`, `get_qr`, `get_qr_by_serial` |
 | `tracepass_passport_fields` | `update`, `update_by_serial` |
 | `tracepass_passport_parties` | `set`, `remove` |
 | `tracepass_epcis` | `export`, `export_by_serial`, `capture`, `capture_job`, `query` |
@@ -144,10 +144,12 @@ acts are still landing. It is not legal advice.
 Some actions **cost money or are irreversible** — the server's tool
 descriptions tell the model so:
 
-- **`tracepass_passports` `create`** consumes a billable DPP slot on
-  the account's plan. Over-quota creation incurs a per-passport
-  overage charge; the tool surfaces a 402-style message and only
-  proceeds with `args.confirmOverage: true` after the user agrees.
+- **`tracepass_passports` `create` / `create_batch`** consume billable DPP
+  slots. Over-quota creation incurs a per-passport overage charge; the
+  tool surfaces a 402-style message and only proceeds with
+  `args.confirmOverage: true` after the user agrees. For `create_batch`,
+  the whole batch is aborted (no partial billing) if the DPP quota or
+  daily write budget would be exceeded.
 - **`tracepass_passports` `archive`** is irreversible — the public QR
   permanently 404s. Use `suspend` (reversible) when a change might be
   undone.
