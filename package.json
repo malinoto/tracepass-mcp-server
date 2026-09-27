@@ -48,7 +48,8 @@
     "test": "vitest run",
     "build:server-card": "npm run build --silent && node scripts/build-server-card.mjs",
     "check:server-card": "npm run build --silent && node scripts/build-server-card.mjs --check",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "version": "node scripts/sync-version.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",

@@ -115,9 +115,13 @@ does NOT do the others, and **publishing to npm does NOT update the hosted
 endpoint**:
 
 1. **npm** — `v*.*.*` git tag push → `.github/workflows/publish.yml` (OIDC), never
-   laptop `npm publish`. Bump `package.json` AND `server.json` — note `server.json`
-   carries the version in **two** spots (top-level `version` + `packages[0].version`);
-   keep `"mcpName": "eu.tracepass/tracepass"`.
+   laptop `npm publish`. **Bump with `npm version patch|minor|major`, never by hand.**
+   The `version` lifecycle script (`scripts/sync-version.mjs`) writes the new version
+   into `server.json` (both spots: top-level `version` + `packages[0].version`) and
+   `MCP_SERVER_INFO` in `src/server.ts`, and stages them into the same release
+   commit. When the marketing repo is a sibling checkout it also regenerates the www
+   server-card mirror; commit that one there. `tests/version-lockstep.test.ts` still
+   fails if any copy drifts. Keep `"mcpName": "eu.tracepass/tracepass"`.
 2. **MCP Registry** (`eu.tracepass/tracepass`) — separate `mcp-publisher` step,
    DNS-namespace auth.
 3. **Hosted endpoint** (`ai.tracepass.eu/mcp`) — a separate redeploy of this source.
