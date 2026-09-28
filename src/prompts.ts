@@ -85,7 +85,7 @@ export function registerPrompts(server: McpServer): void {
           `   • iso15459 — ISO/IEC 15459: issuing agency code, primary ID, optional serial, and the raw concatenated string.\n` +
           `   • iec61406 — an IEC 61406 Identification Link (https URI).\n` +
           `   • did — a W3C Decentralised Identifier (DID string + method).\n` +
-          `   • doi — an ISO 26324 Digital Object Identifier (bare "10.<registrant>/<suffix>" form).\n` +
+          `   • doi — an ISO 26324 Digital Object Identifier (bare "10.<registrant>/<suffix>" form) plus a required granularity: "model", "batch", or "item" (EN 18219 §5.6.2(b)).\n` +
           `   Note: battery passports accept ONLY gs1 or iso15459 (Battery Regulation Art. 77(3)).\n` +
           `3. Before creating the passport, remind me that a passport is BILLABLE and consumes a plan DPP slot. ` +
           `Only after I confirm, create it with tracepass_passports (action: create, args: { productId, identifier: {...} }).\n` +

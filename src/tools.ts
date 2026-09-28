@@ -150,7 +150,12 @@ const productIdentifierSchema = z.discriminatedUnion("scheme", [
   }),
   z.object({
     scheme: z.literal("doi"),
-    doi: z.string().regex(/^10\./),
+    // Bare 10.x, or with a doi: / https://doi.org/ / dx.doi.org prefix, which
+    // the platform strips (it accepts the same forms).
+    doi: z.string().regex(/^(?:doi:|https?:\/\/(?:dx\.)?doi\.org\/)?10\./i),
+    // EN 18219 §5.6.2(b): a DOI product identifier must declare whether it
+    // identifies the product model, a production batch, or an individual item.
+    granularity: z.enum(["model", "batch", "item"]),
   }),
 ]);
 
@@ -396,7 +401,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "  • iso15459 — { scheme:\"iso15459\", issuingAgencyCode, primaryId, serial? } — ISO/IEC 15459; the server derives raw (IAC + primaryId + serial).\n" +
       "  • iec61406 — { scheme:\"iec61406\", uri } — IEC 61406 Identification Link (https URI). Not valid for batteries.\n" +
       "  • did — { scheme:\"did\", did, method } — W3C DID Core. Not valid for batteries.\n" +
-      "  • doi — { scheme:\"doi\", doi } — ISO 26324 DOI, stored as bare 10.<registrant>/<suffix>. Not valid for batteries.\n" +
+      "  • doi — { scheme:\"doi\", doi, granularity:\"model\"|\"batch\"|\"item\" } — ISO 26324 DOI, stored as bare 10.<registrant>/<suffix> (any https://doi.org/ or doi: prefix stripped on input; resolves as https://doi.org/<doi>); granularity REQUIRED per EN 18219 §5.6.2(b). Not valid for batteries.\n" +
       "The legacy top-level gtin + serialNumber pair is still accepted as a deprecated alias for scheme:\"gs1\".\n\n" +
       "Actions (pass via `action`, with `args`):\n" +
       "- list — args: { page?, limit? (≤100), productId?, status?, search? }. status ∈ draft|in_review|approved|published|suspended|expired|archived. Read-only.\n" +
@@ -445,7 +450,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
             .record(z.string(), z.unknown())
             .optional()
             .describe(
-              "EN 18219 scheme-tagged identifier for create. Must have `scheme` plus scheme-specific fields. Schemes: gs1 {gtin, serialNumber} | iso15459 {issuingAgencyCode, primaryId, serial?} | iec61406 {uri} | did {did, method} | doi {doi}. Battery passports: gs1 and iso15459 only.",
+              "EN 18219 scheme-tagged identifier for create. Must have `scheme` plus scheme-specific fields. Schemes: gs1 {gtin, serialNumber} | iso15459 {issuingAgencyCode, primaryId, serial?} | iec61406 {uri} | did {did, method} | doi {doi, granularity} (granularity: \"model\"|\"batch\"|\"item\" REQUIRED per EN 18219 §5.6.2(b)). Battery passports: gs1 and iso15459 only.",
             ),
           serialNumber: z.string().optional().describe("Serial for the new passport (create, legacy gs1 path)."),
           confirmOverage: z.boolean().optional().describe("Set true to accept per-passport overage charges when over the plan quota (402). Applies to create."),

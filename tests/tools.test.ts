@@ -195,18 +195,66 @@ describe("tracepass_passports — billable + lifecycle actions", () => {
     });
   });
 
-  it("create with identifier doi sends identifier block", async () => {
+  it("create with identifier doi sends identifier block including granularity", async () => {
     const { tool, calls } = passportsTool();
     await tool.handler({
+      action: "create",
+      args: {
+        productId: "p5",
+        identifier: { scheme: "doi", doi: "10.1234/example", granularity: "item" },
+      },
+    });
+    expect(calls[0]!.body).toMatchObject({
+      identifier: { scheme: "doi", doi: "10.1234/example", granularity: "item" },
+    });
+  });
+
+  it("create with identifier doi without granularity returns a validation error (EN 18219 §5.6.2(b))", async () => {
+    const { tool, calls } = passportsTool();
+    const r = await tool.handler({
       action: "create",
       args: {
         productId: "p5",
         identifier: { scheme: "doi", doi: "10.1234/example" },
       },
     });
-    expect(calls[0]!.body).toMatchObject({
-      identifier: { scheme: "doi", doi: "10.1234/example" },
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/Invalid args/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("create with identifier doi accepts all three granularity values", async () => {
+    const { tool, calls } = passportsTool();
+    for (const granularity of ["model", "batch", "item"] as const) {
+      calls.length = 0;
+      const r = await tool.handler({
+        action: "create",
+        args: {
+          productId: "p5",
+          identifier: { scheme: "doi", doi: "10.1234/example", granularity },
+        },
+      });
+      expect(r.isError).toBeFalsy();
+      expect(calls[0]!.body).toMatchObject({ identifier: { granularity } });
+    }
+  });
+
+  it("create with identifier doi passes a prefixed DOI through for the platform to strip", async () => {
+    const { tool, calls } = passportsTool();
+    for (const doi of ["https://doi.org/10.1234/example", "doi:10.1234/example", "https://dx.doi.org/10.1234/example"]) {
+      calls.length = 0;
+      const r = await tool.handler({
+        action: "create",
+        args: { productId: "p5", identifier: { scheme: "doi", doi, granularity: "model" } },
+      });
+      expect(r.isError).toBeFalsy();
+      expect(calls[0]!.body).toMatchObject({ identifier: { doi } });
+    }
+    const bad = await tool.handler({
+      action: "create",
+      args: { productId: "p5", identifier: { scheme: "doi", doi: "https://example.com/10.1234/x", granularity: "model" } },
     });
+    expect(bad.isError).toBe(true);
   });
 
   it("create without identifier AND without gtin/serialNumber returns an error", async () => {
