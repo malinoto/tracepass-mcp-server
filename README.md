@@ -103,7 +103,7 @@ The TracePass v1 API operations are grouped into **6 tools**.
 Each takes an action enum plus action-specific arguments. The tools are:
 
 - `tracepass_products` - manage the product catalogue (list, get, create, create_batch, update, archive products).
-- `tracepass_passports` - manage Digital Product Passports (list, get, compliance check, registry-readiness check, create, suspend, archive, get QR), by id or by serial. Passports are identified via GS1 or four additional EN 18219 schemes (iso15459, iec61406, did, doi); battery passports accept only gs1 and iso15459 (Art. 77(3)).
+- `tracepass_passports` - manage Digital Product Passports (list, get, compliance check, registry-readiness check, create, suspend, archive, get QR, list snapshots, get snapshot), by id or by serial. Passports are identified via GS1 or four additional EN 18219 schemes (iso15459, iec61406, did, doi); battery passports accept only gs1 and iso15459 (Art. 77(3)).
 - `tracepass_passport_fields` - update a passport's category-specific data fields, by id or by serial.
 - `tracepass_passport_parties` - set or remove a passport's economic-operator parties (manufacturer, importer, etc.).
 - `tracepass_epcis` - export, capture, and query a passport's GS1 EPCIS 2.0 supply-chain events.
@@ -114,7 +114,7 @@ Each tool's full action set:
 | Tool | Actions |
 |------|---------|
 | `tracepass_products` | `list`, `get`, `create`, `create_batch`, `update`, `archive` |
-| `tracepass_passports` | `list`, `get`, `get_by_serial`, `compliance`, `registry_readiness`, `create`, `suspend`, `suspend_by_serial`, `archive`, `archive_by_serial`, `get_qr`, `get_qr_by_serial` |
+| `tracepass_passports` | `list`, `get`, `get_by_serial`, `compliance`, `registry_readiness`, `create`, `suspend`, `suspend_by_serial`, `archive`, `archive_by_serial`, `get_qr`, `get_qr_by_serial`, `list_snapshots`, `get_snapshot` |
 | `tracepass_passport_fields` | `update`, `update_by_serial` |
 | `tracepass_passport_parties` | `set`, `remove` |
 | `tracepass_epcis` | `export`, `export_by_serial`, `capture`, `capture_job`, `query` |
@@ -164,6 +164,7 @@ Read-only entity data you can attach as conversation context:
 - `tracepass://passport/{id}/epcis` — a passport's EPCIS 2.0 events
 - `tracepass://passport/{id}/compliance` — a passport's compliance verdict
 - `tracepass://passport/{id}/registry-readiness` — a mechanical pre-submission check modelled on the EU DPP Registry's formal gate: mandatory-field presence, formatting, a resolvable public link, item-level granularity, a well-formed commodity code. Not the substantive compliance verdict, and not a prediction of the real registry's response — its registration API has no published spec. Battery only.
+- `tracepass://passport/{id}/snapshots` — the immutability snapshot history of a passport (newest first); each entry carries version, reason (published|republished|manual), snapshotAt, contentHash, hashValid (re-verified on read), restorable flag, and field count.
 - `tracepass://templates` — all 13 DPP category field schemas
 - `tracepass://template/{category}` — one category's full field schema
 

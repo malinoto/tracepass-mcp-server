@@ -318,6 +318,48 @@ describe("tracepass_passports — billable + lifecycle actions", () => {
     expect(calls[0]!.path).toBe("/api/v1/passports/by-serial/SN-1/qr?format=png&gtin=09506000134369");
     expect(calls[0]!.method).toBe("GET");
   });
+
+  it("list_snapshots GETs the snapshot list with pagination", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({ action: "list_snapshots", args: { id: "abc123", page: 2, limit: 10 } });
+    expect(calls[0]!.method).toBe("GET");
+    expect(calls[0]!.path).toBe("/api/v1/passports/abc123/snapshots?page=2&limit=10");
+  });
+
+  it("list_snapshots without pagination omits query params", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({ action: "list_snapshots", args: { id: "abc123" } });
+    expect(calls[0]!.path).toBe("/api/v1/passports/abc123/snapshots");
+  });
+
+  it("list_snapshots missing id returns isError, no HTTP call", async () => {
+    const { tool, calls } = passportsTool();
+    const r = await tool.handler({ action: "list_snapshots", args: {} });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/Invalid args/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("get_snapshot GETs the specific snapshot", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({ action: "get_snapshot", args: { id: "abc123", snapshotId: "snap456" } });
+    expect(calls[0]!.method).toBe("GET");
+    expect(calls[0]!.path).toBe("/api/v1/passports/abc123/snapshots/snap456");
+  });
+
+  it("get_snapshot missing snapshotId returns isError, no HTTP call", async () => {
+    const { tool, calls } = passportsTool();
+    const r = await tool.handler({ action: "get_snapshot", args: { id: "abc123" } });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/Invalid args/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("get_snapshot URL-encodes ids with special chars", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({ action: "get_snapshot", args: { id: "abc/xyz", snapshotId: "snap 1" } });
+    expect(calls[0]!.path).toBe("/api/v1/passports/abc%2Fxyz/snapshots/snap%201");
+  });
 });
 
 describe("tracepass_passport_fields — actions", () => {

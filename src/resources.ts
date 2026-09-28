@@ -179,6 +179,29 @@ export function registerResources(
     },
   );
 
+  // ── Template: a passport's snapshot list ─────────────────────────
+  server.registerResource(
+    "passport-snapshots",
+    new ResourceTemplate("tracepass://passport/{id}/snapshots", {
+      list: undefined,
+    }),
+    {
+      title: "Passport snapshot list",
+      description:
+        "The immutability snapshot history of a passport (newest first) — each entry carries the snapshot id, version, reason (published|republished|manual), snapshotAt timestamp, contentHash, hashValid (re-verified on read), restorable flag, and field count. Attach this to ground the model in a passport's publish history for compliance or ERP audit. tracepass://passport/{id}/snapshots.",
+      mimeType: "application/json",
+    },
+    async (uri, variables) => {
+      const id = String(variables.id);
+      const res = await client.get(
+        `/api/v1/passports/${encodeURIComponent(id)}/snapshots`,
+      );
+      return res.ok
+        ? jsonContents(uri.href, res.body)
+        : errorContents(uri.href, res.status, res.body);
+    },
+  );
+
   // ── Static resource: the DPP regulatory schemas (all categories) ──
   server.registerResource(
     "templates",

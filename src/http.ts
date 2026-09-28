@@ -156,6 +156,7 @@ export const SERVER_CARD = {
       "tracepass://passport/{id}/epcis",
       "tracepass://passport/{id}/compliance",
       "tracepass://passport/{id}/registry-readiness",
+      "tracepass://passport/{id}/snapshots",
       "tracepass://template/{category}",
     ],
     prompts: [

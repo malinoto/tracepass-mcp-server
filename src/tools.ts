@@ -354,6 +354,16 @@ const SCHEMAS = {
   }),
   partyRemove: z.object({ id: z.string().min(1), role: partyRoleEnum }),
 
+  snapshotList: z.object({
+    id: z.string().min(1),
+    page: z.number().int().positive().optional(),
+    limit: z.number().int().positive().max(100).optional(),
+  }),
+  snapshotGet: z.object({
+    id: z.string().min(1),
+    snapshotId: z.string().min(1),
+  }),
+
   epcisExport: z.object({ id: z.string().min(1) }),
   epcisExportBySerial: z.object({
     serial: z.string().min(1),
@@ -479,7 +489,9 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "- archive — args: { id }. IRREVERSIBLE — confirm with the user first.\n" +
       "- archive_by_serial — args: { serial, gtin? }. IRREVERSIBLE, addressed by your serial — confirm first. 409 ambiguous_serial if the serial isn't unique — pass `gtin`.\n" +
       "- get_qr — args: { id, format? (svg|png) }. Read-only.\n" +
-      "- get_qr_by_serial — args: { serial, format? (svg|png), gtin? }. Read-only. Same as get_qr, addressed by your own serial. A serial is unique only WITHIN a GTIN — if the same serial exists under two GTINs in your account the call returns 409 ambiguous_serial; pass `gtin` (or use get_qr by id) to resolve exactly.",
+      "- get_qr_by_serial — args: { serial, format? (svg|png), gtin? }. Read-only. Same as get_qr, addressed by your own serial. A serial is unique only WITHIN a GTIN — if the same serial exists under two GTINs in your account the call returns 409 ambiguous_serial; pass `gtin` (or use get_qr by id) to resolve exactly.\n" +
+      "- list_snapshots — args: { id, page?, limit? (≤100) }. Read-only. Returns a paginated list of immutability snapshots for the passport (newest first) — each carries id, version, reason (published|republished|manual), snapshotAt, contentHash, hashValid (re-verified on every read), restorable, fieldCount. Passports published before the snapshot feature existed return an empty list gracefully. Counts 1 against the daily read budget.\n" +
+      "- get_snapshot — args: { id, snapshotId }. Read-only. Returns the full archival record of one snapshot: the complete JSON-LD the passport asserted at that time, plus hash and hashValid. Counts 1 against the daily read budget.",
     inputSchema: {
       action: z
         .enum([
@@ -495,9 +507,11 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           "archive_by_serial",
           "get_qr",
           "get_qr_by_serial",
+          "list_snapshots",
+          "get_snapshot",
         ])
         .describe(
-          "Which passport operation to run. Reads: list | get | get_by_serial | compliance | registry_readiness | get_qr | get_qr_by_serial. Writes (BILLABLE): create. Lifecycle: suspend (reversible) | archive (IRREVERSIBLE), each with a _by_serial variant.",
+          "Which passport operation to run. Reads: list | get | get_by_serial | compliance | registry_readiness | get_qr | get_qr_by_serial | list_snapshots | get_snapshot. Writes (BILLABLE): create. Lifecycle: suspend (reversible) | archive (IRREVERSIBLE), each with a _by_serial variant.",
         ),
       args: z
         .object({
@@ -524,6 +538,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           limit: z.number().optional().describe("Page size for list, max 100."),
           status: z.string().optional().describe("Filter list by status: draft|in_review|approved|published|suspended|expired|archived."),
           search: z.string().optional().describe("Filter list by a search term."),
+          snapshotId: z.string().optional().describe("Snapshot id. Required for get_snapshot."),
         })
         .partial()
         .optional()
@@ -617,6 +632,20 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
             await client.get(
               `/api/v1/passports/by-serial/${seg(p.serial)}/qr${qs({ format: p.format, gtin: p.gtin })}`,
             ),
+          );
+        }
+        case "list_snapshots": {
+          const p = parseArgs(SCHEMAS.snapshotList, a.args, "tracepass_passports", action);
+          if (isErr(p)) return p;
+          return apiResult(
+            await client.get(`/api/v1/passports/${seg(p.id)}/snapshots${qs({ page: p.page, limit: p.limit })}`),
+          );
+        }
+        case "get_snapshot": {
+          const p = parseArgs(SCHEMAS.snapshotGet, a.args, "tracepass_passports", action);
+          if (isErr(p)) return p;
+          return apiResult(
+            await client.get(`/api/v1/passports/${seg(p.id)}/snapshots/${seg(p.snapshotId)}`),
           );
         }
         default:
