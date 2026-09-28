@@ -137,7 +137,7 @@ const productIdentifierSchema = z.discriminatedUnion("scheme", [
     issuingAgencyCode: z.string().min(1).max(3),
     primaryId: z.string().min(1),
     serial: z.string().optional(),
-    raw: z.string().min(1),
+    raw: z.string().min(1).optional(),
   }),
   z.object({
     scheme: z.literal("iec61406"),
@@ -393,7 +393,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "IMPORTANT: `create` consumes DPP slots and IS BILLABLE. Over-quota creation incurs a per-passport charge; the tool surfaces a 402-style message — only re-run with args.confirmOverage=true after the user explicitly agrees. `archive` is IRREVERSIBLE (the public QR permanently 404s); prefer `suspend` when a change might be undone.\n\n" +
       "IDENTIFIER SCHEMES (EN 18219): passports are identified by one of five schemes. Battery passports (Battery Regulation Art. 77(3)) accept ONLY gs1 and iso15459.\n" +
       "  • gs1 — { scheme:\"gs1\", gtin, serialNumber } — GS1 GTIN + serial; gtin is 8/12/13/14 digits, stored as GTIN-14.\n" +
-      "  • iso15459 — { scheme:\"iso15459\", issuingAgencyCode, primaryId, serial?, raw } — ISO/IEC 15459; raw = IAC + primaryId + serial concatenated.\n" +
+      "  • iso15459 — { scheme:\"iso15459\", issuingAgencyCode, primaryId, serial? } — ISO/IEC 15459; the server derives raw (IAC + primaryId + serial).\n" +
       "  • iec61406 — { scheme:\"iec61406\", uri } — IEC 61406 Identification Link (https URI). Not valid for batteries.\n" +
       "  • did — { scheme:\"did\", did, method } — W3C DID Core. Not valid for batteries.\n" +
       "  • doi — { scheme:\"doi\", doi } — ISO 26324 DOI, stored as bare 10.<registrant>/<suffix>. Not valid for batteries.\n" +
@@ -445,7 +445,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
             .record(z.string(), z.unknown())
             .optional()
             .describe(
-              "EN 18219 scheme-tagged identifier for create. Must have `scheme` plus scheme-specific fields. Schemes: gs1 {gtin, serialNumber} | iso15459 {issuingAgencyCode, primaryId, serial?, raw} | iec61406 {uri} | did {did, method} | doi {doi}. Battery passports: gs1 and iso15459 only.",
+              "EN 18219 scheme-tagged identifier for create. Must have `scheme` plus scheme-specific fields. Schemes: gs1 {gtin, serialNumber} | iso15459 {issuingAgencyCode, primaryId, serial?} | iec61406 {uri} | did {did, method} | doi {doi}. Battery passports: gs1 and iso15459 only.",
             ),
           serialNumber: z.string().optional().describe("Serial for the new passport (create, legacy gs1 path)."),
           confirmOverage: z.boolean().optional().describe("Set true to accept per-passport overage charges when over the plan quota (402). Applies to create."),
