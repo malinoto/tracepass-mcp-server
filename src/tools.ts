@@ -168,6 +168,68 @@ const partyRoleEnum = z.enum([
   "producerResponsibilityOrg",
 ]);
 
+/**
+ * EN 18219 §6.2–6.5 operator-identifier discriminated union.
+ * Four schemes: iso6523 (LEI/GLN/DUNS), gln, did, doi.
+ * Passed through to the PATCH body without transformation — the platform
+ * enforces the cross-field rules (gln+operatorIdentifier match, etc.).
+ */
+const operatorIdentifierSchema = z.discriminatedUnion("scheme", [
+  z.object({
+    scheme: z.literal("iso6523"),
+    icd: z.string().regex(/^\d{4}$/, "ICD must be exactly 4 digits (ISO/IEC 6523)"),
+    value: z.string().min(1).max(256),
+  }),
+  z.object({
+    scheme: z.literal("gln"),
+    gln: z.string().regex(/^\d{13}$/, "GLN must be exactly 13 digits"),
+  }),
+  z.object({
+    scheme: z.literal("did"),
+    // EN 18219 §6.4.2(b): syntax check only; verification requires an authorised-register VC.
+    // W3C DID Core: method MUST be lowercase alphanumerics only.
+    did: z.string().regex(/^did:[a-z0-9]+:.+/, "DID must match did:<method>:<id> with lowercase alphanumeric method").max(512),
+  }),
+  z.object({
+    scheme: z.literal("doi"),
+    doi: z.string().regex(
+      /^(?:doi:|https?:\/\/(?:dx\.)?doi\.org\/)?10\.\d{4,9}\/\S+$/i,
+      "DOI must be a valid 10.<4-9 digits>/<suffix> (bare or with doi:/URL prefix)",
+    ).max(512),
+  }),
+]);
+
+/**
+ * EN 18219 §6.2–6.5 facility-identifier discriminated union.
+ * Same four schemes as operatorIdentifierSchema, but the gln variant
+ * also accepts an optional GS1 SGLN sub-location `extension`.
+ * facilityIdentifier never fills the top-level `gln` field.
+ */
+const facilityIdentifierSchema = z.discriminatedUnion("scheme", [
+  z.object({
+    scheme: z.literal("iso6523"),
+    icd: z.string().regex(/^\d{4}$/, "ICD must be exactly 4 digits (ISO/IEC 6523)"),
+    value: z.string().min(1).max(256),
+  }),
+  z.object({
+    scheme: z.literal("gln"),
+    gln: z.string().regex(/^\d{13}$/, "GLN must be exactly 13 digits"),
+    // GS1 SGLN sub-location extension — non-empty when present, max 80 chars.
+    extension: z.string().min(1).max(80).optional(),
+  }),
+  z.object({
+    scheme: z.literal("did"),
+    did: z.string().regex(/^did:[a-z0-9]+:.+/, "DID must match did:<method>:<id> with lowercase alphanumeric method").max(512),
+  }),
+  z.object({
+    scheme: z.literal("doi"),
+    doi: z.string().regex(
+      /^(?:doi:|https?:\/\/(?:dx\.)?doi\.org\/)?10\.\d{4,9}\/\S+$/i,
+      "DOI must be a valid 10.<4-9 digits>/<suffix> (bare or with doi:/URL prefix)",
+    ).max(512),
+  }),
+]);
+
 const SCHEMAS = {
   productList: z.object({
     page: z.number().int().positive().optional(),
@@ -287,6 +349,8 @@ const SCHEMAS = {
     gln: z.string().optional(),
     country: z.string().optional(),
     legacyOperatorId: z.string().optional(),
+    operatorIdentifier: operatorIdentifierSchema.optional(),
+    facilityIdentifier: facilityIdentifierSchema.optional(),
   }),
   partyRemove: z.object({ id: z.string().min(1), role: partyRoleEnum }),
 
@@ -621,9 +685,19 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     name: "tracepass_passport_parties",
     title: "TracePass passport parties",
     description:
-      "Manage the economic-operator parties on a passport — manufacturer, importer, authorisedRepresentative, distributor, recycler, producerResponsibilityOrg. Each party carries a legal name and ideally a validated 13-digit GS1 GLN.\n\n" +
+      "Manage the economic-operator parties on a passport — manufacturer, importer, authorisedRepresentative, distributor, recycler, producerResponsibilityOrg. Each party carries a legal name and at least one identifier.\n\n" +
+      "Identifier rules (EN 18219 §6.2–6.5): a party needs at least one of `gln`, `legacyOperatorId`, or `operatorIdentifier`. " +
+      "If both `gln` and `operatorIdentifier` (scheme gln) are provided they must agree — a mismatch returns 400. " +
+      "An operatorIdentifier of scheme gln also fills the top-level `gln` field; facilityIdentifier never does. " +
+      "Typed identifiers (operatorIdentifier / facilityIdentifier) are not set by AI extraction or CSV import.\n\n" +
+      "operatorIdentifier schemes:\n" +
+      "  • iso6523 — { scheme:\"iso6523\", icd:\"<4 digits>\", value } — ICD 0199 = LEI (ISO 17442), 0088 = GLN, 0060 = DUNS.\n" +
+      "  • gln — { scheme:\"gln\", gln:\"<13 digits>\" } — also fills top-level `gln`.\n" +
+      "  • did — { scheme:\"did\", did:\"did:<method>:<id>\" } — syntax-checked only (EN 18219 §6.4.2(b)).\n" +
+      "  • doi — { scheme:\"doi\", doi:\"10.<registrant>/<suffix>\" } — doi:/https://doi.org/ prefix accepted and stripped.\n\n" +
+      "facilityIdentifier schemes: same four; the gln variant also accepts optional `extension` (GS1 SGLN sub-location).\n\n" +
       "Actions (pass via `action`, with `args`):\n" +
-      "- set — args: { id, role, legalName, gln?, country?, legacyOperatorId? }. Sets or updates one role.\n" +
+      "- set — args: { id, role, legalName, gln?, country?, legacyOperatorId?, operatorIdentifier?, facilityIdentifier? }. Sets or updates one role.\n" +
       "- remove — args: { id, role }. Clears one role.",
     inputSchema: {
       action: z
@@ -632,11 +706,20 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       args: z
         .object({
           id: z.string().optional().describe("Passport id (required)."),
-          role: z.string().optional().describe("Economic-operator role, e.g. manufacturer | importer | distributor | authorised_representative (required)."),
+          role: z.string().optional().describe("Economic-operator role: manufacturer | importer | authorisedRepresentative | distributor | recycler | producerResponsibilityOrg (required)."),
           legalName: z.string().optional().describe("Party legal name. Required for set."),
-          gln: z.string().optional().describe("GS1 Global Location Number for the party (set, optional)."),
-          country: z.string().optional().describe("Party country code (set, optional)."),
-          legacyOperatorId: z.string().optional().describe("Your internal operator id for the party (set, optional)."),
+          gln: z.string().optional().describe("GS1 Global Location Number (13 digits). Strongly recommended for multi-role disambiguation."),
+          country: z.string().optional().describe("ISO 3166-1 alpha-2 country code (set, optional)."),
+          legacyOperatorId: z.string().optional().describe("Free-text fallback identifier (VAT, EORI, supplier code). Required when gln and operatorIdentifier are both absent."),
+          operatorIdentifier: z.record(z.string(), z.unknown()).optional().describe(
+            "Structured operator identifier per EN 18219 §6.2–6.5. Must have `scheme` plus scheme fields. " +
+            "Schemes: iso6523 {icd:\"<4 digits>\", value} | gln {gln:\"<13 digits>\"} | did {did:\"did:<method>:<id>\"} | doi {doi:\"10.<registrant>/<suffix>\"}. " +
+            "scheme gln also fills the top-level gln field; they must match if both are set (400 otherwise). Not set by AI extraction.",
+          ),
+          facilityIdentifier: z.record(z.string(), z.unknown()).optional().describe(
+            "Structured facility identifier per EN 18219 §6.2–6.5. Same four schemes as operatorIdentifier; " +
+            "the gln variant also accepts optional `extension` (GS1 SGLN sub-location). Never fills the top-level gln field. Not set by AI extraction.",
+          ),
         })
         .partial()
         .optional()

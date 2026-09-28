@@ -379,6 +379,244 @@ describe("tracepass_epcis — actions", () => {
   });
 });
 
+describe("tracepass_passport_parties — set action routing and identifier validation", () => {
+  function partiesTool() {
+    const stub = stubClient();
+    const tool = buildTools(stub.client).find((t) => t.name === "tracepass_passport_parties")!;
+    return { tool, calls: stub.calls };
+  }
+
+  it("set PATCHes the party endpoint with basic fields", async () => {
+    const { tool, calls } = partiesTool();
+    await tool.handler({
+      action: "set",
+      args: { id: "pass1", role: "manufacturer", legalName: "Acme GmbH", gln: "4012345678901" },
+    });
+    expect(calls[0]!.method).toBe("PATCH");
+    expect(calls[0]!.path).toBe("/api/v1/passports/pass1/parties/manufacturer");
+    expect(calls[0]!.body).toMatchObject({ legalName: "Acme GmbH", gln: "4012345678901" });
+  });
+
+  it("set forwards operatorIdentifier iso6523 to the PATCH body", async () => {
+    const { tool, calls } = partiesTool();
+    await tool.handler({
+      action: "set",
+      args: {
+        id: "pass2",
+        role: "importer",
+        legalName: "Importer SRL",
+        operatorIdentifier: { scheme: "iso6523", icd: "0199", value: "529900T8BM49AURSDO55" },
+      },
+    });
+    expect(calls[0]!.body).toMatchObject({
+      legalName: "Importer SRL",
+      operatorIdentifier: { scheme: "iso6523", icd: "0199", value: "529900T8BM49AURSDO55" },
+    });
+    expect(calls).toHaveLength(1);
+  });
+
+  it("set forwards operatorIdentifier gln to the PATCH body", async () => {
+    const { tool, calls } = partiesTool();
+    await tool.handler({
+      action: "set",
+      args: {
+        id: "pass3",
+        role: "recycler",
+        legalName: "Recycler AG",
+        operatorIdentifier: { scheme: "gln", gln: "4012345678901" },
+      },
+    });
+    expect(calls[0]!.body).toMatchObject({
+      operatorIdentifier: { scheme: "gln", gln: "4012345678901" },
+    });
+  });
+
+  it("set forwards operatorIdentifier did to the PATCH body", async () => {
+    const { tool, calls } = partiesTool();
+    await tool.handler({
+      action: "set",
+      args: {
+        id: "pass4",
+        role: "distributor",
+        legalName: "Distributor Ltd",
+        legacyOperatorId: "X123",
+        operatorIdentifier: { scheme: "did", did: "did:web:example.com" },
+      },
+    });
+    expect(calls[0]!.body).toMatchObject({
+      operatorIdentifier: { scheme: "did", did: "did:web:example.com" },
+    });
+  });
+
+  it("set forwards operatorIdentifier doi to the PATCH body", async () => {
+    const { tool, calls } = partiesTool();
+    await tool.handler({
+      action: "set",
+      args: {
+        id: "pass5",
+        role: "recycler",
+        legalName: "DOI Corp",
+        legacyOperatorId: "DOI-1",
+        operatorIdentifier: { scheme: "doi", doi: "10.1234/example" },
+      },
+    });
+    expect(calls[0]!.body).toMatchObject({
+      operatorIdentifier: { scheme: "doi", doi: "10.1234/example" },
+    });
+  });
+
+  it("set forwards facilityIdentifier gln with extension to the PATCH body", async () => {
+    const { tool, calls } = partiesTool();
+    await tool.handler({
+      action: "set",
+      args: {
+        id: "pass6",
+        role: "manufacturer",
+        legalName: "Plant Corp",
+        gln: "4012345678901",
+        facilityIdentifier: { scheme: "gln", gln: "4012345678901", extension: "1" },
+      },
+    });
+    expect(calls[0]!.body).toMatchObject({
+      facilityIdentifier: { scheme: "gln", gln: "4012345678901", extension: "1" },
+    });
+  });
+
+  it("operatorIdentifier with invalid ICD (not 4 digits) is rejected client-side", async () => {
+    const { tool, calls } = partiesTool();
+    const r = await tool.handler({
+      action: "set",
+      args: {
+        id: "pass7",
+        role: "manufacturer",
+        legalName: "Acme",
+        operatorIdentifier: { scheme: "iso6523", icd: "199", value: "abc" },
+      },
+    });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/Invalid args/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("operatorIdentifier with invalid GLN (not 13 digits) is rejected client-side", async () => {
+    const { tool, calls } = partiesTool();
+    const r = await tool.handler({
+      action: "set",
+      args: {
+        id: "pass8",
+        role: "manufacturer",
+        legalName: "Acme",
+        operatorIdentifier: { scheme: "gln", gln: "12345" },
+      },
+    });
+    expect(r.isError).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("operatorIdentifier with invalid DID syntax is rejected client-side", async () => {
+    const { tool, calls } = partiesTool();
+    const r = await tool.handler({
+      action: "set",
+      args: {
+        id: "pass9",
+        role: "manufacturer",
+        legalName: "Acme",
+        operatorIdentifier: { scheme: "did", did: "not-a-did" },
+      },
+    });
+    expect(r.isError).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("operatorIdentifier with unknown scheme is rejected client-side", async () => {
+    const { tool, calls } = partiesTool();
+    const r = await tool.handler({
+      action: "set",
+      args: {
+        id: "pass10",
+        role: "manufacturer",
+        legalName: "Acme",
+        operatorIdentifier: { scheme: "rfid", code: "ABCDEF" },
+      },
+    });
+    expect(r.isError).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("operatorIdentifier did with uppercase method is rejected (W3C DID Core: method must be lowercase)", async () => {
+    const { tool, calls } = partiesTool();
+    const r = await tool.handler({
+      action: "set",
+      args: {
+        id: "pass-did-upper",
+        role: "manufacturer",
+        legalName: "Acme",
+        operatorIdentifier: { scheme: "did", did: "did:WEB:example.com" },
+      },
+    });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/Invalid args/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("operatorIdentifier iso6523 value over 256 chars is rejected", async () => {
+    const { tool, calls } = partiesTool();
+    const r = await tool.handler({
+      action: "set",
+      args: {
+        id: "pass-long",
+        role: "manufacturer",
+        legalName: "Acme",
+        operatorIdentifier: { scheme: "iso6523", icd: "0199", value: "A".repeat(257) },
+      },
+    });
+    expect(r.isError).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("facilityIdentifier gln with empty string extension is rejected", async () => {
+    const { tool, calls } = partiesTool();
+    const r = await tool.handler({
+      action: "set",
+      args: {
+        id: "pass-ext",
+        role: "manufacturer",
+        legalName: "Plant Corp",
+        gln: "4012345678901",
+        facilityIdentifier: { scheme: "gln", gln: "4012345678901", extension: "" },
+      },
+    });
+    expect(r.isError).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("operatorIdentifier doi accepts doi: and https://doi.org/ prefixes", async () => {
+    const { tool, calls } = partiesTool();
+    for (const doi of ["10.1234/x", "doi:10.1234/x", "https://doi.org/10.1234/x"]) {
+      calls.length = 0;
+      const r = await tool.handler({
+        action: "set",
+        args: {
+          id: "pass11",
+          role: "manufacturer",
+          legalName: "DOI Corp",
+          legacyOperatorId: "X",
+          operatorIdentifier: { scheme: "doi", doi },
+        },
+      });
+      expect(r.isError).toBeFalsy();
+      expect(calls[0]!.body).toMatchObject({ operatorIdentifier: { doi } });
+    }
+  });
+
+  it("remove routes to the party delete endpoint", async () => {
+    const { tool, calls } = partiesTool();
+    await tool.handler({ action: "remove", args: { id: "pass12", role: "recycler" } });
+    expect(calls[0]!.method).toBe("DELETE");
+    expect(calls[0]!.path).toBe("/api/v1/passports/pass12/parties/recycler");
+  });
+});
+
 describe("tracepass_templates — regulatory schema routing", () => {
   function templatesTool() {
     const stub = stubClient();
