@@ -323,10 +323,12 @@ const SCHEMAS = {
   passportQr: z.object({
     id: z.string().min(1),
     format: z.enum(["svg", "png"]).optional(),
+    symbology: z.enum(["qr", "datamatrix"]).optional(),
   }),
   passportQrBySerial: z.object({
     serial: z.string().min(1),
     format: z.enum(["svg", "png"]).optional(),
+    symbology: z.enum(["qr", "datamatrix"]).optional(),
     gtin: z.string().optional(),
   }),
 
@@ -358,6 +360,7 @@ const SCHEMAS = {
     id: z.string().min(1),
     page: z.number().int().positive().optional(),
     limit: z.number().int().positive().max(100).optional(),
+    at: z.string().min(1).optional(),
   }),
   snapshotGet: z.object({
     id: z.string().min(1),
@@ -508,9 +511,9 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "- suspend_by_serial — args: { serial, gtin? }. Same as suspend, addressed by your serial. 409 ambiguous_serial if the serial isn't unique in your account — pass `gtin`.\n" +
       "- archive — args: { id }. IRREVERSIBLE — confirm with the user first.\n" +
       "- archive_by_serial — args: { serial, gtin? }. IRREVERSIBLE, addressed by your serial — confirm first. 409 ambiguous_serial if the serial isn't unique — pass `gtin`.\n" +
-      "- get_qr — args: { id, format? (svg|png) }. Read-only.\n" +
-      "- get_qr_by_serial — args: { serial, format? (svg|png), gtin? }. Read-only. Same as get_qr, addressed by your own serial. A serial is unique only WITHIN a GTIN — if the same serial exists under two GTINs in your account the call returns 409 ambiguous_serial; pass `gtin` (or use get_qr by id) to resolve exactly.\n" +
-      "- list_snapshots — args: { id, page?, limit? (≤100) }. Read-only. Returns a paginated list of immutability snapshots for the passport (newest first) — each carries id, version, reason (published|republished|manual), snapshotAt, contentHash, hashValid (re-verified on every read), restorable, fieldCount. Passports published before the snapshot feature existed return an empty list gracefully. Counts 1 against the daily read budget.\n" +
+      "- get_qr — args: { id, format? (svg|png), symbology? (qr|datamatrix) }. Read-only. symbology=datamatrix renders an ISO/IEC 16022 Data Matrix instead of a QR (EN 18220 permits both; same passport URL).\n" +
+      "- get_qr_by_serial — args: { serial, format? (svg|png), symbology? (qr|datamatrix), gtin? }. Read-only. Same as get_qr, addressed by your own serial. A serial is unique only WITHIN a GTIN — if the same serial exists under two GTINs in your account the call returns 409 ambiguous_serial; pass `gtin` (or use get_qr by id) to resolve exactly.\n" +
+      "- list_snapshots — args: { id, page?, limit? (≤100), at? (ISO 8601) }. Read-only. Returns a paginated list of snapshots for the passport (newest first). A snapshot is written on publish and after every change to a non-draft passport (EN 18221 change archive); each carries id, version, reason (e.g. published|field_edit|status_change|baseline), actor (who caused it, when known), snapshotAt, contentHash, hashValid (re-verified on every read), restorable, fieldCount. With `at`, returns instead the single snapshot valid at that instant (full record plus validFrom/validUntil) — answers \"what did this passport say on date D\"; 404 before the first snapshot. Counts 1 against the daily read budget.\n" +
       "- get_snapshot — args: { id, snapshotId }. Read-only. Returns the full archival record of one snapshot: the complete JSON-LD the passport asserted at that time, plus hash and hashValid. Counts 1 against the daily read budget.\n" +
       "- get_condition_flags — args: { id }. Read-only. Returns the resolved condition profile Record<flagKey,{value,status,source}>. Condition flags are reviewer-approved yes/no facts gating conditional legal duties. Battery flags: hasBMS, rechargeable, externalStorageOnly, isStationaryBess. An approved flag makes specific fields required — a missing gated field is a hard publish block (conditional_missing). Counts 1 against the daily read budget.\n" +
       "- get_condition_flags_by_serial — args: { serial, gtin? }. Read-only. Same as get_condition_flags, addressed by your own serial. 409 ambiguous_serial if serial not unique — pass gtin.\n" +
@@ -561,6 +564,8 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           serialNumber: z.string().optional().describe("Serial for the new passport (create, legacy gs1 path)."),
           confirmOverage: z.boolean().optional().describe("Set true to accept per-passport overage charges when over the plan quota (402). Applies to create."),
           format: z.string().optional().describe("get/get_by_serial: summary|full. get_qr/get_qr_by_serial: svg|png."),
+          symbology: z.string().optional().describe("get_qr/get_qr_by_serial: qr (default) | datamatrix."),
+          at: z.string().optional().describe("list_snapshots: ISO 8601 instant — return the snapshot valid then instead of the list."),
           lang: z.string().optional().describe("Resolve field values to one of the 24 EU locales server-side (get/get_by_serial)."),
           page: z.number().optional().describe("Page number for list (1-based)."),
           limit: z.number().optional().describe("Page size for list, max 100."),
@@ -654,7 +659,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           const p = parseArgs(SCHEMAS.passportQr, a.args, "tracepass_passports", action);
           if (isErr(p)) return p;
           return apiResult(
-            await client.get(`/api/v1/passports/${seg(p.id)}/qr${qs({ format: p.format })}`),
+            await client.get(`/api/v1/passports/${seg(p.id)}/qr${qs({ format: p.format, symbology: p.symbology })}`),
           );
         }
         case "get_qr_by_serial": {
@@ -662,7 +667,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           if (isErr(p)) return p;
           return apiResult(
             await client.get(
-              `/api/v1/passports/by-serial/${seg(p.serial)}/qr${qs({ format: p.format, gtin: p.gtin })}`,
+              `/api/v1/passports/by-serial/${seg(p.serial)}/qr${qs({ format: p.format, symbology: p.symbology, gtin: p.gtin })}`,
             ),
           );
         }
@@ -670,7 +675,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           const p = parseArgs(SCHEMAS.snapshotList, a.args, "tracepass_passports", action);
           if (isErr(p)) return p;
           return apiResult(
-            await client.get(`/api/v1/passports/${seg(p.id)}/snapshots${qs({ page: p.page, limit: p.limit })}`),
+            await client.get(`/api/v1/passports/${seg(p.id)}/snapshots${qs({ page: p.page, limit: p.limit, at: p.at })}`),
           );
         }
         case "get_snapshot": {

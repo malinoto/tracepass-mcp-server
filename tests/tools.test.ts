@@ -326,6 +326,25 @@ describe("tracepass_passports — billable + lifecycle actions", () => {
     expect(calls[0]!.path).toBe("/api/v1/passports/abc123/snapshots?page=2&limit=10");
   });
 
+  it("get_qr passes symbology=datamatrix through (EN 18220)", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({ action: "get_qr", args: { id: "abc123", format: "png", symbology: "datamatrix" } });
+    expect(calls[0]!.path).toBe("/api/v1/passports/abc123/qr?format=png&symbology=datamatrix");
+  });
+
+  it("get_qr rejects a symbology the API does not accept, with no HTTP call", async () => {
+    const { tool, calls } = passportsTool();
+    const r = await tool.handler({ action: "get_qr", args: { id: "abc123", symbology: "ean13" } });
+    expect(r.isError).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("list_snapshots passes `at` for a point-in-time read (EN 18221)", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({ action: "list_snapshots", args: { id: "abc123", at: "2026-09-29T12:00:00Z" } });
+    expect(decodeURIComponent(calls[0]!.path)).toBe("/api/v1/passports/abc123/snapshots?at=2026-09-29T12:00:00Z");
+  });
+
   it("list_snapshots without pagination omits query params", async () => {
     const { tool, calls } = passportsTool();
     await tool.handler({ action: "list_snapshots", args: { id: "abc123" } });
