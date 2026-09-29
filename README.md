@@ -103,7 +103,7 @@ The TracePass v1 API operations are grouped into **6 tools**.
 Each takes an action enum plus action-specific arguments. The tools are:
 
 - `tracepass_products` - manage the product catalogue (list, get, create, create_batch, update, archive products).
-- `tracepass_passports` - manage Digital Product Passports (list, get, compliance check, registry-readiness check, create, suspend, archive, get QR, list snapshots, get snapshot), by id or by serial. Passports are identified via GS1 or four additional EN 18219 schemes (iso15459, iec61406, did, doi); battery passports accept only gs1 and iso15459 (Art. 77(3)).
+- `tracepass_passports` - manage Digital Product Passports (list, get, compliance check, registry-readiness check, get/set condition flags, create, suspend, archive, get QR, list snapshots, get snapshot), by id or by serial. Passports are identified via GS1 or four additional EN 18219 schemes (iso15459, iec61406, did, doi); battery passports accept only gs1 and iso15459 (Art. 77(3)). **Condition flags** are approved yes/no facts (e.g. battery: `hasBMS`, `rechargeable`, `externalStorageOnly`, `isStationaryBess`) that gate conditional legal duties — setting an approved flag may make additional fields required and block publishing if those fields are empty.
 - `tracepass_passport_fields` - update a passport's category-specific data fields, by id or by serial.
 - `tracepass_passport_parties` - set or remove a passport's economic-operator parties (manufacturer, importer, etc.).
 - `tracepass_epcis` - export, capture, and query a passport's GS1 EPCIS 2.0 supply-chain events.
@@ -114,7 +114,7 @@ Each tool's full action set:
 | Tool | Actions |
 |------|---------|
 | `tracepass_products` | `list`, `get`, `create`, `create_batch`, `update`, `archive` |
-| `tracepass_passports` | `list`, `get`, `get_by_serial`, `compliance`, `registry_readiness`, `create`, `suspend`, `suspend_by_serial`, `archive`, `archive_by_serial`, `get_qr`, `get_qr_by_serial`, `list_snapshots`, `get_snapshot` |
+| `tracepass_passports` | `list`, `get`, `get_by_serial`, `compliance`, `registry_readiness`, `get_condition_flags`, `get_condition_flags_by_serial`, `set_condition_flags`, `set_condition_flags_by_serial`, `create`, `suspend`, `suspend_by_serial`, `archive`, `archive_by_serial`, `get_qr`, `get_qr_by_serial`, `list_snapshots`, `get_snapshot` |
 | `tracepass_passport_fields` | `update`, `update_by_serial` |
 | `tracepass_passport_parties` | `set`, `remove` |
 | `tracepass_epcis` | `export`, `export_by_serial`, `capture`, `capture_job`, `query` |

@@ -360,6 +360,99 @@ describe("tracepass_passports — billable + lifecycle actions", () => {
     await tool.handler({ action: "get_snapshot", args: { id: "abc/xyz", snapshotId: "snap 1" } });
     expect(calls[0]!.path).toBe("/api/v1/passports/abc%2Fxyz/snapshots/snap%201");
   });
+
+  // ── condition flags ──
+  it("get_condition_flags GETs the condition-flags endpoint by id", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({ action: "get_condition_flags", args: { id: "p1" } });
+    expect(calls[0]!.method).toBe("GET");
+    expect(calls[0]!.path).toBe("/api/v1/passports/p1/condition-flags");
+  });
+
+  it("get_condition_flags missing id returns isError, no HTTP call", async () => {
+    const { tool, calls } = passportsTool();
+    const r = await tool.handler({ action: "get_condition_flags", args: {} });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/Invalid args/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("get_condition_flags_by_serial GETs the by-serial condition-flags endpoint", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({ action: "get_condition_flags_by_serial", args: { serial: "SN-1" } });
+    expect(calls[0]!.method).toBe("GET");
+    expect(calls[0]!.path).toBe("/api/v1/passports/by-serial/SN-1/condition-flags");
+  });
+
+  it("get_condition_flags_by_serial passes gtin disambiguator as query param", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({
+      action: "get_condition_flags_by_serial",
+      args: { serial: "SN-1", gtin: "04012345678901" },
+    });
+    expect(calls[0]!.path).toBe(
+      "/api/v1/passports/by-serial/SN-1/condition-flags?gtin=04012345678901",
+    );
+  });
+
+  it("set_condition_flags PATCHes the condition-flags endpoint with the flags body", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({
+      action: "set_condition_flags",
+      args: { id: "p1", flags: { hasBMS: true, rechargeable: false } },
+    });
+    expect(calls[0]!.method).toBe("PATCH");
+    expect(calls[0]!.path).toBe("/api/v1/passports/p1/condition-flags");
+    expect(calls[0]!.body).toMatchObject({ hasBMS: true, rechargeable: false });
+  });
+
+  it("set_condition_flags supports null (clear) values", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({
+      action: "set_condition_flags",
+      args: { id: "p1", flags: { hasBMS: null } },
+    });
+    expect(calls[0]!.body).toMatchObject({ hasBMS: null });
+  });
+
+  it("set_condition_flags missing id returns isError, no HTTP call", async () => {
+    const { tool, calls } = passportsTool();
+    const r = await tool.handler({
+      action: "set_condition_flags",
+      args: { flags: { hasBMS: true } },
+    });
+    expect(r.isError).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("set_condition_flags missing flags returns isError, no HTTP call", async () => {
+    const { tool, calls } = passportsTool();
+    const r = await tool.handler({ action: "set_condition_flags", args: { id: "p1" } });
+    expect(r.isError).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("set_condition_flags_by_serial PATCHes the by-serial endpoint with flags", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({
+      action: "set_condition_flags_by_serial",
+      args: { serial: "SN-1", flags: { isStationaryBess: true } },
+    });
+    expect(calls[0]!.method).toBe("PATCH");
+    expect(calls[0]!.path).toBe("/api/v1/passports/by-serial/SN-1/condition-flags");
+    expect(calls[0]!.body).toMatchObject({ isStationaryBess: true });
+  });
+
+  it("set_condition_flags_by_serial passes gtin disambiguator as query param", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({
+      action: "set_condition_flags_by_serial",
+      args: { serial: "SN-1", gtin: "04012345678901", flags: { hasBMS: true } },
+    });
+    expect(calls[0]!.path).toBe(
+      "/api/v1/passports/by-serial/SN-1/condition-flags?gtin=04012345678901",
+    );
+  });
 });
 
 describe("tracepass_passport_fields — actions", () => {

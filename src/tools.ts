@@ -364,6 +364,26 @@ const SCHEMAS = {
     snapshotId: z.string().min(1),
   }),
 
+  conditionFlagsGet: z.object({ id: z.string().min(1) }),
+  conditionFlagsGetBySerial: z.object({
+    serial: z.string().min(1),
+    gtin: z.string().optional(),
+  }),
+  // PATCH body: each key maps to true/false (set) or null (clear).
+  conditionFlagsSet: z.object({
+    id: z.string().min(1),
+    flags: z
+      .record(z.string(), z.union([z.boolean(), z.null()]))
+      .describe("Record<flagKey, boolean|null>. Valid keys are category-specific (battery: hasBMS, rechargeable, externalStorageOnly, isStationaryBess). null clears the flag."),
+  }),
+  conditionFlagsSetBySerial: z.object({
+    serial: z.string().min(1),
+    gtin: z.string().optional(),
+    flags: z
+      .record(z.string(), z.union([z.boolean(), z.null()]))
+      .describe("Record<flagKey, boolean|null>. null clears the flag."),
+  }),
+
   epcisExport: z.object({ id: z.string().min(1) }),
   epcisExportBySerial: z.object({
     serial: z.string().min(1),
@@ -491,7 +511,11 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "- get_qr — args: { id, format? (svg|png) }. Read-only.\n" +
       "- get_qr_by_serial — args: { serial, format? (svg|png), gtin? }. Read-only. Same as get_qr, addressed by your own serial. A serial is unique only WITHIN a GTIN — if the same serial exists under two GTINs in your account the call returns 409 ambiguous_serial; pass `gtin` (or use get_qr by id) to resolve exactly.\n" +
       "- list_snapshots — args: { id, page?, limit? (≤100) }. Read-only. Returns a paginated list of immutability snapshots for the passport (newest first) — each carries id, version, reason (published|republished|manual), snapshotAt, contentHash, hashValid (re-verified on every read), restorable, fieldCount. Passports published before the snapshot feature existed return an empty list gracefully. Counts 1 against the daily read budget.\n" +
-      "- get_snapshot — args: { id, snapshotId }. Read-only. Returns the full archival record of one snapshot: the complete JSON-LD the passport asserted at that time, plus hash and hashValid. Counts 1 against the daily read budget.",
+      "- get_snapshot — args: { id, snapshotId }. Read-only. Returns the full archival record of one snapshot: the complete JSON-LD the passport asserted at that time, plus hash and hashValid. Counts 1 against the daily read budget.\n" +
+      "- get_condition_flags — args: { id }. Read-only. Returns the resolved condition profile Record<flagKey,{value,status,source}>. Condition flags are reviewer-approved yes/no facts gating conditional legal duties. Battery flags: hasBMS, rechargeable, externalStorageOnly, isStationaryBess. An approved flag makes specific fields required — a missing gated field is a hard publish block (conditional_missing). Counts 1 against the daily read budget.\n" +
+      "- get_condition_flags_by_serial — args: { serial, gtin? }. Read-only. Same as get_condition_flags, addressed by your own serial. 409 ambiguous_serial if serial not unique — pass gtin.\n" +
+      "- set_condition_flags — args: { id, flags: Record<flagKey, boolean|null> }. WRITE. Set or clear condition flags (null clears). Keys must be registered for the passport category (battery: hasBMS, rechargeable, externalStorageOnly, isStationaryBess). WARNING: approving a flag can make fields required and block publishing if those fields are empty — fix any gated fields before or immediately after setting the flag. Writes are approved + audited. Idempotency-Key supported. Counts 1 write.\n" +
+      "- set_condition_flags_by_serial — args: { serial, gtin?, flags }. WRITE. Same as set_condition_flags, addressed by your own serial. 409 ambiguous_serial if serial not unique — pass gtin.",
     inputSchema: {
       action: z
         .enum([
@@ -500,6 +524,10 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           "get_by_serial",
           "compliance",
           "registry_readiness",
+          "get_condition_flags",
+          "get_condition_flags_by_serial",
+          "set_condition_flags",
+          "set_condition_flags_by_serial",
           "create",
           "suspend",
           "suspend_by_serial",
@@ -511,7 +539,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           "get_snapshot",
         ])
         .describe(
-          "Which passport operation to run. Reads: list | get | get_by_serial | compliance | registry_readiness | get_qr | get_qr_by_serial | list_snapshots | get_snapshot. Writes (BILLABLE): create. Lifecycle: suspend (reversible) | archive (IRREVERSIBLE), each with a _by_serial variant.",
+          "Which passport operation to run. Reads: list | get | get_by_serial | compliance | registry_readiness | get_condition_flags | get_condition_flags_by_serial | get_qr | get_qr_by_serial | list_snapshots | get_snapshot. Writes: set_condition_flags | set_condition_flags_by_serial | create (BILLABLE). Lifecycle: suspend (reversible) | archive (IRREVERSIBLE), each with a _by_serial variant.",
         ),
       args: z
         .object({
@@ -539,6 +567,10 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           status: z.string().optional().describe("Filter list by status: draft|in_review|approved|published|suspended|expired|archived."),
           search: z.string().optional().describe("Filter list by a search term."),
           snapshotId: z.string().optional().describe("Snapshot id. Required for get_snapshot."),
+          flags: z
+            .record(z.string(), z.union([z.boolean(), z.null()]))
+            .optional()
+            .describe("For set_condition_flags / set_condition_flags_by_serial: Record<flagKey, boolean|null>. null clears the flag."),
         })
         .partial()
         .optional()
@@ -646,6 +678,37 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           if (isErr(p)) return p;
           return apiResult(
             await client.get(`/api/v1/passports/${seg(p.id)}/snapshots/${seg(p.snapshotId)}`),
+          );
+        }
+        case "get_condition_flags": {
+          const p = parseArgs(SCHEMAS.conditionFlagsGet, a.args, "tracepass_passports", action);
+          if (isErr(p)) return p;
+          return apiResult(await client.get(`/api/v1/passports/${seg(p.id)}/condition-flags`));
+        }
+        case "get_condition_flags_by_serial": {
+          const p = parseArgs(SCHEMAS.conditionFlagsGetBySerial, a.args, "tracepass_passports", action);
+          if (isErr(p)) return p;
+          return apiResult(
+            await client.get(
+              `/api/v1/passports/by-serial/${seg(p.serial)}/condition-flags${qs({ gtin: p.gtin })}`,
+            ),
+          );
+        }
+        case "set_condition_flags": {
+          const p = parseArgs(SCHEMAS.conditionFlagsSet, a.args, "tracepass_passports", action);
+          if (isErr(p)) return p;
+          return apiResult(
+            await client.patch(`/api/v1/passports/${seg(p.id)}/condition-flags`, p.flags),
+          );
+        }
+        case "set_condition_flags_by_serial": {
+          const p = parseArgs(SCHEMAS.conditionFlagsSetBySerial, a.args, "tracepass_passports", action);
+          if (isErr(p)) return p;
+          return apiResult(
+            await client.patch(
+              `/api/v1/passports/by-serial/${seg(p.serial)}/condition-flags${qs({ gtin: p.gtin })}`,
+              p.flags,
+            ),
           );
         }
         default:
