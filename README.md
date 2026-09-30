@@ -163,7 +163,7 @@ Read-only entity data you can attach as conversation context:
 - `tracepass://passport/{id}` — one passport, full field detail
 - `tracepass://passport/{id}/epcis` — a passport's EPCIS 2.0 events
 - `tracepass://passport/{id}/compliance` — a passport's compliance verdict
-- `tracepass://passport/{id}/registry-readiness` — a mechanical pre-submission check modelled on the EU DPP Registry's formal gate: mandatory-field presence, formatting, a resolvable public link, item-level granularity, a well-formed commodity code. Not the substantive compliance verdict, and not a prediction of the real registry's response — its registration API has no published spec. Battery only.
+- `tracepass://passport/{id}/registry-readiness` — a mechanical pre-submission check modelled on the EU DPP Registry's formal gate: mandatory-field presence, formatting, a resolvable public link, item-level granularity (no commodity-code check: a battery passport's registration identifier is not entered in the customs declaration). Not the substantive compliance verdict, and not a prediction of the real registry's response — its registration API has no published spec. Battery only.
 - `tracepass://passport/{id}/snapshots` — the snapshot history of a passport (newest first): a snapshot on publish and after every change to a non-draft passport; each entry carries version, reason (e.g. published, field_edit, status_change, baseline), actor, snapshotAt, contentHash, hashValid (re-verified on read), restorable flag, and field count.
 - `tracepass://templates` — all 13 DPP category field schemas
 - `tracepass://template/{category}` — one category's full field schema
