@@ -230,6 +230,25 @@ const facilityIdentifierSchema = z.discriminatedUnion("scheme", [
   }),
 ]);
 
+// Battery second-life lineage (Art. 77(7) of Reg (EU) 2023/1542). Mirrors the
+// platform's lineageInputSchema; the platform enforces the business rules (422).
+const lineageSchema = z.object({
+  predecessors: z
+    .array(
+      z
+        .object({
+          identifier: z.string().max(2000).optional(),
+          internalPassportId: z.string().optional(),
+          trigger: z.enum(["preparation_for_reuse", "preparation_for_repurposing", "repurposing", "remanufacturing"]),
+        })
+        .refine((p) => p.identifier !== undefined || p.internalPassportId !== undefined, {
+          message: "each predecessor needs identifier or internalPassportId",
+        }),
+    )
+    .max(10),
+  noPredecessorReason: z.string().max(500).optional(),
+});
+
 const SCHEMAS = {
   productList: z.object({
     page: z.number().int().positive().optional(),
@@ -301,6 +320,7 @@ const SCHEMAS = {
       gtin: z.string().optional(),
       serialNumber: z.string().min(1).max(100).optional(),
       confirmOverage: z.boolean().optional(),
+      lineage: lineageSchema.optional(),
     })
     .refine(
       (v) =>
@@ -506,7 +526,8 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "- get_by_serial — args: { serial, format?, lang?, gtin? }. Read-only. Addresses the passport by your own serial. A serial is unique only WITHIN a GTIN — if the same serial exists under two GTINs in your account the call returns 409 ambiguous_serial; pass `gtin` (or use the by-id action) to resolve exactly.\n" +
       "- compliance — args: { id }. Read-only. Returns a three-tier compliance verdict (compliant | compliant_with_warnings | incomplete) with regulation-cited findings — use to gap-check a passport against the rules for its category, fix the cited fields/parties, then re-check. Also returns byRegulation[]: the same findings grouped per regulation, worst first, so you can tell WHICH regime is failing instead of reading one `incomplete` as everything being wrong. A regulation absent from that array raised no finding — that is not the same as it having passed.\n" +
       "- registry_readiness — args: { id }. Read-only. Returns { ready, findings[] } — whether the passport would pass the EU DPP Registry's FORMAL submission gate (mandatory fields present, correct formatting, a resolvable public link, item-level granularity via a serial number, and a well-formed commodity code where the category carries one). This is the registry's mechanical pre-submission check, NOT the substantive compliance verdict; a passport can be registry-ready yet not substantively compliant. Battery passports only.\n" +
-      "- create — args: { productId, identifier?, gtin?, serialNumber?, confirmOverage? }. BILLABLE. Provide identifier (preferred) or legacy gtin + serialNumber. Battery passports accept only gs1 and iso15459 schemes — other schemes return 400. A duplicate identifier returns 409.\n" +
+      "- create — args: { productId, identifier?, gtin?, serialNumber?, confirmOverage?, lineage? }. BILLABLE. Provide identifier (preferred) or legacy gtin + serialNumber. Battery passports accept only gs1 and iso15459 schemes — other schemes return 400. A duplicate identifier returns 409.\n" +
+      "  lineage (battery only) — a repurposed, remanufactured or reused battery needs a NEW passport linked to the original(s) (Battery Regulation Art. 77(7)): { predecessors: [ { internalPassportId? | identifier?, trigger: preparation_for_reuse|preparation_for_repurposing|repurposing|remanufacturing } ] (≤10), noPredecessorReason? (only with an empty list, e.g. placed on the market before 18 Feb 2027) }. The server derives batteryStatus from the triggers and links your own predecessor passports back. Immutable after create. Rule violations return 422 with the rule code (duplicate_predecessor, predecessor_not_found, status_trigger_mismatch, …).\n" +
       "- suspend — args: { id }. Reversible — public QR shows 'suspended'.\n" +
       "- suspend_by_serial — args: { serial, gtin? }. Same as suspend, addressed by your serial. 409 ambiguous_serial if the serial isn't unique in your account — pass `gtin`.\n" +
       "- archive — args: { id }. IRREVERSIBLE — confirm with the user first.\n" +
@@ -563,6 +584,9 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
             ),
           serialNumber: z.string().optional().describe("Serial for the new passport (create, legacy gs1 path)."),
           confirmOverage: z.boolean().optional().describe("Set true to accept per-passport overage charges when over the plan quota (402). Applies to create."),
+          lineage: lineageSchema
+            .optional()
+            .describe("create, battery only: link a second-life battery's new passport to the original passport(s) (Art. 77(7)). See the create action."),
           format: z.string().optional().describe("get/get_by_serial: summary|full. get_qr/get_qr_by_serial: svg|png."),
           symbology: z.string().optional().describe("get_qr/get_qr_by_serial: qr (default) | datamatrix."),
           at: z.string().optional().describe("list_snapshots: ISO 8601 instant — return the snapshot valid then instead of the list."),
@@ -629,6 +653,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
             body.gs1 = { gtin: p.gtin, serialNumber: p.serialNumber };
           }
           if (p.confirmOverage) body.confirmOverage = true;
+          if (p.lineage) body.lineage = p.lineage;
           return apiResult(await client.post("/api/v1/passports", body));
         }
         case "suspend": {

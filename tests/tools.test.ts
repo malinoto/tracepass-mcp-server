@@ -130,6 +130,33 @@ describe("tracepass_passports — billable + lifecycle actions", () => {
     expect(calls[0]!.body).toMatchObject({ confirmOverage: true });
   });
 
+  // ── battery lineage (Art. 77(7)) ──
+  it("create forwards a lineage block", async () => {
+    const { tool, calls } = passportsTool();
+    const lineage = { predecessors: [{ internalPassportId: "6650a1b2c3d4e5f6a7b8c9d0", trigger: "repurposing" }] };
+    await tool.handler({
+      action: "create",
+      args: { productId: "p1", gtin: "09506000134369", serialNumber: "SN-2", lineage },
+    });
+    expect(calls[0]!.body).toMatchObject({ lineage });
+  });
+
+  it("create rejects a predecessor with neither identifier nor internalPassportId", async () => {
+    const { tool, calls } = passportsTool();
+    const r = await tool.handler({
+      action: "create",
+      args: { productId: "p1", gtin: "1", serialNumber: "s", lineage: { predecessors: [{ trigger: "repurposing" }] } },
+    });
+    expect(r.isError).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("create sends no lineage key when none is given", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({ action: "create", args: { productId: "p1", gtin: "1", serialNumber: "s" } });
+    expect((calls[0]!.body as Record<string, unknown>).lineage).toBeUndefined();
+  });
+
   // ── EN 18219 identifier paths ──
   it("create with identifier gs1 sends identifier (not legacy gs1 block)", async () => {
     const { tool, calls } = passportsTool();

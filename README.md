@@ -139,6 +139,25 @@ not *this product may be placed on the market*. The field specifications are
 hand-authored from the regulations, not an official EU artefact, and delegated
 acts are still landing. It is not legal advice.
 
+### Second-life batteries
+
+A repurposed, remanufactured or reused battery needs a **new** passport
+linked to the original one(s) (Battery Regulation Art. 77(7)). Pass a
+`lineage` block to `tracepass_passports` `create`:
+
+```json
+{ "predecessors": [ { "internalPassportId": "<your original passport id>", "trigger": "repurposing" } ] }
+```
+
+A predecessor is named by `internalPassportId` (one of your own passports)
+or by its resolvable `identifier`. `trigger` is one of
+`preparation_for_reuse`, `preparation_for_repurposing`, `repurposing` or
+`remanufacturing`. The platform derives `batteryStatus` from the
+triggers, stores the block immutably, and links your own originals back
+to the new passport (`successors`). A battery placed on the market before
+18 Feb 2027 has no original passport: send an empty list with
+`noPredecessorReason`. Rule violations return 422 with the rule code.
+
 ### A note on writes
 
 Some actions **cost money or are irreversible** — the server's tool
