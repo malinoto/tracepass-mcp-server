@@ -114,7 +114,7 @@ Each tool's full action set:
 | Tool | Actions |
 |------|---------|
 | `tracepass_products` | `list`, `get`, `create`, `create_batch`, `update`, `archive` |
-| `tracepass_passports` | `list`, `get`, `get_by_serial`, `compliance`, `registry_readiness`, `get_condition_flags`, `get_condition_flags_by_serial`, `set_condition_flags`, `set_condition_flags_by_serial`, `create`, `suspend`, `suspend_by_serial`, `archive`, `archive_by_serial`, `get_qr`, `get_qr_by_serial`, `list_snapshots`, `get_snapshot` |
+| `tracepass_passports` | `list`, `get`, `get_by_serial`, `compliance`, `registry_readiness`, `get_condition_flags`, `get_condition_flags_by_serial`, `set_condition_flags`, `set_condition_flags_by_serial`, `capture_measurements`, `capture_measurements_by_serial`, `list_measurements`, `list_measurements_by_serial`, `latest_measurements`, `latest_measurements_by_serial`, `create`, `suspend`, `suspend_by_serial`, `archive`, `archive_by_serial`, `get_qr`, `get_qr_by_serial`, `list_snapshots`, `get_snapshot` |
 | `tracepass_passport_fields` | `update`, `update_by_serial` |
 | `tracepass_passport_parties` | `set`, `remove` |
 | `tracepass_epcis` | `export`, `export_by_serial`, `capture`, `capture_job`, `query` |
@@ -157,6 +157,20 @@ triggers, stores the block immutably, and links your own originals back
 to the new passport (`successors`). A battery placed on the market before
 18 Feb 2027 has no original passport: send an empty list with
 `noPredecessorReason`. Rule violations return 422 with the rule code.
+
+### Battery measurements (living record)
+
+`capture_measurements` pushes over-life data from your own equipment into a
+published battery passport: state of health, fades, cycle counts, dynamic
+values, state of charge, negative events, temperature history (Battery
+Regulation Annex XIII point 4). Every measurement is kept; the newest per
+field becomes the passport's current value and sets `dynamicDataAsOf`.
+`list_measurements` and `latest_measurements` read them back.
+
+They are metered against the plan's monthly measurement allowance, not the
+daily write budget. Paid plans keep counting past the allowance at no
+charge; the Free plan stops at its allowance. Reading a passport is never
+metered.
 
 ### A note on writes
 

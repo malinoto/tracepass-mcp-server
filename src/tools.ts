@@ -249,6 +249,16 @@ const lineageSchema = z.object({
   noPredecessorReason: z.string().max(500).optional(),
 });
 
+// One battery measurement (Annex XIII point 4 use data) pushed from the
+// customer's own equipment. The platform validates the key, type and range.
+const measurementSchema = z.object({
+  fieldKey: z.string().min(1),
+  value: z.unknown(),
+  measuredAt: z.string().min(1),
+  externalId: z.string().optional(),
+  unit: z.string().optional(),
+});
+
 const SCHEMAS = {
   productList: z.object({
     page: z.number().int().positive().optional(),
@@ -407,6 +417,33 @@ const SCHEMAS = {
       .describe("Record<flagKey, boolean|null>. null clears the flag."),
   }),
 
+  measurementsCapture: z.object({
+    id: z.string().min(1),
+    measurements: z.array(measurementSchema).min(1).max(500),
+  }),
+  measurementsCaptureBySerial: z.object({
+    serial: z.string().min(1),
+    gtin: z.string().optional(),
+    measurements: z.array(measurementSchema).min(1).max(500),
+  }),
+  measurementsList: z.object({
+    id: z.string().min(1),
+    fieldKey: z.string().optional(),
+    from: z.string().optional(),
+    to: z.string().optional(),
+    limit: z.number().int().min(1).max(200).optional(),
+    cursor: z.string().optional(),
+  }),
+  measurementsListBySerial: z.object({
+    serial: z.string().min(1),
+    gtin: z.string().optional(),
+    fieldKey: z.string().optional(),
+    from: z.string().optional(),
+    to: z.string().optional(),
+    limit: z.number().int().min(1).max(200).optional(),
+    cursor: z.string().optional(),
+  }),
+
   epcisExport: z.object({ id: z.string().min(1) }),
   epcisExportBySerial: z.object({
     serial: z.string().min(1),
@@ -539,7 +576,13 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "- get_condition_flags — args: { id }. Read-only. Returns the resolved condition profile Record<flagKey,{value,status,source}>. Condition flags are reviewer-approved yes/no facts gating conditional legal duties. Battery flags: hasBMS, rechargeable, externalStorageOnly, isStationaryBess. An approved flag makes specific fields required — a missing gated field is a hard publish block (conditional_missing). Counts 1 against the daily read budget.\n" +
       "- get_condition_flags_by_serial — args: { serial, gtin? }. Read-only. Same as get_condition_flags, addressed by your own serial. 409 ambiguous_serial if serial not unique — pass gtin.\n" +
       "- set_condition_flags — args: { id, flags: Record<flagKey, boolean|null> }. WRITE. Set or clear condition flags (null clears). Keys must be registered for the passport category (battery: hasBMS, rechargeable, externalStorageOnly, isStationaryBess). WARNING: approving a flag can make fields required and block publishing if those fields are empty — fix any gated fields before or immediately after setting the flag. Writes are approved + audited. Idempotency-Key supported. Counts 1 write.\n" +
-      "- set_condition_flags_by_serial — args: { serial, gtin?, flags }. WRITE. Same as set_condition_flags, addressed by your own serial. 409 ambiguous_serial if serial not unique — pass gtin.",
+      "- set_condition_flags_by_serial — args: { serial, gtin?, flags }. WRITE. Same as set_condition_flags, addressed by your own serial. 409 ambiguous_serial if serial not unique — pass gtin.\n" +
+      "- capture_measurements — args: { id, measurements: [ { fieldKey, value, measuredAt (ISO 8601), externalId?, unit? } ] (≤500) }. WRITE, battery passports only, published only. Pushes over-life measurements from the customer's own equipment (e.g. a BMS reporting stateOfHealth, numberOfFullEquivalentChargingCycles; the Annex XIII point 4 use-data keys). Every measurement is stored; the newest per field becomes the passport's current value and sets dynamicDataAsOf. externalId makes a measurement idempotent. A value may be at most 16 KB serialised. batteryStatus is NOT a measurement (400 invalid_field_key). A key the Regulation keeps off this battery category returns 422 field_not_applicable (e.g. stateOfCertifiedEnergy on an LMT battery). Metered against the plan's monthly measurement allowance, not the daily write budget: paid plans keep counting past it at no charge; Free stops at its allowance. Reading a passport is never metered.\n" +
+      "- capture_measurements_by_serial — args: { serial, gtin?, measurements }. Same, addressed by your own serial.\n" +
+      "- list_measurements — args: { id, fieldKey?, from?, to? (ISO 8601), limit? (≤200), cursor? }. Read-only. Measurement history, newest first; page with the returned nextCursor.\n" +
+      "- list_measurements_by_serial — args: { serial, gtin?, fieldKey?, from?, to?, limit?, cursor? }. Read-only.\n" +
+      "- latest_measurements — args: { id }. Read-only. The newest measurement per accepted key (null where none yet).\n" +
+      "- latest_measurements_by_serial — args: { serial, gtin? }. Read-only.",
     inputSchema: {
       action: z
         .enum([
@@ -552,6 +595,12 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           "get_condition_flags_by_serial",
           "set_condition_flags",
           "set_condition_flags_by_serial",
+          "capture_measurements",
+          "capture_measurements_by_serial",
+          "list_measurements",
+          "list_measurements_by_serial",
+          "latest_measurements",
+          "latest_measurements_by_serial",
           "create",
           "suspend",
           "suspend_by_serial",
@@ -563,7 +612,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           "get_snapshot",
         ])
         .describe(
-          "Which passport operation to run. Reads: list | get | get_by_serial | compliance | registry_readiness | get_condition_flags | get_condition_flags_by_serial | get_qr | get_qr_by_serial | list_snapshots | get_snapshot. Writes: set_condition_flags | set_condition_flags_by_serial | create (BILLABLE). Lifecycle: suspend (reversible) | archive (IRREVERSIBLE), each with a _by_serial variant.",
+          "Which passport operation to run. Reads: list | get | get_by_serial | compliance | registry_readiness | get_condition_flags | get_condition_flags_by_serial | get_qr | get_qr_by_serial | list_snapshots | get_snapshot | list_measurements(_by_serial) | latest_measurements(_by_serial). Writes: set_condition_flags | set_condition_flags_by_serial | capture_measurements(_by_serial) | create (BILLABLE). Lifecycle: suspend (reversible) | archive (IRREVERSIBLE), each with a _by_serial variant.",
         ),
       args: z
         .object({
@@ -596,6 +645,14 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           status: z.string().optional().describe("Filter list by status: draft|in_review|approved|published|suspended|expired|archived."),
           search: z.string().optional().describe("Filter list by a search term."),
           snapshotId: z.string().optional().describe("Snapshot id. Required for get_snapshot."),
+          measurements: z
+            .array(measurementSchema)
+            .optional()
+            .describe("capture_measurements(_by_serial): [{ fieldKey, value, measuredAt, externalId?, unit? }], max 500."),
+          fieldKey: z.string().optional().describe("list_measurements(_by_serial): only this field key."),
+          from: z.string().optional().describe("list_measurements(_by_serial): measuredAt from (ISO 8601)."),
+          to: z.string().optional().describe("list_measurements(_by_serial): measuredAt to (ISO 8601)."),
+          cursor: z.string().optional().describe("list_measurements(_by_serial): nextCursor from the previous page."),
           flags: z
             .record(z.string(), z.union([z.boolean(), z.null()]))
             .optional()
@@ -739,6 +796,47 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
               `/api/v1/passports/by-serial/${seg(p.serial)}/condition-flags${qs({ gtin: p.gtin })}`,
               p.flags,
             ),
+          );
+        }
+        case "capture_measurements": {
+          const p = parseArgs(SCHEMAS.measurementsCapture, a.args, "tracepass_passports", action);
+          if (isErr(p)) return p;
+          return apiResult(
+            await client.post(`/api/v1/passports/${seg(p.id)}/measurements`, { measurements: p.measurements }),
+          );
+        }
+        case "capture_measurements_by_serial": {
+          const p = parseArgs(SCHEMAS.measurementsCaptureBySerial, a.args, "tracepass_passports", action);
+          if (isErr(p)) return p;
+          return apiResult(
+            await client.post(
+              `/api/v1/passports/by-serial/${seg(p.serial)}/measurements${qs({ gtin: p.gtin })}`,
+              { measurements: p.measurements },
+            ),
+          );
+        }
+        case "list_measurements": {
+          const p = parseArgs(SCHEMAS.measurementsList, a.args, "tracepass_passports", action);
+          if (isErr(p)) return p;
+          const { id, ...q } = p;
+          return apiResult(await client.get(`/api/v1/passports/${seg(id)}/measurements${qs(q)}`));
+        }
+        case "list_measurements_by_serial": {
+          const p = parseArgs(SCHEMAS.measurementsListBySerial, a.args, "tracepass_passports", action);
+          if (isErr(p)) return p;
+          const { serial, ...q } = p;
+          return apiResult(await client.get(`/api/v1/passports/by-serial/${seg(serial)}/measurements${qs(q)}`));
+        }
+        case "latest_measurements": {
+          const p = parseArgs(SCHEMAS.passportId, a.args, "tracepass_passports", action);
+          if (isErr(p)) return p;
+          return apiResult(await client.get(`/api/v1/passports/${seg(p.id)}/measurements/latest`));
+        }
+        case "latest_measurements_by_serial": {
+          const p = parseArgs(SCHEMAS.passportSerial, a.args, "tracepass_passports", action);
+          if (isErr(p)) return p;
+          return apiResult(
+            await client.get(`/api/v1/passports/by-serial/${seg(p.serial)}/measurements/latest${qs({ gtin: p.gtin })}`),
           );
         }
         default:

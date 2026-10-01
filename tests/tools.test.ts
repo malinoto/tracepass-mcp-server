@@ -130,6 +130,44 @@ describe("tracepass_passports — billable + lifecycle actions", () => {
     expect(calls[0]!.body).toMatchObject({ confirmOverage: true });
   });
 
+  // ── battery measurements (living record) ──
+  it("capture_measurements posts the measurements to the passport", async () => {
+    const { tool, calls } = passportsTool();
+    const measurements = [{ fieldKey: "stateOfHealth", value: 96.4, measuredAt: "2027-03-01T06:00:00Z", externalId: "m1" }];
+    await tool.handler({ action: "capture_measurements", args: { id: "p1", measurements } });
+    expect(calls[0]).toMatchObject({ method: "POST", path: "/api/v1/passports/p1/measurements", body: { measurements } });
+  });
+
+  it("capture_measurements_by_serial carries the gtin disambiguator", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({
+      action: "capture_measurements_by_serial",
+      args: { serial: "SN 1", gtin: "09506000134369", measurements: [{ fieldKey: "stateOfHealth", value: 90, measuredAt: "2027-03-01T06:00:00Z" }] },
+    });
+    expect(calls[0]!.path).toBe("/api/v1/passports/by-serial/SN%201/measurements?gtin=09506000134369");
+  });
+
+  it("capture_measurements refuses an empty or oversized batch before calling the API", async () => {
+    const { tool, calls } = passportsTool();
+    const r = await tool.handler({ action: "capture_measurements", args: { id: "p1", measurements: [] } });
+    expect(r.isError).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("list_measurements passes filters as query parameters", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({ action: "list_measurements", args: { id: "p1", fieldKey: "stateOfHealth", limit: 10 } });
+    expect(calls[0]!.path).toMatch(/^\/api\/v1\/passports\/p1\/measurements\?/);
+    expect(calls[0]!.path).toContain("fieldKey=stateOfHealth");
+    expect(calls[0]!.path).toContain("limit=10");
+  });
+
+  it("latest_measurements reads the latest endpoint", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({ action: "latest_measurements", args: { id: "p1" } });
+    expect(calls[0]).toMatchObject({ method: "GET", path: "/api/v1/passports/p1/measurements/latest" });
+  });
+
   // ── battery lineage (Art. 77(7)) ──
   it("create forwards a lineage block", async () => {
     const { tool, calls } = passportsTool();
