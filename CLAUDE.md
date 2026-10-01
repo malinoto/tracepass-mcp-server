@@ -24,6 +24,10 @@ the hosted endpoint and the local package.**
   from `TRACEPASS_API_KEY` env.
 - Both call the **same** `createMcpServer`. Only the transport + key source differ.
   Any change to the tool surface must go through the core so both forms stay identical.
+- `src/usage-log.ts` — one `mcp_usage` JSON line per hosted request on stdout:
+  JSON-RPC method, tool + action, credential KIND (none / api_key / oauth /
+  supplier_token), status, user-agent. Never the IP, the token or tool arguments.
+  It is how real `tools/call` use is told apart from catalog and liveness probes.
 - `src/supplier-server.ts` — a **second, separate server** for suppliers answering
   one data request, served only by `http.ts` at `/supplier/mcp/<token>` (token in
   the path, for URL-only connectors) and `/supplier/mcp` (Bearer header). Its
@@ -88,7 +92,7 @@ negligible. Don't "optimize" this into direct lib calls.
 
 - **6 resource tools, not ~23 flat ones** (`src/tools.ts`: `tracepass_products`,
   `tracepass_passports`, `tracepass_passport_fields`, `tracepass_passport_parties`,
-  `tracepass_epcis`, `tracepass_templates` — 29 actions total). Each takes `action`
+  `tracepass_epcis`, `tracepass_templates`; the action count grows, so count it from `buildTools()` rather than quoting one). Each takes `action`
   (enum) + `args` (shape depends on `action`). MCP `inputSchema` can't branch on
   `action`, so `args` is declared permissively and each handler validates against
   the specific per-action Zod schema (`ACTION_SCHEMAS`). When adding an endpoint,

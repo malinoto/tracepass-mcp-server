@@ -34,6 +34,7 @@
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { summarizeRpc, usageLogLine, type RpcSummary } from "./usage-log.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { createMcpServer, MCP_SERVER_INFO } from "./server.js";
 import { createSupplierMcpServer, matchSupplierPath } from "./supplier-server.js";
@@ -391,6 +392,10 @@ const httpServer = createServer((req, res) => {
         const method = req.method ?? "GET";
         const bodyStr = method !== "GET" && method !== "HEAD" ? await readBody(req) : undefined;
         const token = supplier.pathToken || extractBearerToken(req) || "";
+        logUsageOnFinish(req, res, "supplier", {
+          ...summarizeRpc(bodyStr, null),
+          auth: token ? "supplier_token" : "none",
+        });
         const server = createSupplierMcpServer({ token, baseUrl: BASE_URL, publicBaseUrl: PUBLIC_AUTH_SERVER_URL });
         const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
         await server.connect(transport);
@@ -424,6 +429,7 @@ const httpServer = createServer((req, res) => {
       // resources/read, prompts/get) require a credential. See PUBLIC_METHODS.
       const bearerToken = extractBearerToken(req);
       const needsAuth = requestRequiresAuth(bodyStr);
+      logUsageOnFinish(req, res, "mcp", summarizeRpc(bodyStr, bearerToken));
 
       // A MISSING credential on an auth-required method → real 401 +
       // WWW-Authenticate so a discovery-capable client learns the scheme + the
@@ -475,6 +481,31 @@ const httpServer = createServer((req, res) => {
     }
   })();
 });
+
+/**
+ * Write one `mcp_usage` line when the response finishes, whatever path answered
+ * it (tool result, 401 challenge, error). Read by the local usage report; see
+ * usage-log.ts for what it deliberately leaves out.
+ */
+function logUsageOnFinish(
+  req: IncomingMessage,
+  res: ServerResponse,
+  endpoint: "mcp" | "supplier",
+  summary: RpcSummary,
+): void {
+  res.once("finish", () => {
+    process.stdout.write(
+      usageLogLine({
+        at: new Date(),
+        endpoint,
+        httpMethod: req.method ?? "GET",
+        status: res.statusCode,
+        userAgent: req.headers["user-agent"],
+        summary,
+      }) + "\n",
+    );
+  });
+}
 
 httpServer.listen(PORT, () => {
   process.stdout.write(
