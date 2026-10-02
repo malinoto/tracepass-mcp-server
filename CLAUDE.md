@@ -34,8 +34,10 @@ the hosted endpoint and the local package.**
   credential is the request token, not an account: **no auth gate and no
   `WWW-Authenticate` challenge on that path**, because an OAuth prompt is a dead
   end for someone with no TracePass account. A bad or missing token becomes a
-  readable tool error (`supplierResult`). Five tools over the platform's
-  `/api/supplier/v1/*`, which owns every rule (requested keys only, merge until
+  readable tool error (`supplierResult`). Its tools (the array returned in
+  `src/supplier-server.ts`; the README's "For suppliers" table lists them — keep
+  the two in lockstep) sit over the platform's `/api/supplier/v1/*`, which owns
+  every rule (requested keys only, merge until
   review, rate limit). It is not in the `eu.tracepass/tracepass` listing, the
   server card or the tool count above, and its README table deliberately avoids
   the `` `name` — description `` pattern so mcppedia does not count its tools as

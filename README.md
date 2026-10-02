@@ -231,11 +231,12 @@ request only; there is no account and no OAuth. The assistant can then:
 
 | Tool | What it does |
 |---|---|
-| `get_request` | The fields asked for, each with its meaning, unit, format and legal source |
-| `validate_answers` | A dry run: what would be stored, and what does not fit |
-| `upload_evidence` | Attach a datasheet or certificate (up to 10 MB) |
-| `submit_answers` | Send answers with evidence per value; can be repeated until reviewed |
-| `get_review_status` | Whether the requester has reviewed them, and the outcome |
+| `get_request` | Start here: who is asking, for which product, and every field asked for, each with its meaning, unit, format and legal source; plus answers already sent and the review outcome |
+| `validate_answers` | A dry run: what would be stored, which keys were not requested, and what does not fit. Writes nothing |
+| `get_upload_command` | The best way to attach a datasheet or certificate when the assistant can run shell commands: returns a `curl` command that uploads the file from disk and prints a `documentId` to cite (PDF, Office, CSV, PNG/JPEG/WebP) |
+| `upload_evidence` | Attach a very small file (a few kilobytes) inline as base64; prefer `get_upload_command`, or cite a URL or note |
+| `submit_answers` | Send answers with evidence per value to the requester's human review; can be repeated (answers merge) until reviewed |
+| `get_review_status` | Whether the requester has reviewed them, the outcome, accepted fields, and when the link expires |
 
 Answers go to the requester's human review; they never publish anything on
 their own.
