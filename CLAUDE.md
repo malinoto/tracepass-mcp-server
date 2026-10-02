@@ -65,8 +65,8 @@ gated behind auth, they got 401 and listed the server as **"0 tools"** despite 6
 tools existing. Discovery must precede auth. The gate is fail-closed (unparseable
 / unknown / batched-mixed body → require auth), and `tools/call` still returns a
 real 401 + `WWW-Authenticate`. Don't re-gate `tools/list`/`initialize` — you'll
-re-break catalog discovery. Verified live 2026-06-19: anon `tools/list` → 6
-tools, `tools/call` → 401.
+re-break catalog discovery. Expected live behaviour: anon `tools/list` → the full
+tool list, `tools/call` → 401.
 
 **mcppedia is a SEPARATE case — it does NOT introspect the live server; it parses
 the GitHub README.** Its `bots/extract-schemas.ts` feeds the README to Claude
