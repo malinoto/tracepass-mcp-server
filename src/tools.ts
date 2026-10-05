@@ -259,6 +259,13 @@ const measurementSchema = z.object({
   unit: z.string().optional(),
 });
 
+/** Origin a caller may declare on a field write. Omitted → the API default,
+ *  `manual` (the caller's own statement). `ai_suggested` sends the value to the
+ *  dashboard review queue instead of approving it — for values the agent found
+ *  itself rather than was told. The platform refuses other origins from API
+ *  callers, so only these two are offered. */
+const FIELD_SOURCE = z.enum(["manual", "ai_suggested"]);
+
 const SCHEMAS = {
   productList: z.object({
     page: z.number().int().positive().optional(),
@@ -366,12 +373,14 @@ const SCHEMAS = {
     id: z.string().min(1),
     fieldKey: z.string().min(1),
     value: z.unknown(),
+    source: FIELD_SOURCE.optional(),
   }),
   fieldUpdateBySerial: z.object({
     serial: z.string().min(1),
     fieldKey: z.string().min(1),
     value: z.unknown(),
     gtin: z.string().optional(),
+    source: FIELD_SOURCE.optional(),
   }),
 
   partySet: z.object({
@@ -850,10 +859,11 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     name: "tracepass_passport_fields",
     title: "TracePass passport fields",
     description:
-      "Update field values on a Digital Product Passport. Every change is recorded in the passport's audit trail, tagged as an API-key update.\n\n" +
+      "Update field values on a Digital Product Passport. Every change is recorded in the passport's audit trail with the credential that made it (API key or connected app) and this MCP channel.\n\n" +
+      "`source` (optional) says where the value came from. Omit it, or pass \"manual\", when the user gave you the value or it comes from their own records: it is written with the user's rights (approved for an API key or an admin; sent to review for a connected app acting for an editor). Pass \"ai_suggested\" when you found or inferred the value yourself (web research, reading a document): it lands in the dashboard review queue for a human to approve, and it is refused on fields only the economic operator may state or that must be measured (e.g. battery stateOfHealth).\n\n" +
       "Actions (pass via `action`, with `args`):\n" +
-      "- update — args: { id, fieldKey, value }. `value` type matches the field's dataType (string, number, boolean, array, object).\n" +
-      "- update_by_serial — args: { serial, fieldKey, value, gtin? }. Same as update, addressed by your own serial. A serial is unique only WITHIN a GTIN — if it isn't unique in your account the call returns 409 ambiguous_serial; pass `gtin` (or use update by id) to resolve exactly.",
+      "- update — args: { id, fieldKey, value, source? }. `value` type matches the field's dataType (string, number, boolean, array, object).\n" +
+      "- update_by_serial — args: { serial, fieldKey, value, gtin?, source? }. Same as update, addressed by your own serial. A serial is unique only WITHIN a GTIN — if it isn't unique in your account the call returns 409 ambiguous_serial; pass `gtin` (or use update by id) to resolve exactly.",
     inputSchema: {
       action: z
         .enum(["update", "update_by_serial"])
@@ -865,6 +875,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           gtin: z.string().optional().describe("GTIN disambiguator for update_by_serial when the serial isn't unique (else 409)."),
           fieldKey: z.string().optional().describe("The field key to set (required)."),
           value: z.unknown().optional().describe("The new value for the field (required). Type depends on the field's dataType."),
+          source: FIELD_SOURCE.optional().describe("Where the value came from: \"manual\" (default — the user's statement) or \"ai_suggested\" (you found it; it goes to human review)."),
         })
         .partial()
         .optional()
@@ -881,6 +892,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           return apiResult(
             await client.patch(`/api/v1/passports/${seg(p.id)}/fields/${seg(p.fieldKey)}`, {
               value: p.value,
+              ...(p.source ? { source: p.source } : {}),
             }),
           );
         }
@@ -890,7 +902,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           return apiResult(
             await client.patch(
               `/api/v1/passports/by-serial/${seg(p.serial)}/fields/${seg(p.fieldKey)}${qs({ gtin: p.gtin })}`,
-              { value: p.value },
+              { value: p.value, ...(p.source ? { source: p.source } : {}) },
             ),
           );
         }

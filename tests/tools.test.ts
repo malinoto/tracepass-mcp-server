@@ -561,6 +561,23 @@ describe("tracepass_passport_fields — actions", () => {
     expect(calls[0]!.method).toBe("PATCH");
     expect(calls[0]!.body).toEqual({ value: 12 });
   });
+
+  it("passes a declared source through on both actions", async () => {
+    const { tool, calls } = fieldsTool();
+    await tool.handler({ action: "update", args: { id: "p1", fieldKey: "weight", value: 12, source: "ai_suggested" } });
+    await tool.handler({ action: "update_by_serial", args: { serial: "SN-1", fieldKey: "weight", value: 12, source: "manual" } });
+    expect(calls[0]!.body).toEqual({ value: 12, source: "ai_suggested" });
+    expect(calls[1]!.body).toEqual({ value: 12, source: "manual" });
+  });
+
+  it("rejects an origin the platform reserves, without calling the API", async () => {
+    for (const source of ["ai_approved", "system", "company", "supplier"]) {
+      const { tool, calls } = fieldsTool();
+      const res = await tool.handler({ action: "update", args: { id: "p1", fieldKey: "weight", value: 12, source } });
+      expect(res.isError, source).toBe(true);
+      expect(calls).toHaveLength(0);
+    }
+  });
 });
 
 describe("tracepass_epcis — actions", () => {
