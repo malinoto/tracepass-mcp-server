@@ -255,8 +255,8 @@ npm run start:stdio  # run the stdio server locally
 
 The hosted service is a plain Node HTTP server (`dist/http.js`),
 stateless — each request carries its own API key and builds a fresh
-MCP session. It is containerised via the `Dockerfile` and deployed to
-Hetzner; see `tracepass-environment/docker-mcp.yml`.
+MCP session. It is containerised via the `Dockerfile`; the hosted endpoint
+runs in the EU.
 
 ## Listed on Glama
 
