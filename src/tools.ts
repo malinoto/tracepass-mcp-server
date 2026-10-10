@@ -15,9 +15,13 @@
  * (`ACTION_SCHEMAS` powers both the validation and the messages).
  *
  * Every tool's `description` documents each action and its `args`.
- * `annotations` carry MCP hint flags at the tool level; per-action
- * risk (billable / irreversible) is spelled out in the description
- * so the model warns the user before a destructive action.
+ * `annotations` carry MCP hint flags at the tool level, all four set
+ * explicitly (directories reject a tool that leaves one implicit, and
+ * the spec defaults are the pessimistic ones). A hint describes the
+ * tool as a whole, so a tool with any write action is not read-only
+ * and a tool with any overwrite / remove / archive action is
+ * destructive. Per-action risk (billable / irreversible) is spelled
+ * out in the description so the model warns the user first.
  *
  * Transport-agnostic: `buildTools(client)` binds the handlers to a
  * `TracePassClient`; the server factory registers them.
@@ -26,6 +30,19 @@
 import { z } from "zod";
 import type { TracePassClient } from "./api-client.js";
 import { apiResult, errorResult, type ToolResult } from "./result.js";
+
+/** MCP tool hints. Required here, unlike in the protocol, so a new tool
+ *  cannot ship with a hint left to the spec's pessimistic default. */
+export interface ToolAnnotations {
+  /** No action changes anything. */
+  readOnlyHint: boolean;
+  /** Some action overwrites, removes or archives (not only additive). */
+  destructiveHint: boolean;
+  /** Repeating a call with the same args has no further effect. */
+  idempotentHint: boolean;
+  /** Reaches outside the TracePass account (the open web, third parties). */
+  openWorldHint: boolean;
+}
 
 export interface McpToolDefinition {
   name: string;
@@ -36,11 +53,7 @@ export interface McpToolDefinition {
    *  catalogues like Smithery) can validate + display the output. The tools
    *  pass v1 API JSON straight through, so this describes that envelope. */
   outputSchema: z.ZodRawShape;
-  annotations: {
-    readOnlyHint?: boolean;
-    destructiveHint?: boolean;
-    idempotentHint?: boolean;
-  };
+  annotations: ToolAnnotations;
   handler: (args: Record<string, unknown>) => Promise<ToolResult>;
 }
 
@@ -511,7 +524,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
         .describe("Arguments for the chosen action; required fields depend on `action` (see each action above)."),
     },
     outputSchema: API_OUTPUT_SCHEMA,
-    annotations: { idempotentHint: false },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     handler: async (a) => {
       const action = String(a.action);
       switch (action) {
@@ -672,7 +685,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
         .describe("Arguments for the chosen action; required fields depend on `action` (see each action above)."),
     },
     outputSchema: API_OUTPUT_SCHEMA,
-    annotations: { idempotentHint: false },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     handler: async (a) => {
       const action = String(a.action);
       switch (action) {
@@ -882,7 +895,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
         .describe("Arguments for the chosen action; required fields depend on `action`."),
     },
     outputSchema: API_OUTPUT_SCHEMA,
-    annotations: { idempotentHint: true },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     handler: async (a) => {
       const action = String(a.action);
       switch (action) {
@@ -958,7 +971,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
         .describe("Arguments for the chosen action; required fields depend on `action`."),
     },
     outputSchema: API_OUTPUT_SCHEMA,
-    annotations: { idempotentHint: true },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     handler: async (a) => {
       const action = String(a.action);
       switch (action) {
@@ -1013,7 +1026,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
         .describe("Arguments for the chosen action; required fields depend on `action`."),
     },
     outputSchema: API_OUTPUT_SCHEMA,
-    annotations: { idempotentHint: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     handler: async (a) => {
       const action = String(a.action);
       switch (action) {
@@ -1083,7 +1096,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
         .describe("Arguments for the chosen action; `category` is required for get, ignored for list."),
     },
     outputSchema: API_OUTPUT_SCHEMA,
-    annotations: { idempotentHint: true, readOnlyHint: true },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     handler: async (a) => {
       const action = String(a.action);
       switch (action) {

@@ -26,6 +26,7 @@ import { z } from "zod";
 import { TracePassClient } from "./api-client.js";
 import { MCP_SERVER_INFO } from "./server.js";
 import { errorResult, jsonResult, type ToolResult } from "./result.js";
+import type { ToolAnnotations } from "./tools.js";
 
 export const SUPPLIER_SERVER_INFO = {
   name: "tracepass-supplier",
@@ -117,7 +118,7 @@ interface SupplierTool {
   title: string;
   description: string;
   inputSchema: z.ZodRawShape;
-  annotations: { readOnlyHint?: boolean; destructiveHint?: boolean; idempotentHint?: boolean };
+  annotations: ToolAnnotations;
   handler: (args: Record<string, unknown>) => Promise<ToolResult>;
 }
 
@@ -161,7 +162,7 @@ export function buildSupplierTools(
           .optional()
           .describe("Language for labels and descriptions, e.g. 'de'. Defaults to English."),
       },
-      annotations: { readOnlyHint: true, idempotentHint: true },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       handler: guard(async (args) => {
         const lang = typeof args.lang === "string" && /^[a-z]{2}$/i.test(args.lang) ? args.lang : "";
         return supplierResult(await client.get(`/api/supplier/v1/request${lang ? `?lang=${lang}` : ""}`));
@@ -177,7 +178,7 @@ export function buildSupplierTools(
           .record(z.string(), z.unknown())
           .describe("Field key → value, using the keys from get_request."),
       },
-      annotations: { readOnlyHint: true, idempotentHint: true },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       handler: guard(async (args) =>
         supplierResult(await client.post("/api/supplier/v1/validate", { fieldValues: args.fieldValues ?? {} })),
       ),
@@ -190,7 +191,7 @@ export function buildSupplierTools(
       inputSchema: {
         path: z.string().min(1).describe("Path of the file on the supplier's machine, e.g. ./datasheet.pdf"),
       },
-      annotations: { readOnlyHint: true, idempotentHint: true },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       handler: guard(async (args) => {
         const path = String(args.path ?? "");
         const ext = path.split(".").pop()?.toLowerCase() ?? "";
@@ -222,7 +223,7 @@ export function buildSupplierTools(
         mimeType: z.string().describe("e.g. application/pdf, image/png"),
         contentBase64: z.string().min(1).describe("The file's bytes, base64-encoded."),
       },
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
       handler: guard(async (args) =>
         supplierResult(
           await client.post("/api/supplier/v1/documents", {
@@ -250,7 +251,7 @@ export function buildSupplierTools(
           .optional()
           .describe("Uploaded documents to attach to the answer as a whole."),
       },
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       handler: guard(async (args) =>
         supplierResult(
           await client.post("/api/supplier/v1/submit", {
@@ -268,7 +269,7 @@ export function buildSupplierTools(
       description:
         "Whether the requester has reviewed the answers yet, the outcome, which fields they accepted and their note. Review has no deadline; linkExpiresAt is when this connection stops working. Read-only.",
       inputSchema: {},
-      annotations: { readOnlyHint: true, idempotentHint: true },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       handler: guard(async () => {
         const res = await client.get("/api/supplier/v1/request");
         if (!res.ok) return supplierResult(res);

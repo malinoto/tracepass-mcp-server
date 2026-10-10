@@ -51,8 +51,8 @@ export function createMcpServer(config: CreateMcpServerConfig): McpServer {
       "Reads are free; writes that create passports are billable and " +
       "consume plan quota — never create passports in bulk or accept " +
       "an overage charge without the user's explicit consent. " +
-      "archive_passport is irreversible; prefer suspend_passport when " +
-      "a change might need undoing.",
+      "The archive action of tracepass_passports is irreversible; prefer " +
+      "its suspend action when a change might need undoing.",
   });
 
   const client = new TracePassClient({
