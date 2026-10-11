@@ -99,7 +99,7 @@ TracePass deployment.
 
 ## Tools
 
-The TracePass v1 API operations are grouped into **6 tools**.
+The TracePass v1 API operations are grouped into **7 tools**.
 Each takes an action enum plus action-specific arguments. The tools are:
 
 - `tracepass_products` - manage the product catalogue (list, get, create, create_batch, update, archive products).
@@ -108,6 +108,7 @@ Each takes an action enum plus action-specific arguments. The tools are:
 - `tracepass_passport_parties` - set or remove a passport's economic-operator parties (manufacturer, importer, etc.).
 - `tracepass_epcis` - export, capture, and query a passport's GS1 EPCIS 2.0 supply-chain events.
 - `tracepass_templates` - list and get the DPP category field schemas, each field traced to the EU instrument that mandates it.
+- `tracepass_scope` - check whether a product type needs a Digital Product Passport (check), read the company's catalogue-wide scope report (catalogue_report), and trigger or poll a catalogue refresh run (catalogue_run, catalogue_run_status).
 
 Each tool's full action set:
 
@@ -119,6 +120,7 @@ Each tool's full action set:
 | `tracepass_passport_parties` | `set`, `remove` |
 | `tracepass_epcis` | `export`, `export_by_serial`, `capture`, `capture_job`, `query` |
 | `tracepass_templates` | `list`, `get` |
+| `tracepass_scope` | `check`, `catalogue_report`, `catalogue_run`, `catalogue_run_status` |
 
 The **`*_by_serial`** actions address a passport by the customer's own serial
 number instead of its TracePass id. A serial is unique only *within a GTIN*, so

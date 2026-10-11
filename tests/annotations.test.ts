@@ -57,7 +57,7 @@ describe.each([
 // A hint describes the whole tool, so it must hold for its riskiest action.
 // Writes: anything that creates, changes or captures. Destructive: anything
 // that overwrites, removes, suspends or archives (not purely additive).
-const WRITE = /^(create|update|archive|suspend|set|remove|capture$|capture_by|capture_measurements)/;
+const WRITE = /^(create|update|archive|suspend|set|remove|capture$|capture_by|capture_measurements|catalogue_run$)/;
 const DESTRUCTIVE = /^(update|archive|suspend|set|remove)/;
 
 describe("main /mcp server — hints match the action enums", () => {
@@ -76,5 +76,8 @@ describe("main /mcp server — hints match the action enums", () => {
     expect(WRITE.test("capture_job")).toBe(false);
     expect(WRITE.test("capture")).toBe(true);
     expect(WRITE.test("capture_measurements_by_serial")).toBe(true);
+    // scope: catalogue_run writes (starts a run); catalogue_run_status is read-only
+    expect(WRITE.test("catalogue_run")).toBe(true);
+    expect(WRITE.test("catalogue_run_status")).toBe(false);
   });
 });

@@ -477,6 +477,48 @@ const SCHEMAS = {
 
   templatesList: z.object({}),
   templateGet: z.object({ category: z.string().min(1) }),
+
+  // ── scope services ───────────────────────────────────────────
+  scopeCheck: z.object({
+    category: z.string().min(1).optional().describe(
+      "Product category: battery | detergents | toys | construction | textile | steel | tyres | furniture | electronics | packaging | paints-coatings | jewelry | fmcg | vehicles | other.",
+    ),
+    facts: z.record(z.string(), z.unknown()).optional().describe(
+      "Namespace-prefixed fact keys declared by the loaded rules (e.g. battery.use, battery.capacityKWh). Unknown keys or wrong values return 400.",
+    ),
+    role: z.string().min(1).max(120).optional().describe(
+      "Role hint (e.g. manufacturer, importer, distributor, ownBrand). The platform resolves the act-specific term.",
+    ),
+    placedOnMarket: z
+      .object({
+        date: z.string().min(1).describe("YYYY-MM-DD, YYYY-MM or YYYY"),
+        precision: z.enum(["day", "month", "year"]).optional(),
+      })
+      .nullable()
+      .optional(),
+    lifecycleEvent: z.string().nullable().optional().describe("Lifecycle event (end-of-life, second-life, etc.)."),
+    contains: z
+      .array(z.object({ label: z.string().max(60).optional(), facts: z.record(z.string(), z.unknown()).optional() }))
+      .max(5)
+      .optional()
+      .describe("Component queries (max 5) — e.g. 'Does this toy contain a battery?'"),
+    productId: z.string().nullable().optional().describe("Add saved product facts and passport data (ObjectId)."),
+    passportId: z.string().nullable().optional().describe("Add saved passport facts (ObjectId)."),
+    locale: z.enum(["en", "bg", "de", "it"]).optional().describe("Answer language (default: en)."),
+  }),
+  catalogueReport: z.object({
+    classification: z.string().optional().describe(
+      "Filter by passport status: missing | draft_only | published_incomplete | published | not_required | open_questions | not_covered.",
+    ),
+    category: z.string().optional().describe("Filter by DPP category (e.g. battery)."),
+    act: z.string().optional().describe("Filter by governing act (CELEX, e.g. 32023R1542)."),
+    changed: z.boolean().optional().describe("true = return only rows changed since the last run."),
+    q: z.string().optional().describe("Search by product name or GTIN."),
+    cursor: z.string().optional().describe("Pagination cursor from the previous response's nextCursor."),
+    limit: z.number().int().positive().max(500).optional().describe("Page size (default 50, max 500)."),
+  }),
+  catalogueRun: z.object({}),
+  catalogueRunStatus: z.object({ runId: z.string().min(1).describe("Run id from catalogue_run.") }),
 } as const;
 
 /**
@@ -1115,5 +1157,122 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     },
   };
 
-  return [productsTool, passportsTool, fieldsTool, partiesTool, epcisTool, templatesTool];
+  // ───────────────────────────── scope ─────────────────────────
+  // Scope is a genuinely new resource (the engine that answers "does
+  // this product type need a DPP?"), so it earns its own tool rather
+  // than being an action on an existing one (CLAUDE.md rule: scope is
+  // a new resource, not a passport action).
+  const scopeTool: McpToolDefinition = {
+    name: "tracepass_scope",
+    title: "TracePass DPP scope checker",
+    description:
+      "Check whether a product type needs a Digital Product Passport, from when, at which level, and what each role must do. Also read the company's catalogue-wide scope report and trigger a catalogue refresh run.\n\n" +
+      "HARD RULES — always apply these to scope answers:\n" +
+      "- Answers state what the law says for product types matching the given facts. This is not legal advice; never write 'you must' — use product-type phrasing ('LMT batteries need a passport from 18 February 2027, Battery Regulation Art. 77(1)').\n" +
+      "- Every assertion must cite the governing article. A regulation without an article is not a citation.\n" +
+      "- A date with precision 'quarter' or 'year' is NEVER a deadline. Write 'from Q2 2027' or 'from 2029', never 'by' or 'deadline'.\n" +
+      "- Relay `not_covered` and `needs_input` as the results they are, never as errors. `not_covered` = the product falls outside these scope rules. `needs_input` = blocking questions remain unanswered — relay the questions in `ask[]` to the user before giving a verdict.\n" +
+      "- A result with `ruleStatus: 'planned'` is not law yet — always label it 'planned, not law yet'.\n\n" +
+      "Actions (pass via `action`, with `args`):\n" +
+      "- check — args: { category?, facts?, role?, placedOnMarket?, lifecycleEvent?, contains?, productId?, passportId?, locale? }. " +
+      "Ask whether a product type needs a DPP. Available on every plan, Free included. Counts against the per-company scope-answer cap (~100/day, 30/min burst), NOT the v1 read/write budget. 429 `scope_answer_cap` when the daily cap is spent. `not_covered` and `needs_input` are 200 results, not errors.\n" +
+      "  category: one of battery | detergents | toys | construction | textile | steel | tyres | furniture | electronics | packaging | paints-coatings | jewelry | fmcg | vehicles | other.\n" +
+      "  facts: namespace-prefixed keys from the loaded rules (e.g. battery.use, battery.capacityKWh). Unknown keys or wrong values return 400 invalid_input.\n" +
+      "  role: free-text role (e.g. manufacturer, importer, distributor, ownBrand).\n" +
+      "  placedOnMarket: { date: 'YYYY-MM-DD' | 'YYYY-MM' | 'YYYY', precision?: 'day'|'month'|'year' } or null.\n" +
+      "  contains: array (≤5) of component queries — use to ask about a battery inside a toy: [ { label?, facts? } ].\n" +
+      "  locale: en | bg | de | it (default: from Accept-Language header, else en).\n" +
+      "- catalogue_report — args: { classification?, category?, act?, changed?, q?, cursor?, limit? (≤500) }. " +
+      "Read the catalogue-wide scope report (one row per product). Requires the Growth plan or above; 403 `plan_upgrade_required` below Growth — tell the user this needs a plan upgrade, do not retry. Counts 1 against the daily read budget per page.\n" +
+      "  classification filter: missing | draft_only | published_incomplete | published | not_required | open_questions | not_covered.\n" +
+      "  Response: { run, running, totals, items: [{ productId, passportIds, gtin, category, summary, classification, changedAt }], nextCursor, disclaimer }. Full answer for one product: call check with that productId.\n" +
+      "- catalogue_run — args: {}. Start a catalogue scope refresh run (also runs nightly). Returns 202 { runId, status }; poll with catalogue_run_status. Requires Growth plan. 409 run_in_progress if already active; 429 run_cooldown with retryAfter within 10 minutes of a finished run.\n" +
+      "- catalogue_run_status — args: { runId }. Get the status (queued | running | done | failed) and result counts for one catalogue run. Requires Growth plan.",
+    inputSchema: {
+      action: z
+        .enum(["check", "catalogue_report", "catalogue_run", "catalogue_run_status"])
+        .describe(
+          "Which scope operation to run: check | catalogue_report | catalogue_run | catalogue_run_status.",
+        ),
+      args: z
+        .object({
+          // check
+          category: z.string().optional().describe("Product category for check (battery, textile, vehicles, other, …)."),
+          facts: z.record(z.string(), z.unknown()).optional().describe("Fact key→value map for check (e.g. { 'battery.use': 'ev' })."),
+          role: z.string().optional().describe("Role hint for check (e.g. manufacturer, importer, ownBrand)."),
+          placedOnMarket: z
+            .object({ date: z.string(), precision: z.string().optional() })
+            .nullable()
+            .optional()
+            .describe("Placing date for check: { date: YYYY[-MM[-DD]], precision?: day|month|year } or null."),
+          lifecycleEvent: z.string().nullable().optional().describe("Lifecycle event for check (e.g. end_of_life)."),
+          contains: z
+            .array(z.object({ label: z.string().optional(), facts: z.record(z.string(), z.unknown()).optional() }))
+            .optional()
+            .describe("Component queries for check (max 5), e.g. a toy containing a battery."),
+          productId: z.string().nullable().optional().describe("Product id — adds saved product facts and passport data to check."),
+          passportId: z.string().nullable().optional().describe("Passport id — adds saved passport facts to check."),
+          locale: z.string().optional().describe("Answer locale for check: en | bg | de | it."),
+          // catalogue_report
+          classification: z.string().optional().describe("Filter catalogue_report by classification: missing | draft_only | published_incomplete | published | not_required | open_questions | not_covered."),
+          act: z.string().optional().describe("Filter catalogue_report by governing act (CELEX, e.g. 32023R1542)."),
+          changed: z.boolean().optional().describe("catalogue_report: true to return only rows changed since the last run."),
+          q: z.string().optional().describe("catalogue_report: search by product name or GTIN."),
+          cursor: z.string().optional().describe("Pagination cursor (catalogue_report)."),
+          limit: z.number().optional().describe("Page size for catalogue_report, max 500."),
+          // catalogue_run_status
+          runId: z.string().optional().describe("Run id to poll (catalogue_run_status)."),
+        })
+        .partial()
+        .optional()
+        .describe("Arguments for the chosen action; required fields depend on `action` (see above)."),
+    },
+    outputSchema: API_OUTPUT_SCHEMA,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    handler: async (a) => {
+      const action = String(a.action);
+      switch (action) {
+        case "check": {
+          const p = parseArgs(SCHEMAS.scopeCheck, a.args, "tracepass_scope", action);
+          if (isErr(p)) return p;
+          const res = await client.post("/api/v1/scope/check", p);
+          // Handle scope-specific 429: scope_answer_cap (the per-company daily
+          // cap, ~100/day) is different from the v1 daily read/write budget.
+          if (!res.ok && res.status === 429) {
+            const b = (res.body ?? {}) as Record<string, unknown>;
+            if (b.error === "scope_answer_cap") {
+              const limit = b.limit;
+              const resetAt = typeof b.resetAt === "string" ? b.resetAt : undefined;
+              return errorResult(
+                `Scope check limit reached${limit !== undefined ? ` (${limit} per day per account)` : ""}.` +
+                  (resetAt ? ` Resets at ${resetAt}.` : " Retry later."),
+              );
+            }
+          }
+          return apiResult(res);
+        }
+        case "catalogue_report": {
+          const p = parseArgs(SCHEMAS.catalogueReport, a.args, "tracepass_scope", action);
+          if (isErr(p)) return p;
+          const { changed, ...rest } = p;
+          const params: Record<string, unknown> = { ...rest };
+          if (changed !== undefined) params.changed = changed ? "true" : undefined;
+          return apiResult(await client.get(`/api/v1/scope/catalogue${qs(params)}`));
+        }
+        case "catalogue_run": {
+          parseArgs(SCHEMAS.catalogueRun, a.args ?? {}, "tracepass_scope", action);
+          return apiResult(await client.post("/api/v1/scope/catalogue/runs"));
+        }
+        case "catalogue_run_status": {
+          const p = parseArgs(SCHEMAS.catalogueRunStatus, a.args, "tracepass_scope", action);
+          if (isErr(p)) return p;
+          return apiResult(await client.get(`/api/v1/scope/catalogue/runs/${seg(p.runId)}`));
+        }
+        default:
+          return errorResult(`Unknown action "${action}" for tracepass_scope.`);
+      }
+    },
+  };
+
+  return [productsTool, passportsTool, fieldsTool, partiesTool, epcisTool, templatesTool, scopeTool];
 }

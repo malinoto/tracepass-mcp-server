@@ -31,7 +31,7 @@ function stubClient(): {
 }
 
 describe("buildTools — tool surface", () => {
-  it("exposes exactly 6 grouped tools", () => {
+  it("exposes exactly 7 grouped tools", () => {
     const { client } = stubClient();
     const tools = buildTools(client);
     expect(tools.map((t) => t.name).sort()).toEqual([
@@ -40,6 +40,7 @@ describe("buildTools — tool surface", () => {
       "tracepass_passport_parties",
       "tracepass_passports",
       "tracepass_products",
+      "tracepass_scope",
       "tracepass_templates",
     ]);
   });
@@ -876,5 +877,245 @@ describe("tracepass_templates — regulatory schema routing", () => {
   it("is marked read-only", () => {
     const { tool } = templatesTool();
     expect(tool.annotations?.readOnlyHint).toBe(true);
+  });
+});
+
+describe("tracepass_scope — scope-services actions", () => {
+  function scopeTool() {
+    const stub = stubClient();
+    const tool = buildTools(stub.client).find((t) => t.name === "tracepass_scope")!;
+    return { tool, calls: stub.calls };
+  }
+
+  // ── annotations ──
+  it("is marked NOT read-only (catalogue_run writes results)", () => {
+    const { tool } = scopeTool();
+    expect(tool.annotations.readOnlyHint).toBe(false);
+  });
+
+  it("is marked NOT destructive (no action overwrites or removes existing data)", () => {
+    const { tool } = scopeTool();
+    expect(tool.annotations.destructiveHint).toBe(false);
+  });
+
+  it("is marked NOT open-world (only accesses the TracePass account)", () => {
+    const { tool } = scopeTool();
+    expect(tool.annotations.openWorldHint).toBe(false);
+  });
+
+  // ── check ──
+  it("check POSTs to /api/v1/scope/check", async () => {
+    const { tool, calls } = scopeTool();
+    await tool.handler({ action: "check", args: { category: "battery" } });
+    expect(calls[0]!.method).toBe("POST");
+    expect(calls[0]!.path).toBe("/api/v1/scope/check");
+  });
+
+  it("check sends all provided fields in the body", async () => {
+    const { tool, calls } = scopeTool();
+    await tool.handler({
+      action: "check",
+      args: {
+        category: "battery",
+        facts: { "battery.use": "ev" },
+        role: "importer",
+        locale: "de",
+      },
+    });
+    expect(calls[0]!.body).toMatchObject({
+      category: "battery",
+      facts: { "battery.use": "ev" },
+      role: "importer",
+      locale: "de",
+    });
+  });
+
+  it("check with contains array sends it in the body", async () => {
+    const { tool, calls } = scopeTool();
+    await tool.handler({
+      action: "check",
+      args: {
+        category: "toys",
+        contains: [{ label: "battery", facts: { "battery.weightKg": 0.4 } }],
+      },
+    });
+    expect(calls[0]!.body).toMatchObject({
+      category: "toys",
+      contains: [{ label: "battery", facts: { "battery.weightKg": 0.4 } }],
+    });
+  });
+
+  it("check with placedOnMarket sends it in the body", async () => {
+    const { tool, calls } = scopeTool();
+    await tool.handler({
+      action: "check",
+      args: { category: "battery", placedOnMarket: { date: "2027-03", precision: "month" } },
+    });
+    expect(calls[0]!.body).toMatchObject({
+      placedOnMarket: { date: "2027-03", precision: "month" },
+    });
+  });
+
+  it("check with vehicles category sends it (vehicles is scope-only, not a template category)", async () => {
+    const { tool, calls } = scopeTool();
+    await tool.handler({ action: "check", args: { category: "vehicles" } });
+    expect(calls[0]!.body).toMatchObject({ category: "vehicles" });
+  });
+
+  it("check with other category sends it", async () => {
+    const { tool, calls } = scopeTool();
+    await tool.handler({ action: "check", args: { category: "other" } });
+    expect(calls[0]!.body).toMatchObject({ category: "other" });
+  });
+
+  it("check with a role too long returns isError without calling the API", async () => {
+    const { tool, calls } = scopeTool();
+    const r = await tool.handler({ action: "check", args: { role: "x".repeat(121) } });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/Invalid args/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("check 429 scope_answer_cap is surfaced as a readable scope-specific message", async () => {
+    const { client } = stubClient();
+    // Override the stub to return a 429 scope_answer_cap
+    const stubbedClient = {
+      ...client,
+      post: async () => ({
+        status: 429,
+        ok: false,
+        body: { error: "scope_answer_cap", limit: 100, resetAt: "2026-10-12T00:00:00.000Z" },
+      }),
+    } as unknown as typeof client;
+    const tool = buildTools(stubbedClient).find((t) => t.name === "tracepass_scope")!;
+    const r = await tool.handler({ action: "check", args: { category: "battery" } });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/Scope check.*limit/i);
+    expect(r.content[0]!.text).toMatch(/100/);
+    expect(r.content[0]!.text).toMatch(/2026-10-12/);
+  });
+
+  it("check 403 returns a readable plan message via apiResult", async () => {
+    const { client } = stubClient();
+    const stubbedClient = {
+      ...client,
+      post: async () => ({
+        status: 403,
+        ok: false,
+        body: { error: "plan_upgrade_required", message: "This feature needs a higher plan." },
+      }),
+    } as unknown as typeof client;
+    const tool = buildTools(stubbedClient).find((t) => t.name === "tracepass_scope")!;
+    const r = await tool.handler({ action: "check", args: { category: "battery" } });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/plan/i);
+    expect(r.content[0]!.text).toMatch(/do not retry/i);
+  });
+
+  // ── catalogue_report ──
+  it("catalogue_report GETs /api/v1/scope/catalogue", async () => {
+    const { tool, calls } = scopeTool();
+    await tool.handler({ action: "catalogue_report", args: {} });
+    expect(calls[0]!.method).toBe("GET");
+    expect(calls[0]!.path).toBe("/api/v1/scope/catalogue");
+  });
+
+  it("catalogue_report sends classification, category and limit as query params", async () => {
+    const { tool, calls } = scopeTool();
+    await tool.handler({
+      action: "catalogue_report",
+      args: { classification: "missing", category: "battery", limit: 50 },
+    });
+    expect(calls[0]!.path).toContain("classification=missing");
+    expect(calls[0]!.path).toContain("category=battery");
+    expect(calls[0]!.path).toContain("limit=50");
+  });
+
+  it("catalogue_report sends changed=true as a query param", async () => {
+    const { tool, calls } = scopeTool();
+    await tool.handler({ action: "catalogue_report", args: { changed: true } });
+    expect(calls[0]!.path).toContain("changed=true");
+  });
+
+  it("catalogue_report changed=false omits the param", async () => {
+    const { tool, calls } = scopeTool();
+    await tool.handler({ action: "catalogue_report", args: { changed: false } });
+    expect(calls[0]!.path).not.toContain("changed");
+  });
+
+  it("catalogue_report with an act (CELEX) filter sends it", async () => {
+    const { tool, calls } = scopeTool();
+    await tool.handler({ action: "catalogue_report", args: { act: "32023R1542" } });
+    expect(calls[0]!.path).toContain("act=32023R1542");
+  });
+
+  it("catalogue_report 403 plan_upgrade_required is surfaced as a plan message", async () => {
+    const { client } = stubClient();
+    const stubbedClient = {
+      ...client,
+      get: async () => ({
+        status: 403,
+        ok: false,
+        body: { error: "plan_upgrade_required", feature: "scopeCatalogueEnabled", message: "The catalogue scope check is available from the Growth plan." },
+      }),
+    } as unknown as typeof client;
+    const tool = buildTools(stubbedClient).find((t) => t.name === "tracepass_scope")!;
+    const r = await tool.handler({ action: "catalogue_report", args: {} });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/plan_upgrade_required/);
+    expect(r.content[0]!.text).toMatch(/Growth/);
+    expect(r.content[0]!.text).toMatch(/do not retry/i);
+  });
+
+  it("catalogue_report limit over 500 returns isError without calling the API", async () => {
+    const { tool, calls } = scopeTool();
+    const r = await tool.handler({ action: "catalogue_report", args: { limit: 501 } });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/Invalid args/);
+    expect(calls).toHaveLength(0);
+  });
+
+  // ── catalogue_run ──
+  it("catalogue_run POSTs to /api/v1/scope/catalogue/runs", async () => {
+    const { tool, calls } = scopeTool();
+    await tool.handler({ action: "catalogue_run", args: {} });
+    expect(calls[0]!.method).toBe("POST");
+    expect(calls[0]!.path).toBe("/api/v1/scope/catalogue/runs");
+  });
+
+  it("catalogue_run with no args also works", async () => {
+    const { tool, calls } = scopeTool();
+    await tool.handler({ action: "catalogue_run" });
+    expect(calls[0]!.path).toBe("/api/v1/scope/catalogue/runs");
+  });
+
+  // ── catalogue_run_status ──
+  it("catalogue_run_status GETs /api/v1/scope/catalogue/runs/{id}", async () => {
+    const { tool, calls } = scopeTool();
+    await tool.handler({ action: "catalogue_run_status", args: { runId: "6650a1b2c3d4e5f6a7b8c9d0" } });
+    expect(calls[0]!.method).toBe("GET");
+    expect(calls[0]!.path).toBe("/api/v1/scope/catalogue/runs/6650a1b2c3d4e5f6a7b8c9d0");
+  });
+
+  it("catalogue_run_status URL-encodes the runId", async () => {
+    const { tool, calls } = scopeTool();
+    await tool.handler({ action: "catalogue_run_status", args: { runId: "abc/def" } });
+    expect(calls[0]!.path).toBe("/api/v1/scope/catalogue/runs/abc%2Fdef");
+  });
+
+  it("catalogue_run_status missing runId returns isError without calling the API", async () => {
+    const { tool, calls } = scopeTool();
+    const r = await tool.handler({ action: "catalogue_run_status", args: {} });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/Invalid args/);
+    expect(calls).toHaveLength(0);
+  });
+
+  // ── unknown action ──
+  it("an unknown action returns isError", async () => {
+    const { tool } = scopeTool();
+    const r = await tool.handler({ action: "frobnicate", args: {} });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/Unknown action/);
   });
 });
