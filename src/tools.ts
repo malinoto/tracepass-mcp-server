@@ -1180,7 +1180,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "Ask whether a product type needs a DPP. Available on every plan, Free included. Counts against the per-company scope-answer cap (~100/day, 30/min burst), NOT the v1 read/write budget. 429 `scope_answer_cap` when the daily cap is spent. `not_covered` and `needs_input` are 200 results, not errors.\n" +
       "  category: one of battery | detergents | toys | construction | textile | steel | tyres | furniture | electronics | packaging | paints-coatings | jewelry | fmcg | vehicles | other.\n" +
       "  facts: namespace-prefixed keys from the loaded rules (e.g. battery.use, battery.capacityKWh). Unknown keys or wrong values return 400 invalid_input.\n" +
-      "  role: free-text role (e.g. manufacturer, importer, distributor, ownBrand).\n" +
+      "  role: your role in the act's terms: manufacturer | importer | distributor | authorised_representative | fulfilment_service_provider. Selling under your own name = manufacturer with facts.ownBrand: true. Omit to list every role's duties.\n" +
       "  placedOnMarket: { date: 'YYYY-MM-DD' | 'YYYY-MM' | 'YYYY', precision?: 'day'|'month'|'year' } or null.\n" +
       "  contains: array (≤5) of component queries — use to ask about a battery inside a toy: [ { label?, facts? } ].\n" +
       "  locale: en | bg | de | it (default: from Accept-Language header, else en).\n" +
