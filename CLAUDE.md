@@ -59,6 +59,11 @@ the hosted endpoint and the local package.**
   - **the closing disclaimer**: `withClosingDisclaimer` repeats the envelope's
     `disclaimer` as a separate final text block ("End your answer with this line,
     word for word"). Left only inside the JSON, models drop it from most answers.
+  **A tool argument must exist in the v1 request.** `/api/v1/scope/check` is strict
+  (an undeclared field or fact is 400 `invalid_input`), so an argument the tool
+  advertises but the API lacks fails on every call that uses it. The model then
+  retries without it, so nothing looks broken. A test checks `scope_check`'s posted
+  body against the published OpenAPI schema.
   Its registry entry is `server.compliance.json` (`eu.tracepass/compliance`), a
   separate listing from `server.json`. Its behaviour is measured by an eval set in
   the private runner repo; a tool-description change can move the scores, so re-run
