@@ -207,10 +207,6 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
           .describe(
             "The user's role in plain words, e.g. \"maker\", \"importer\", \"reseller\". The platform maps this to the act's term.",
           ),
-        markets: z
-          .array(z.string().max(10))
-          .optional()
-          .describe("ISO country codes where the product is sold, or [\"EU\"]."),
         placedOnMarket: z
           .object({
             date: z.string().describe("ISO date or partial date, e.g. \"2027-02\" or \"2027\"."),
@@ -222,7 +218,7 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
           .record(z.string(), z.unknown())
           .optional()
           .describe(
-            "Additional product facts the scope rules may need, e.g. {\"battery.capacityKWh\": 10}.",
+            "Product facts the scope rules declare, e.g. {\"battery.capacityKWh\": 10}. Any other key is rejected, so pass only a fact you know the rules use (such as one a needs_input result asked for), and never the user's question or free text.",
           ),
         locale: z
           .enum(["en", "bg", "de", "it"])
@@ -235,7 +231,6 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
           await client.post("/api/v1/scope/check", {
             ...(args.category ? { category: args.category } : {}),
             ...(args.role ? { role: args.role } : {}),
-            ...(args.markets ? { markets: args.markets } : {}),
             ...(args.placedOnMarket ? { placedOnMarket: args.placedOnMarket } : {}),
             ...(args.facts ? { facts: args.facts } : {}),
             ...(args.locale ? { locale: args.locale } : {}),

@@ -18,7 +18,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { buildComplianceTools, complianceResult, createComplianceMcpServer } from "../src/compliance-server.js";
 import type { TracePassClient } from "../src/api-client.js";
 import { COMPLIANCE_SERVER_CARD } from "../src/http.js";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -713,5 +713,40 @@ describe("server.compliance.json version lockstep", () => {
   it("server.compliance.json name is eu.tracepass/compliance", () => {
     const compliance = JSON.parse(readFileSync(join(ROOT, "server.compliance.json"), "utf8")) as { name: string };
     expect(compliance.name).toBe("eu.tracepass/compliance");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Contract: scope_check sends only fields the v1 endpoint accepts
+// ---------------------------------------------------------------------------
+
+describe("scope_check request contract", () => {
+  // The endpoint rejects any field it does not declare (400 invalid_input), so an
+  // argument the tool advertises but the API lacks fails on every call that uses it.
+  it("posts only fields the published OpenAPI spec declares for /api/v1/scope/check", async () => {
+    // Cross-repo: the spec is the marketing repo's generated openapi.json.
+    const specPath = join(ROOT, "..", "tracepass", "public", "openapi.json");
+    if (!existsSync(specPath)) return; // CI clones this repo alone.
+    const spec = JSON.parse(readFileSync(specPath, "utf-8"));
+    const declared = Object.keys(
+      spec.paths["/api/v1/scope/check"].post.requestBody.content["application/json"].schema.properties,
+    );
+
+    // One sample per advertised argument; a new argument without a sample fails here.
+    const samples: Record<string, unknown> = {
+      category: "battery",
+      role: "maker",
+      placedOnMarket: { date: "2027" },
+      facts: { "battery.capacityKWh": 10 },
+      locale: "en",
+    };
+    const { client, calls } = stubClient();
+    const scope = tool(buildComplianceTools(client), "scope_check");
+    const advertised = Object.keys(scope.inputSchema as Record<string, unknown>);
+    for (const key of advertised) expect(samples, `a sample for argument "${key}"`).toHaveProperty(key);
+
+    await scope.handler(Object.fromEntries(advertised.map((k) => [k, samples[k]])) as never);
+    const sent = Object.keys(calls[0]!.body as Record<string, unknown>);
+    expect(sent.filter((k) => !declared.includes(k))).toEqual([]);
   });
 });
