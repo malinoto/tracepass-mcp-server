@@ -99,9 +99,11 @@ export function complianceResult(res: { status: number; ok: boolean; body: unkno
     );
   }
 
-  // 400 invalid input: surface the platform's message.
+  // 400 invalid input: surface the platform's message, and the allowed values if present.
   if (res.status === 400) {
-    return errorResult(`Invalid input: ${message ?? "check the tool arguments."}`);
+    const allowed = Array.isArray(body.allowed) ? (body.allowed as unknown[]).map(String) : null;
+    const suffix = allowed ? ` Allowed values: ${allowed.join(", ")}.` : "";
+    return errorResult(`Invalid input: ${message ?? "check the tool arguments."}${suffix}`);
   }
 
   // 401 auth: credential missing or rejected.
@@ -125,6 +127,13 @@ export function complianceResult(res: { status: number; ok: boolean; body: unkno
       `Not permitted on this account's plan${errorCode ? ` (${errorCode})` : ""}.` +
         ` ${message ?? "This feature may require a higher plan or a paid add-on."}` +
         " Do not retry — tell the user this needs a plan change.",
+    );
+  }
+
+  // 409 conflict: product model name already exists in this company's catalogue.
+  if (res.status === 409) {
+    return errorResult(
+      `Conflict: ${message ?? "a product with this name already exists. Use a different product name or open the existing product in TracePass."}`,
     );
   }
 
@@ -173,7 +182,6 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
         HARD_RULES,
       inputSchema: {
         category: z.string().max(100).optional().describe("Product category, e.g. battery, textile, electronics."),
-        subType: z.string().max(100).optional().describe("Product sub-type, e.g. ev, lmt, industrial (battery)."),
         role: z
           .string()
           .max(120)
@@ -208,7 +216,6 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
         complianceResult(
           await client.post("/api/v1/scope/check", {
             ...(args.category ? { category: args.category } : {}),
-            ...(args.subType ? { subType: args.subType } : {}),
             ...(args.role ? { role: args.role } : {}),
             ...(args.markets ? { markets: args.markets } : {}),
             ...(args.placedOnMarket ? { placedOnMarket: args.placedOnMarket } : {}),
@@ -363,18 +370,27 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
       handler: async (args) => {
-        // Never invent a GTIN — if the caller didn't provide one, ask the user.
-        if (!args.gtin || String(args.gtin).trim() === "") {
+        // Never invent a GTIN or a serial number — ask the user for both if missing.
+        const hasGtin = args.gtin && String(args.gtin).trim() !== "";
+        const hasSerial = args.serialNumber && String(args.serialNumber).trim() !== "";
+
+        if (!hasGtin) {
           return jsonResult({
             status: "needs_input",
             answer:
-              "To create a draft passport I need the product's GTIN (the barcode number — 8, 12, 13 or 14 digits). You'll find it on the product's physical barcode or its datasheet. What is the GTIN for this product?",
+              "To create a draft passport I need the product's GTIN (the barcode number — 8, 12, 13 or 14 digits) and the unit's serial number. You'll find the GTIN on the physical barcode or the product's datasheet; the serial number is on the product label or the manufacturer's documentation.",
             ask: [
-              {
-                fact: "gtin",
-                question: "What is the product's GTIN (barcode number)?",
-              },
+              { fact: "gtin", question: "What is the product's GTIN (barcode number)?" },
+              { fact: "serialNumber", question: "What is the unit's serial number?" },
             ],
+          });
+        }
+        if (!hasSerial) {
+          return jsonResult({
+            status: "needs_input",
+            answer:
+              "I also need the unit's serial number to create the passport (required alongside the GTIN). You'll find it on the product label or in the manufacturer's documentation.",
+            ask: [{ fact: "serialNumber", question: "What is the unit's serial number?" }],
           });
         }
 
@@ -382,51 +398,77 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
         const productName = typeof args.productName === "string" ? args.productName : "";
 
         // Step 1: create the product.
-        const productBody: Record<string, unknown> = { name: productName, category };
+        // `model` is a required unique key per company; reuse productName as the model
+        // value (unique within the company's catalogue).
+        const productBody: Record<string, unknown> = { name: productName, model: productName, category };
         if (args.subType) productBody.subType = args.subType;
         const productRes = await client.post("/api/v1/products", productBody);
         if (!productRes.ok) return complianceResult(productRes);
         const productData = (productRes.body ?? {}) as Record<string, unknown>;
-        const productId = typeof productData.id === "string" ? productData.id : String(productData.id ?? "");
+        // Platform returns `_id` (Mongo ObjectId string), not `id`.
+        const productId =
+          typeof productData._id === "string" ? productData._id : String(productData._id ?? "");
 
         // Step 2: create the draft passport.
-        const passportBody: Record<string, unknown> = {
-          productId,
-          gtin: String(args.gtin),
-          ...(args.serialNumber ? { serialNumber: args.serialNumber } : {}),
-        };
+        // GS1 identifiers must be nested under `gs1: {}`, not at the top level.
+        const gs1: Record<string, string> = { gtin: String(args.gtin) };
+        if (args.serialNumber) gs1.serialNumber = String(args.serialNumber);
+        const passportBody: Record<string, unknown> = { productId, gs1 };
         const passportRes = await client.post("/api/v1/passports", passportBody);
         if (!passportRes.ok) return complianceResult(passportRes);
         const passportData = (passportRes.body ?? {}) as Record<string, unknown>;
-        const passportId = typeof passportData.id === "string" ? passportData.id : String(passportData.id ?? "");
+        // Platform returns `_id`, not `id`.
+        const passportId =
+          typeof passportData._id === "string" ? passportData._id : String(passportData._id ?? "");
 
         // Step 3: check how many required fields are still missing.
+        // GET /api/v1/passports/{id}/compliance returns ComplianceResult (NOT the
+        // standard envelope). Count distinct `target` values of `critical` items
+        // whose type is "missing_field" or "conditional_missing" for stillRequired;
+        // count "missing_party" items for missingParties.
         let stillRequired: number | null = null;
-        let makerHeldCount: number | null = null;
-        let supplierHeldCount: number | null = null;
+        let missingParties: number | null = null;
+        let missingTargets: Set<string> | null = null;
         const complianceRes = await client.get(`/api/v1/passports/${encodeURIComponent(passportId)}/compliance`);
         if (complianceRes.ok) {
           const compData = (complianceRes.body ?? {}) as Record<string, unknown>;
-          // The compliance endpoint may return a count directly or an array of missing fields.
-          if (typeof compData.missingRequired === "number") {
-            stillRequired = compData.missingRequired;
-          } else if (Array.isArray(compData.missing)) {
-            stillRequired = (compData.missing as unknown[]).length;
-          } else if (typeof compData.stillRequired === "number") {
-            stillRequired = compData.stillRequired;
-          }
+          const critical = Array.isArray(compData.critical)
+            ? (compData.critical as Array<{ type?: string; target?: string }>)
+            : [];
+          const missingFieldTargets = new Set(
+            critical
+              .filter((c) => c.type === "missing_field" || c.type === "conditional_missing")
+              .map((c) => c.target)
+              .filter((t): t is string => typeof t === "string"),
+          );
+          stillRequired = missingFieldTargets.size;
+          missingTargets = missingFieldTargets;
+          missingParties = critical.filter((c) => c.type === "missing_party").length;
         }
 
-        // Step 4 (battery only): get maker/supplier split from required_fields overlay.
+        // Step 4 (battery only): get maker/supplier split from required_fields.
+        // GET /api/v1/regulatory/required-fields?category=battery returns the
+        // envelope with data.summary.requiredByHolder.{maker,supplier,either,operator}
+        // as arrays of field key strings. makerOrSupplierCount = distinct missing
+        // targets that appear in maker ∪ supplier ∪ either (operator never counts).
+        let makerOrSupplierCount: number | null = null;
         if (category.toLowerCase() === "battery") {
           const rfRes = await client.get(
             `/api/v1/regulatory/required-fields?category=battery${args.subType ? `&subType=${encodeURIComponent(String(args.subType))}` : ""}`,
           );
           if (rfRes.ok) {
             const rfData = (rfRes.body ?? {}) as Record<string, unknown>;
-            // The overlay data may come as per-group breakdown or a summary.
-            if (typeof rfData.makerHeldCount === "number") makerHeldCount = rfData.makerHeldCount;
-            if (typeof rfData.supplierHeldCount === "number") supplierHeldCount = rfData.supplierHeldCount;
+            const summary = (
+              (rfData.data as Record<string, unknown> | undefined)?.summary as Record<string, unknown> | undefined
+            );
+            const byHolder = summary?.requiredByHolder as Record<string, unknown> | undefined;
+            if (byHolder && missingTargets) {
+              const maker = Array.isArray(byHolder.maker) ? (byHolder.maker as string[]) : [];
+              const supplier = Array.isArray(byHolder.supplier) ? (byHolder.supplier as string[]) : [];
+              const either = Array.isArray(byHolder.either) ? (byHolder.either as string[]) : [];
+              const holderKeys = new Set([...maker, ...supplier, ...either]);
+              makerOrSupplierCount = [...missingTargets].filter((t) => holderKeys.has(t)).length;
+            }
           }
         }
 
@@ -436,8 +478,8 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
           passportId,
           dashboardUrl,
           ...(stillRequired !== null ? { stillRequired } : {}),
-          ...(makerHeldCount !== null ? { makerHeldCount } : {}),
-          ...(supplierHeldCount !== null ? { supplierHeldCount } : {}),
+          ...(missingParties !== null && missingParties > 0 ? { missingParties } : {}),
+          ...(makerOrSupplierCount !== null ? { makerOrSupplierCount } : {}),
           answer:
             `Draft passport created. Open it in TracePass to complete the required fields: ${dashboardUrl}` +
             (stillRequired !== null ? ` (${stillRequired} required field${stillRequired === 1 ? "" : "s"} still to fill)` : "") +
@@ -469,11 +511,6 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
           .array(z.string())
           .optional()
           .describe("The ruleIds from the answer that was reported. Pass them from the result unchanged."),
-        toolName: z
-          .string()
-          .max(100)
-          .optional()
-          .describe("The tool whose answer is being reported (e.g. scope_check)."),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
       handler: async (args) =>
@@ -481,7 +518,7 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
           await client.post("/api/v1/scope/reports", {
             what: args.what,
             ...(args.ruleIds ? { ruleIds: args.ruleIds } : {}),
-            ...(args.toolName ? { toolName: args.toolName } : {}),
+            channel: "assistant",
           }),
         ),
     },
@@ -513,9 +550,9 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
         HARD_RULES,
       inputSchema: {
         role: z
-          .enum(["maker", "importer", "distributor", "retailer", "brand_owner", "advisor"])
+          .enum(["manufacturer", "importer", "distributor", "authorised_representative", "fulfilment_service_provider"])
           .optional()
-          .describe("The company's role in the supply chain."),
+          .describe("The company's role in the supply chain per EU DPP regulations."),
         ownBrand: z
           .boolean()
           .optional()

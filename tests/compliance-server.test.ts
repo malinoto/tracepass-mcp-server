@@ -166,12 +166,14 @@ describe("compliance tool routing", () => {
     expect(calls[0]!.body).toMatchObject({ category: "battery", role: "importer" });
   });
 
-  it("scope_check omits undefined optional fields from the body", async () => {
+  it("scope_check omits undefined optional fields and never sends subType (not a top-level scope field)", async () => {
     const { client, calls } = stubClient();
     await tool(buildComplianceTools(client), "scope_check").handler({ category: "battery" });
     const body = calls[0]!.body as Record<string, unknown>;
     expect(body.role).toBeUndefined();
     expect(body.markets).toBeUndefined();
+    // subType was removed from scope_check — platform uses strictObject and rejects unknown fields
+    expect(body.subType).toBeUndefined();
   });
 
   it("required_fields GETs /api/v1/regulatory/required-fields with params", async () => {
@@ -217,7 +219,7 @@ describe("compliance tool routing", () => {
   it("update_profile PATCHes /api/v1/company/compliance-profile with the provided facts", async () => {
     const { client, calls } = stubClient();
     await tool(buildComplianceTools(client), "update_profile").handler({
-      role: "maker",
+      role: "manufacturer",
       categories: ["battery"],
       ownBrand: true,
     });
@@ -225,7 +227,7 @@ describe("compliance tool routing", () => {
       method: "PATCH",
       path: "/api/v1/company/compliance-profile",
     });
-    expect(calls[0]!.body).toMatchObject({ role: "maker", categories: ["battery"], ownBrand: true });
+    expect(calls[0]!.body).toMatchObject({ role: "manufacturer", categories: ["battery"], ownBrand: true });
   });
 
   it("update_profile omits undefined fields from the PATCH body", async () => {
@@ -242,7 +244,7 @@ describe("compliance tool routing", () => {
     expect(calls[0]).toMatchObject({ method: "DELETE", path: "/api/v1/company/compliance-profile" });
   });
 
-  it("report_answer POSTs to /api/v1/scope/reports with what + ruleIds", async () => {
+  it("report_answer POSTs to /api/v1/scope/reports with what + ruleIds + channel=assistant", async () => {
     const { client, calls } = stubClient();
     await tool(buildComplianceTools(client), "report_answer").handler({
       what: "The answer says batteries are in scope but we only make portable ones.",
@@ -252,7 +254,10 @@ describe("compliance tool routing", () => {
     expect(calls[0]!.body).toMatchObject({
       what: "The answer says batteries are in scope but we only make portable ones.",
       ruleIds: ["32023R1542#passport.in_scope@3"],
+      channel: "assistant",
     });
+    // toolName is NOT forwarded — platform uses strictObject and rejects unknown keys
+    expect((calls[0]!.body as Record<string, unknown>).toolName).toBeUndefined();
   });
 });
 
@@ -288,22 +293,52 @@ describe("create_draft_passport", () => {
     expect(calls).toHaveLength(0);
   });
 
+  it("asks for serialNumber when gtin is provided but serialNumber is missing", async () => {
+    const { client, calls } = stubClient();
+    const r = await tool(buildComplianceTools(client), "create_draft_passport").handler({
+      category: "battery",
+      productName: "My Battery",
+      gtin: "04006381333931",
+      // no serialNumber
+    });
+    expect(r.isError).toBeFalsy();
+    const sc = r.structuredContent as Record<string, unknown>;
+    expect(sc.status).toBe("needs_input");
+    expect(JSON.stringify(sc.ask)).toContain("serialNumber");
+    // No platform calls made — never proceeds without serialNumber.
+    expect(calls).toHaveLength(0);
+  });
+
   it("creates product then passport when GTIN is provided", async () => {
-    // First call (POST /api/v1/products) → product; second (POST /api/v1/passports) → passport;
-    // third (GET compliance) → compliance; no battery-required-fields call for non-battery.
-    let callCount = 0;
+    // First call (POST /api/v1/products) → product (_id); second (POST /api/v1/passports) → passport (_id);
+    // third (GET compliance) → ComplianceResult with critical array; no battery-required-fields call for non-battery.
     const bodies: unknown[] = [];
     const client = {
       get: async (p: string) => {
-        callCount++;
-        if (p.includes("/compliance")) return { status: 200, ok: true, body: { stillRequired: 5 } };
+        // ComplianceResult — NOT wrapped in envelope; uses _id on product/passport.
+        if (p.includes("/compliance")) {
+          return {
+            status: 200,
+            ok: true,
+            body: {
+              verdict: "incomplete",
+              critical: [
+                { type: "missing_field", severity: "critical", target: "fieldA" },
+                { type: "missing_field", severity: "critical", target: "fieldB" },
+                { type: "missing_field", severity: "critical", target: "fieldA" }, // duplicate target → counts once
+                { type: "missing_party", severity: "critical" },
+                { type: "conditional_missing", severity: "critical", target: "fieldC" },
+              ],
+            },
+          };
+        }
         return { status: 200, ok: true, body: {} };
       },
       post: async (p: string, b: unknown) => {
-        callCount++;
         bodies.push(b);
-        if (p === "/api/v1/products") return { status: 201, ok: true, body: { id: "prod-123" } };
-        if (p === "/api/v1/passports") return { status: 201, ok: true, body: { id: "pass-456" } };
+        // Platform returns `_id`, not `id`.
+        if (p === "/api/v1/products") return { status: 201, ok: true, body: { _id: "prod-123" } };
+        if (p === "/api/v1/passports") return { status: 201, ok: true, body: { _id: "pass-456" } };
         return { status: 200, ok: true, body: {} };
       },
     } as unknown as TracePassClient;
@@ -311,30 +346,68 @@ describe("create_draft_passport", () => {
       category: "textile",
       productName: "Blue T-Shirt",
       gtin: "09506000134369",
+      serialNumber: "SN-001",
     });
     expect(r.isError).toBeFalsy();
     const sc = r.structuredContent as Record<string, unknown>;
     expect(sc.passportId).toBe("pass-456");
     expect(String(sc.dashboardUrl)).toContain("pass-456");
-    expect(sc.stillRequired).toBe(5);
-    // Check product body
-    expect(bodies[0]).toMatchObject({ name: "Blue T-Shirt", category: "textile" });
-    // Check passport body includes productId + gtin
-    expect(bodies[1]).toMatchObject({ productId: "prod-123", gtin: "09506000134369" });
+    // stillRequired = 3 distinct targets: fieldA, fieldB, fieldC (missing_field + conditional_missing)
+    expect(sc.stillRequired).toBe(3);
+    // missingParties = 1 (one missing_party in critical)
+    expect(sc.missingParties).toBe(1);
+    // Check product body includes model = productName (required by platform)
+    expect(bodies[0]).toMatchObject({ name: "Blue T-Shirt", model: "Blue T-Shirt", category: "textile" });
+    // Check passport body uses gs1: { gtin, serialNumber } nested format
+    expect(bodies[1]).toMatchObject({ productId: "prod-123", gs1: { gtin: "09506000134369", serialNumber: "SN-001" } });
   });
 
-  it("for battery, fetches required-fields overlay and returns maker/supplier counts", async () => {
+  it("for battery, fetches required-fields overlay and returns makerOrSupplierCount", async () => {
+    // Compliance: 3 missing targets — "mfrDate", "capacity", "chemistry"
+    // requiredByHolder: maker has mfrDate+capacity, supplier has chemistry, either has none
+    // → makerOrSupplierCount = 3 (all three appear in maker ∪ supplier ∪ either)
     const client = {
       get: async (p: string) => {
-        if (p.includes("/compliance")) return { status: 200, ok: true, body: { stillRequired: 10 } };
+        if (p.includes("/compliance")) {
+          return {
+            status: 200,
+            ok: true,
+            body: {
+              verdict: "incomplete",
+              critical: [
+                { type: "missing_field", severity: "critical", target: "mfrDate" },
+                { type: "missing_field", severity: "critical", target: "capacity" },
+                { type: "missing_field", severity: "critical", target: "chemistry" },
+              ],
+            },
+          };
+        }
         if (p.includes("required-fields")) {
-          return { status: 200, ok: true, body: { makerHeldCount: 8, supplierHeldCount: 3 } };
+          // Real shape: envelope → data.summary.requiredByHolder.{maker,supplier,either,operator}
+          return {
+            status: 200,
+            ok: true,
+            body: {
+              status: "answered",
+              data: {
+                summary: {
+                  requiredByHolder: {
+                    maker: ["mfrDate", "capacity"],
+                    supplier: ["chemistry"],
+                    either: [],
+                    operator: ["batteryId"],
+                  },
+                },
+              },
+            },
+          };
         }
         return { status: 200, ok: true, body: {} };
       },
       post: async (p: string) => {
-        if (p === "/api/v1/products") return { status: 201, ok: true, body: { id: "prod-bat" } };
-        if (p === "/api/v1/passports") return { status: 201, ok: true, body: { id: "pass-bat" } };
+        // Platform returns `_id`, not `id`.
+        if (p === "/api/v1/products") return { status: 201, ok: true, body: { _id: "prod-bat" } };
+        if (p === "/api/v1/passports") return { status: 201, ok: true, body: { _id: "pass-bat" } };
         return { status: 200, ok: true, body: {} };
       },
     } as unknown as TracePassClient;
@@ -342,25 +415,29 @@ describe("create_draft_passport", () => {
       category: "battery",
       productName: "EV Battery Pack",
       gtin: "12345678901231",
+      serialNumber: "SN-EV-001",
       subType: "ev",
     });
     const sc = r.structuredContent as Record<string, unknown>;
-    expect(sc.makerHeldCount).toBe(8);
-    expect(sc.supplierHeldCount).toBe(3);
+    expect(sc.stillRequired).toBe(3);
+    // mfrDate + capacity (maker) + chemistry (supplier) = 3 in maker ∪ supplier ∪ either
+    expect(sc.makerOrSupplierCount).toBe(3);
+    // operator key "batteryId" is NOT in missing targets → not counted
   });
 
   it("says publishing is done by the user, not by the tool", async () => {
     const client = {
-      get: async () => ({ status: 200, ok: true, body: {} }),
+      get: async () => ({ status: 200, ok: true, body: { verdict: "incomplete", critical: [] } }),
       post: async (p: string) => {
-        if (p === "/api/v1/products") return { status: 201, ok: true, body: { id: "p1" } };
-        return { status: 201, ok: true, body: { id: "pass1" } };
+        if (p === "/api/v1/products") return { status: 201, ok: true, body: { _id: "p1" } };
+        return { status: 201, ok: true, body: { _id: "pass1" } };
       },
     } as unknown as TracePassClient;
     const r = await tool(buildComplianceTools(client), "create_draft_passport").handler({
       category: "battery",
       productName: "Test",
       gtin: "12345678901231",
+      serialNumber: "SN-001",
     });
     const text = r.content[0]!.text;
     expect(text.toLowerCase()).toContain("publish");
@@ -379,6 +456,7 @@ describe("create_draft_passport", () => {
       category: "battery",
       productName: "Test",
       gtin: "12345678901231",
+      serialNumber: "SN-001",
     });
     expect(r.isError).toBe(true);
     expect(r.content[0]!.text).toMatch(/plan limit/i);
@@ -390,7 +468,7 @@ describe("create_draft_passport", () => {
       get: async () => ({ status: 200, ok: true, body: {} }),
       post: async () => {
         callNum++;
-        if (callNum === 1) return { status: 201, ok: true, body: { id: "p1" } };
+        if (callNum === 1) return { status: 201, ok: true, body: { _id: "p1" } };
         return { status: 403, ok: false, body: { error: "plan_upgrade_required", message: "Needs Growth plan." } };
       },
     } as unknown as TracePassClient;
@@ -398,6 +476,7 @@ describe("create_draft_passport", () => {
       category: "battery",
       productName: "Test",
       gtin: "12345678901231",
+      serialNumber: "SN-001",
     });
     expect(r.isError).toBe(true);
     expect(r.content[0]!.text).toMatch(/plan/i);
@@ -449,6 +528,33 @@ describe("complianceResult — error mapping", () => {
     });
     expect(r.isError).toBe(true);
     expect(r.content[0]!.text).toMatch(/category is required/);
+  });
+
+  it("400 invalid_input with allowed array lists the allowed values", () => {
+    const r = complianceResult({
+      status: 400,
+      ok: false,
+      body: {
+        error: "invalid_input",
+        message: '"unknown_xyz" is not a category with a passport template',
+        allowed: ["battery", "textile", "electronics"],
+      },
+    });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/battery/);
+    expect(r.content[0]!.text).toMatch(/textile/);
+    expect(r.content[0]!.text).toMatch(/Allowed values/i);
+  });
+
+  it("409 conflict surfaces a readable message", () => {
+    const r = complianceResult({
+      status: 409,
+      ok: false,
+      body: { message: "Product model already exists." },
+    });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/Conflict/i);
+    expect(r.content[0]!.text).toMatch(/Product model already exists/);
   });
 
   it("402 surfaces a plan limit message", () => {
