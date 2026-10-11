@@ -75,7 +75,7 @@ the GitHub README.** Its `bots/extract-schemas.ts` feeds the README to Claude
 Haiku (regex fallback if that fails) and writes the result to a `servers.tools` DB
 column; the daily score bot reads that column, never the endpoint. So making
 `tools/list` public did nothing for mcppedia's "0 tools" Grade-F — the lever is
-the **README**. The 6 tools must appear as parseable ``\`tool_name\` — description``
+the **README**. Every tool must appear as parseable ``\`tool_name\` — description``
 lines (Haiku's format and the regex fallback) **within the first 8000 chars** of
 `README.md` — the extractor only reads `readme.slice(0, 8000)`. Keep that block
 early and don't let README growth push it past 8000 bytes. mcppedia re-extracts

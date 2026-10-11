@@ -1167,13 +1167,14 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     name: "tracepass_scope",
     title: "TracePass DPP scope checker",
     description:
-      "Check whether a product type needs a Digital Product Passport, from when, at which level, and what each role must do. Also read the company's catalogue-wide scope report and trigger a catalogue refresh run.\n\n" +
+      "Check what EU law says for a product type matching the facts given: whether it needs a Digital Product Passport, from when, at which level, under which act and article, and the duties of each role. Also read the company's catalogue-wide scope report and trigger a catalogue refresh run.\n\n" +
       "HARD RULES — always apply these to scope answers:\n" +
       "- Answers state what the law says for product types matching the given facts. This is not legal advice; never write 'you must' — use product-type phrasing ('LMT batteries need a passport from 18 February 2027, Battery Regulation Art. 77(1)').\n" +
-      "- Every assertion must cite the governing article. A regulation without an article is not a citation.\n" +
-      "- A date with precision 'quarter' or 'year' is NEVER a deadline. Write 'from Q2 2027' or 'from 2029', never 'by' or 'deadline'.\n" +
+      "- Cite the article the answer gives for every verdict and duty. A regulation without an article is not a citation. A `not_covered` answer rests on no article: say our rules do not cover the product and name the nearest act it gives, never cite that act as the basis.\n" +
+      "- A date with precision 'quarter', 'month' or 'year' is a plan, NEVER a deadline or a start date. Write 'planned for Q2 2027 (planned, not law yet)', never 'from', 'by' or 'deadline'.\n" +
       "- Relay `not_covered` and `needs_input` as the results they are, never as errors. `not_covered` = the product falls outside these scope rules. `needs_input` = blocking questions remain unanswered — relay the questions in `ask[]` to the user before giving a verdict.\n" +
-      "- A result with `ruleStatus: 'planned'` is not law yet — always label it 'planned, not law yet'.\n\n" +
+      "- Items in an act's `planned` list are not law yet: always label them 'Planned, not law yet' (`labelText`), with their `wording`.\n" +
+      "- `ruleStatus: 'needs_recheck'` means the law behind an act changed and our rules for it are being re-checked (since `recheckSince`): say so with the answer.\n\n" +
       "Actions (pass via `action`, with `args`):\n" +
       "- check — args: { category?, facts?, role?, placedOnMarket?, lifecycleEvent?, contains?, productId?, passportId?, locale? }. " +
       "Ask whether a product type needs a DPP. Available on every plan, Free included. Counts against the per-company scope-answer cap (~100/day, 30/min burst), NOT the v1 read/write budget. 429 `scope_answer_cap` when the daily cap is spent. `not_covered` and `needs_input` are 200 results, not errors.\n" +

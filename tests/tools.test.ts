@@ -45,6 +45,16 @@ describe("buildTools — tool surface", () => {
     ]);
   });
 
+  it("the server card (src/http.ts) lists exactly the tools the server registers", async () => {
+    // http.ts starts a listener on import, so read its card's tool list from the source.
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync(new URL("../src/http.ts", import.meta.url), "utf8");
+    const block = /capabilities:\s*\{\s*tools:\s*\[([^\]]*)\]/.exec(src)?.[1] ?? "";
+    const card = [...block.matchAll(/"(tracepass_[a-z_]+)"/g)].map((m) => m[1]).sort();
+    const { client } = stubClient();
+    expect(card).toEqual(buildTools(client).map((t) => t.name).sort());
+  });
+
   it("every tool has an action enum + an args field in its schema", () => {
     const { client } = stubClient();
     for (const t of buildTools(client)) {
