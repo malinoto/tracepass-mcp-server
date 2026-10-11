@@ -86,8 +86,9 @@ const apiOutputShape = {
   // Non-object bodies (e.g. a QR SVG/PNG string) are wrapped as { result: … }.
   result: z.unknown().optional().describe("Wraps a non-object response body (e.g. a QR code string)."),
   // Error envelope (also returned as isError text, but a structured copy may ride along).
-  error: z.string().optional().describe("Machine-readable error code, when the API rejected the request."),
-  message: z.string().optional().describe("Human-readable error or status detail, when present."),
+  // Some API responses include `"error": null` (e.g. scope/catalogue/runs/{id}) — nullish accepts null | undefined | string.
+  error: z.string().nullish().describe("Machine-readable error code, when the API rejected the request."),
+  message: z.string().nullish().describe("Human-readable error or status detail, when present."),
 } as const;
 
 /** A ZodRawShape that validates the open API envelope without rejecting
@@ -1261,7 +1262,27 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
         }
         case "catalogue_run": {
           parseArgs(SCHEMAS.catalogueRun, a.args ?? {}, "tracepass_scope", action);
-          return apiResult(await client.post("/api/v1/scope/catalogue/runs"));
+          const runRes = await client.post("/api/v1/scope/catalogue/runs");
+          // run_cooldown (429): a run finished within the last 10 min — surface the existing run rather than a generic "budget" message.
+          // run_in_progress (409): already active — relay the existing run id.
+          if (!runRes.ok && (runRes.status === 429 || runRes.status === 409)) {
+            const rb = (runRes.body ?? {}) as Record<string, unknown>;
+            const code = typeof rb.error === "string" ? rb.error : undefined;
+            if (code === "run_cooldown" || code === "run_in_progress") {
+              const existingRun = (rb.run ?? {}) as Record<string, unknown>;
+              const retryAfter =
+                code === "run_cooldown" && typeof rb.retryAfter === "number"
+                  ? ` Retry in ${rb.retryAfter} seconds.`
+                  : "";
+              const runInfo = existingRun.id
+                ? ` Existing run id: ${existingRun.id} (status: ${existingRun.status ?? "unknown"}).`
+                : "";
+              return errorResult(
+                `Catalogue run ${code === "run_cooldown" ? "cooldown" : "already in progress"}.${runInfo}${retryAfter}`,
+              );
+            }
+          }
+          return apiResult(runRes);
         }
         case "catalogue_run_status": {
           const p = parseArgs(SCHEMAS.catalogueRunStatus, a.args, "tracepass_scope", action);
