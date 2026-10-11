@@ -92,9 +92,10 @@ negligible. Don't "optimize" this into direct lib calls.
 
 ## Tool/result conventions to preserve
 
-- **6 resource tools, not ~23 flat ones** (`src/tools.ts`: `tracepass_products`,
+- **Resource tools, not ~23 flat ones** (`src/tools.ts`: `tracepass_products`,
   `tracepass_passports`, `tracepass_passport_fields`, `tracepass_passport_parties`,
-  `tracepass_epcis`, `tracepass_templates`; the action count grows, so count it from `buildTools()` rather than quoting one). Each takes `action`
+  `tracepass_epcis`, `tracepass_templates`, `tracepass_scope`; `SERVER_CARD` in `src/http.ts`
+  must list the same set, which `tests/tools.test.ts` enforces; the action count grows, so count it from `buildTools()` rather than quoting one). Each takes `action`
   (enum) + `args` (shape depends on `action`). MCP `inputSchema` can't branch on
   `action`, so `args` is declared permissively and each handler validates against
   the specific per-action Zod schema (`ACTION_SCHEMAS`). When adding an endpoint,
