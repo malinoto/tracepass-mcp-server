@@ -40,6 +40,10 @@ export interface TracePassClientConfig {
   baseUrl: string;
   /** The caller's tp_ API key. */
   apiKey: string;
+  /** Override the `X-Source` header value. Defaults to `SOURCE_TAG` ("mcp").
+   *  The compliance assistant sets this to "assistant" so the platform can
+   *  attribute v1 traffic to the correct channel. */
+  source?: string;
 }
 
 /** Generate a random Idempotency-Key for a write request. */
@@ -52,10 +56,12 @@ function newIdempotencyKey(): string {
 export class TracePassClient {
   private readonly baseUrl: string;
   private readonly apiKey: string;
+  private readonly source: string;
 
   constructor(config: TracePassClientConfig) {
     this.baseUrl = config.baseUrl.replace(/\/+$/, "");
     this.apiKey = config.apiKey;
+    this.source = config.source ?? SOURCE_TAG;
   }
 
   /**
@@ -96,7 +102,8 @@ export class TracePassClient {
       Accept: "application/json",
       // Identify this client to the TracePass request log so traffic can be
       // attributed to the MCP server vs the n8n node vs raw API integrations.
-      "X-Source": SOURCE_TAG,
+      // The compliance assistant overrides this to "assistant".
+      "X-Source": this.source,
     };
     const init: RequestInit = { method, headers };
 

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "eu.tracepass/compliance",
+  "title": "TracePass DPP Compliance Assistant",
+  "description": "Answers EU Digital Product Passport scope, field, registry and change questions for your product categories. Hosted-only; not published to npm.",
+  "version": "1.18.0",
+  "websiteUrl": "https://www.tracepass.eu",
+  "icons": [
+    {
+      "src": "https://www.tracepass.eu/tracepass-icon-512.png",
+      "mimeType": "image/png",
+      "sizes": [
+        "512x512"
+      ]
+    }
+  ],
+  "repository": {
+    "url": "https://github.com/malinoto/tracepass-mcp-server",
+    "source": "github",
+    "id": "1247005837"
+  },
+  "packages": [],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://ai.tracepass.eu/compliance/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "TracePass API key as a bearer token (tp_ prefix) or an OAuth 2.0 access token. Mint an API key in the dashboard under Developer -> API Keys.",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ],
+  "_meta": {
+    "io.modelcontextprotocol.registry/publisher-provided": {
+      "documentation": "https://www.tracepass.eu/docs/mcp",
+      "support": "support@tracepass.eu"
+    }
+  }
+}

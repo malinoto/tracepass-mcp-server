@@ -62,7 +62,7 @@ export function summarizeRpc(body: string | undefined, bearerToken: string | nul
 /** The log line: a fixed prefix the report greps for, then compact JSON. */
 export function usageLogLine(args: {
   at: Date;
-  endpoint: "mcp" | "supplier";
+  endpoint: "mcp" | "supplier" | "compliance";
   httpMethod: string;
   status: number;
   userAgent: string | undefined;

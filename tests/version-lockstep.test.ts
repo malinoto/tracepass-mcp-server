@@ -56,6 +56,13 @@ describe("server version is in lockstep across every copy", () => {
     }
   });
 
+  it("server.compliance.json version matches package.json", () => {
+    // The compliance registry manifest is version-synced by sync-version.mjs.
+    // It has no npm packages (hosted-only), so only the top-level version is checked.
+    const complianceJson = readJson(join(ROOT, "server.compliance.json"));
+    expect(complianceJson.version, "server.compliance.json version").toBe(SOURCE_OF_TRUTH);
+  });
+
   it("the published server card matches — including the NESTED serverInfo.version", () => {
     // Cross-repo: only checkable when the marketing repo is a sibling checkout.
     const card = join(

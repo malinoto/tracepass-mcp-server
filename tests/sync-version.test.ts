@@ -15,7 +15,7 @@ function withCopy(fn: (dir: string) => void) {
   const dir = mkdtempSync(join(tmpdir(), "mcp-version-"));
   try {
     mkdirSync(join(dir, "src"));
-    for (const f of ["package.json", "server.json", join("src", "server.ts")]) copyFileSync(join(repo, f), join(dir, f));
+    for (const f of ["package.json", "server.json", "server.compliance.json", join("src", "server.ts")]) copyFileSync(join(repo, f), join(dir, f));
     fn(dir);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -38,11 +38,24 @@ describe("sync-version", () => {
     });
   });
 
+  it("writes the package.json version into server.compliance.json", () => {
+    withCopy((dir) => {
+      const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+      pkg.version = "9.8.7";
+      writeFileSync(join(dir, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
+      run(dir);
+      const compliance = JSON.parse(readFileSync(join(dir, "server.compliance.json"), "utf8"));
+      expect(compliance.version).toBe("9.8.7");
+    });
+  });
+
   it("is a no-op when everything is already in step", () => {
     withCopy((dir) => {
       const before = readFileSync(join(dir, "server.json"), "utf8");
+      const beforeCompliance = readFileSync(join(dir, "server.compliance.json"), "utf8");
       expect(run(dir)).toContain("already in step");
       expect(readFileSync(join(dir, "server.json"), "utf8")).toBe(before);
+      expect(readFileSync(join(dir, "server.compliance.json"), "utf8")).toBe(beforeCompliance);
     });
   });
 });

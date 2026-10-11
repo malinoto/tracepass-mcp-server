@@ -1,0 +1,632 @@
+/**
+ * The COMPLIANCE MCP server — the DPP Assistant's in-house endpoint.
+ *
+ * Served at `/compliance/mcp`. Answers EU Digital Product Passport scope,
+ * field, registry and change questions through nine small, single-purpose
+ * tools. Unlike the action-based tools on /mcp ("one tool, many actions"),
+ * here each tool answers exactly one kind of question — the simpler surface
+ * makes tool selection more accurate for the model.
+ *
+ * Auth: SAME as /mcp — OAuth 2.0 or a tp_ API key forwarded to the platform.
+ * The compliance endpoint DOES have an auth gate and a WWW-Authenticate
+ * challenge, unlike the supplier endpoint (suppliers have no account). Its
+ * challenge points to a per-path protected-resource metadata document at
+ * /.well-known/oauth-protected-resource/compliance/mcp, whose `resource`
+ * is exactly `https://ai.tracepass.eu/compliance/mcp`.
+ *
+ * Channel: every platform call carries `X-Source: assistant` (not "mcp") so
+ * the platform logs answers under channel "assistant" and applies the
+ * assistant-channel account gate (email verified, not a disposable domain).
+ *
+ * Nine tools:
+ *   scope_check          — is a passport required? (read-only POST)
+ *   required_fields      — which data must the passport hold?
+ *   what_changed         — what has changed in EU law for these categories?
+ *   registry_guidance    — identifiers, carriers, formats, registration
+ *   create_draft_passport — hand-off: create a draft passport in TracePass
+ *   report_answer        — flag a wrong or unclear answer
+ *   get_profile          — read stored company facts
+ *   update_profile       — save or correct company facts
+ *   delete_profile       — remove all stored company facts
+ */
+
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+import { TracePassClient } from "./api-client.js";
+import { MCP_SERVER_INFO } from "./server.js";
+import { errorResult, jsonResult, type ToolResult } from "./result.js";
+import type { ToolAnnotations } from "./tools.js";
+
+/** Source tag for all platform calls from the compliance channel. */
+const COMPLIANCE_SOURCE = "assistant";
+
+export const COMPLIANCE_SERVER_INFO = {
+  name: "tracepass-compliance",
+  version: MCP_SERVER_INFO.version,
+} as const;
+
+export interface CreateComplianceMcpServerConfig {
+  baseUrl: string;
+  /** The caller's bearer token — a tp_ API key or an OAuth access token.
+   *  Forwarded verbatim to the v1 API, which decides validity. */
+  apiKey: string;
+}
+
+/** The public dashboard origin, for the passport link returned by create_draft_passport. */
+const DASHBOARD_ORIGIN = "https://app.tracepass.eu";
+
+// ---------------------------------------------------------------------------
+// Error mapping — compliance-server flavour
+// ---------------------------------------------------------------------------
+
+/**
+ * Turn a platform response into a ToolResult for the compliance channel.
+ *
+ * The compliance channel adds two 403 sub-cases (account gate) and the
+ * 429 scope_answer_cap. Everything else falls through to the generic
+ * cases.
+ */
+export function complianceResult(res: { status: number; ok: boolean; body: unknown }): ToolResult {
+  if (res.ok) return jsonResult(res.body);
+  const body = (res.body ?? {}) as Record<string, unknown>;
+  const errorCode = typeof body.error === "string" ? body.error : undefined;
+  const message = typeof body.message === "string" ? body.message : undefined;
+
+  // 403 account_not_eligible (assistant channel only): email not verified or
+  // disposable domain. The reason is the decisive field; message is supplementary.
+  if (res.status === 403 && errorCode === "account_not_eligible") {
+    const reason = typeof body.reason === "string" ? body.reason : "";
+    if (reason === "email_not_verified") {
+      return errorResult(
+        "Your email address is not verified. Please verify it in your TracePass account settings before using the DPP Assistant.",
+      );
+    }
+    if (reason === "disposable_email") {
+      return errorResult(
+        "This service is not available with a disposable email address. Please log in with your work or permanent email.",
+      );
+    }
+    return errorResult(`Account not eligible: ${reason || message || "contact support@tracepass.eu."}`);
+  }
+
+  // 429 scope_answer_cap: the per-company daily answer cap is exhausted.
+  // Every assistant read counts one answer on the shared counter.
+  if (res.status === 429 && errorCode === "scope_answer_cap") {
+    const limit = typeof body.limit === "number" ? `${body.limit}` : "the daily";
+    const resetAt = typeof body.resetAt === "string" ? body.resetAt : "00:00 UTC tomorrow";
+    return errorResult(
+      `Daily answer limit reached (${limit} answers). The limit resets at ${resetAt}. Please try again then.`,
+    );
+  }
+
+  // 400 invalid input: surface the platform's message.
+  if (res.status === 400) {
+    return errorResult(`Invalid input: ${message ?? "check the tool arguments."}`);
+  }
+
+  // 401 auth: credential missing or rejected.
+  if (res.status === 401) {
+    return errorResult(
+      "Authentication failed — the TracePass credential is missing or invalid. Check the API key or re-authorise the assistant.",
+    );
+  }
+
+  // 402 overage (create_draft_passport): plan quota exceeded.
+  if (res.status === 402) {
+    return errorResult(
+      `Plan limit reached: ${message ?? "this action would exceed the plan's passport quota."}` +
+        " Publishing is done in TracePass; I never publish. Tell the user to upgrade their plan to continue.",
+    );
+  }
+
+  // 403 plan-gated (all other 403 codes, not account_not_eligible).
+  if (res.status === 403) {
+    return errorResult(
+      `Not permitted on this account's plan${errorCode ? ` (${errorCode})` : ""}.` +
+        ` ${message ?? "This feature may require a higher plan or a paid add-on."}` +
+        " Do not retry — tell the user this needs a plan change.",
+    );
+  }
+
+  // Generic fallback.
+  return errorResult(
+    `TracePass returned ${res.status}. ${message ?? errorCode ?? JSON.stringify(res.body)}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Hard-rule block appended to every tool description (draft C)
+// ---------------------------------------------------------------------------
+
+const HARD_RULES =
+  " Use only what this tool returns: add no facts, dates or articles of your own. Keep every citation and the disclaimer line, and any \"Planned, not law yet\" or \"being re-checked\" label. Phrase answers about the product type, never as personal duties (\"you must\"). Never rank or recommend vendors. Never call this advice or yourself a consultant. If the result is not_covered, say so and point to the article given.";
+
+// ---------------------------------------------------------------------------
+// Tool interface (same pattern as supplier-server.ts)
+// ---------------------------------------------------------------------------
+
+interface ComplianceTool {
+  name: string;
+  title: string;
+  description: string;
+  inputSchema: z.ZodRawShape;
+  annotations: ToolAnnotations;
+  handler: (args: Record<string, unknown>) => Promise<ToolResult>;
+}
+
+/** Build the nine compliance tools bound to a client. */
+export function buildComplianceTools(client: TracePassClient): ComplianceTool[] {
+  return [
+    // -------------------------------------------------------------------------
+    // 1. scope_check
+    //
+    // Annotation: readOnlyHint=true even though the platform route is a POST.
+    // The POST is stateless — it takes facts in the request body and returns a
+    // scope verdict; it writes nothing to the database. The read-only hint
+    // describes the tool's effect on the account, not the HTTP method.
+    // -------------------------------------------------------------------------
+    {
+      name: "scope_check",
+      title: "Check if a product needs a passport",
+      description:
+        "Checks whether EU law requires a Digital Product Passport for a type of product, from when, and what the law requires of each role. Use it for \"do I need a passport\", \"from when\", \"who is responsible\", and for repurposing, remanufacturing, waste or a battery inside another product. Pass whatever facts the user gave; if the result is needs_input, ask the user its questions in plain words and call again. The result's data.inScope is one of: yes, no, pending, depends." +
+        HARD_RULES,
+      inputSchema: {
+        category: z.string().max(100).optional().describe("Product category, e.g. battery, textile, electronics."),
+        subType: z.string().max(100).optional().describe("Product sub-type, e.g. ev, lmt, industrial (battery)."),
+        role: z
+          .string()
+          .max(120)
+          .optional()
+          .describe(
+            "The user's role in plain words, e.g. \"maker\", \"importer\", \"reseller\". The platform maps this to the act's term.",
+          ),
+        markets: z
+          .array(z.string().max(10))
+          .optional()
+          .describe("ISO country codes where the product is sold, or [\"EU\"]."),
+        placedOnMarket: z
+          .object({
+            date: z.string().describe("ISO date or partial date, e.g. \"2027-02\" or \"2027\"."),
+            precision: z.enum(["day", "month", "year"]).optional(),
+          })
+          .optional()
+          .describe("When the product was or will be placed on the market."),
+        facts: z
+          .record(z.string(), z.unknown())
+          .optional()
+          .describe(
+            "Additional product facts the scope rules may need, e.g. {\"battery.capacityKWh\": 10}.",
+          ),
+        locale: z
+          .enum(["en", "bg", "de", "it"])
+          .optional()
+          .describe("Language for the answer text. Defaults to en."),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      handler: async (args) =>
+        complianceResult(
+          await client.post("/api/v1/scope/check", {
+            ...(args.category ? { category: args.category } : {}),
+            ...(args.subType ? { subType: args.subType } : {}),
+            ...(args.role ? { role: args.role } : {}),
+            ...(args.markets ? { markets: args.markets } : {}),
+            ...(args.placedOnMarket ? { placedOnMarket: args.placedOnMarket } : {}),
+            ...(args.facts ? { facts: args.facts } : {}),
+            ...(args.locale ? { locale: args.locale } : {}),
+          }),
+        ),
+    },
+
+    // -------------------------------------------------------------------------
+    // 2. required_fields
+    // -------------------------------------------------------------------------
+    {
+      name: "required_fields",
+      title: "List required passport fields",
+      description:
+        "Lists the data a passport must contain for a product category, with the article requiring each field, who may see it, how often it changes, and whether it usually comes from the maker or a supplier. Call it without `group` for a summary (counts by group), then with a `group` for the fields." +
+        HARD_RULES,
+      inputSchema: {
+        category: z.string().max(100).describe("Product category, e.g. battery."),
+        subType: z
+          .string()
+          .max(100)
+          .optional()
+          .describe("Sub-type filter, e.g. ev, lmt, industrial. Filters requiredBy the same way the compliance engine does."),
+        group: z
+          .string()
+          .max(100)
+          .optional()
+          .describe("Template group name. Omit for a summary; provide to list the fields."),
+        locale: z
+          .enum(["en", "bg", "de", "it"])
+          .optional()
+          .describe("Language for field labels and descriptions. Defaults to en."),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      handler: async (args) => {
+        const qs = new URLSearchParams();
+        if (typeof args.category === "string") qs.set("category", args.category);
+        if (typeof args.subType === "string") qs.set("subType", args.subType);
+        if (typeof args.group === "string") qs.set("group", args.group);
+        if (typeof args.locale === "string") qs.set("locale", args.locale);
+        return complianceResult(await client.get(`/api/v1/regulatory/required-fields?${qs.toString()}`));
+      },
+    },
+
+    // -------------------------------------------------------------------------
+    // 3. what_changed
+    //
+    // Annotation: readOnlyHint=true. The "last asked" date is READ from the call
+    // log, not written. The call log already exists for the daily cap; this tool
+    // stores no additional state of its own.
+    // -------------------------------------------------------------------------
+    {
+      name: "what_changed",
+      title: "What changed in EU passport law",
+      description:
+        "Reports changes in EU passport law and standards for the user's categories since a date (default: since they last asked). Use it for \"what's new\" or \"has X been adopted\". Items marked \"Planned, not law yet\" are upcoming obligations, not yet in force." +
+        HARD_RULES,
+      inputSchema: {
+        categories: z
+          .array(z.string().max(100))
+          .optional()
+          .describe("Product categories to filter by. Defaults to the saved profile categories."),
+        since: z
+          .string()
+          .optional()
+          .describe(
+            "ISO date to look back from. Defaults to the date this account last called what_changed (first time: 90 days ago).",
+          ),
+        locale: z
+          .enum(["en", "bg", "de", "it"])
+          .optional()
+          .describe("Language for summaries. Defaults to en."),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      handler: async (args) => {
+        const qs = new URLSearchParams();
+        if (Array.isArray(args.categories)) qs.set("categories", (args.categories as string[]).join(","));
+        if (typeof args.since === "string") qs.set("since", args.since);
+        if (typeof args.locale === "string") qs.set("locale", args.locale);
+        return complianceResult(await client.get(`/api/v1/regulatory/changes?${qs.toString()}`));
+      },
+    },
+
+    // -------------------------------------------------------------------------
+    // 4. registry_guidance
+    // -------------------------------------------------------------------------
+    {
+      name: "registry_guidance",
+      title: "EU DPP Registry guidance",
+      description:
+        "Explains the EU DPP Registry and the technical side: registration, identifiers, QR and data carriers, data formats and standards, and where a passport is created. Each point carries the date of its source." +
+        HARD_RULES,
+      inputSchema: {
+        topic: z
+          .enum(["registration", "identifiers", "data_carrier", "data_format", "standards", "where_created", "access"])
+          .describe("The topic to answer."),
+        category: z
+          .string()
+          .max(100)
+          .optional()
+          .describe("Optional category filter (e.g. battery) for category-specific guidance."),
+        locale: z
+          .enum(["en", "bg", "de", "it"])
+          .optional()
+          .describe("Language for the answer. Defaults to en."),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      handler: async (args) => {
+        const qs = new URLSearchParams();
+        if (typeof args.topic === "string") qs.set("topic", args.topic);
+        if (typeof args.category === "string") qs.set("category", args.category);
+        if (typeof args.locale === "string") qs.set("locale", args.locale);
+        return complianceResult(await client.get(`/api/v1/regulatory/registry-guidance?${qs.toString()}`));
+      },
+    },
+
+    // -------------------------------------------------------------------------
+    // 5. create_draft_passport
+    //
+    // Two-step: POST /api/v1/products then POST /api/v1/passports (draft).
+    // Never invents a GTIN — if the identifier is absent, returns a needs_input
+    // result asking for it. Publishing is always done by the user in TracePass.
+    // -------------------------------------------------------------------------
+    {
+      name: "create_draft_passport",
+      title: "Create a draft passport",
+      description:
+        "Creates a **draft** passport in the user's own TracePass account from facts they stated. Use it only when the user asks to create one. It never publishes — publishing is done by you in TracePass; I never publish. If the result asks for an identifier, ask the user; never invent one." +
+        HARD_RULES,
+      inputSchema: {
+        category: z.string().max(100).describe("Product category, e.g. battery, textile."),
+        productName: z.string().min(1).max(255).describe("The product's name."),
+        gtin: z
+          .string()
+          .max(20)
+          .optional()
+          .describe(
+            "The product's GTIN (barcode number, 8–14 digits). Required for most passport types. If missing, the tool will ask the user for it.",
+          ),
+        serialNumber: z
+          .string()
+          .max(100)
+          .optional()
+          .describe("The specific unit's serial number, if the passport is per-unit."),
+        subType: z
+          .string()
+          .max(100)
+          .optional()
+          .describe("Sub-type of the product, e.g. ev, lmt, industrial (battery)."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      handler: async (args) => {
+        // Never invent a GTIN — if the caller didn't provide one, ask the user.
+        if (!args.gtin || String(args.gtin).trim() === "") {
+          return jsonResult({
+            status: "needs_input",
+            answer:
+              "To create a draft passport I need the product's GTIN (the barcode number — 8, 12, 13 or 14 digits). You'll find it on the product's physical barcode or its datasheet. What is the GTIN for this product?",
+            ask: [
+              {
+                fact: "gtin",
+                question: "What is the product's GTIN (barcode number)?",
+              },
+            ],
+          });
+        }
+
+        const category = typeof args.category === "string" ? args.category : "";
+        const productName = typeof args.productName === "string" ? args.productName : "";
+
+        // Step 1: create the product.
+        const productBody: Record<string, unknown> = { name: productName, category };
+        if (args.subType) productBody.subType = args.subType;
+        const productRes = await client.post("/api/v1/products", productBody);
+        if (!productRes.ok) return complianceResult(productRes);
+        const productData = (productRes.body ?? {}) as Record<string, unknown>;
+        const productId = typeof productData.id === "string" ? productData.id : String(productData.id ?? "");
+
+        // Step 2: create the draft passport.
+        const passportBody: Record<string, unknown> = {
+          productId,
+          gtin: String(args.gtin),
+          ...(args.serialNumber ? { serialNumber: args.serialNumber } : {}),
+        };
+        const passportRes = await client.post("/api/v1/passports", passportBody);
+        if (!passportRes.ok) return complianceResult(passportRes);
+        const passportData = (passportRes.body ?? {}) as Record<string, unknown>;
+        const passportId = typeof passportData.id === "string" ? passportData.id : String(passportData.id ?? "");
+
+        // Step 3: check how many required fields are still missing.
+        let stillRequired: number | null = null;
+        let makerHeldCount: number | null = null;
+        let supplierHeldCount: number | null = null;
+        const complianceRes = await client.get(`/api/v1/passports/${encodeURIComponent(passportId)}/compliance`);
+        if (complianceRes.ok) {
+          const compData = (complianceRes.body ?? {}) as Record<string, unknown>;
+          // The compliance endpoint may return a count directly or an array of missing fields.
+          if (typeof compData.missingRequired === "number") {
+            stillRequired = compData.missingRequired;
+          } else if (Array.isArray(compData.missing)) {
+            stillRequired = (compData.missing as unknown[]).length;
+          } else if (typeof compData.stillRequired === "number") {
+            stillRequired = compData.stillRequired;
+          }
+        }
+
+        // Step 4 (battery only): get maker/supplier split from required_fields overlay.
+        if (category.toLowerCase() === "battery") {
+          const rfRes = await client.get(
+            `/api/v1/regulatory/required-fields?category=battery${args.subType ? `&subType=${encodeURIComponent(String(args.subType))}` : ""}`,
+          );
+          if (rfRes.ok) {
+            const rfData = (rfRes.body ?? {}) as Record<string, unknown>;
+            // The overlay data may come as per-group breakdown or a summary.
+            if (typeof rfData.makerHeldCount === "number") makerHeldCount = rfData.makerHeldCount;
+            if (typeof rfData.supplierHeldCount === "number") supplierHeldCount = rfData.supplierHeldCount;
+          }
+        }
+
+        const dashboardUrl = `${DASHBOARD_ORIGIN}/passports/${passportId}`;
+        return jsonResult({
+          status: "answered",
+          passportId,
+          dashboardUrl,
+          ...(stillRequired !== null ? { stillRequired } : {}),
+          ...(makerHeldCount !== null ? { makerHeldCount } : {}),
+          ...(supplierHeldCount !== null ? { supplierHeldCount } : {}),
+          answer:
+            `Draft passport created. Open it in TracePass to complete the required fields: ${dashboardUrl}` +
+            (stillRequired !== null ? ` (${stillRequired} required field${stillRequired === 1 ? "" : "s"} still to fill)` : "") +
+            ". Publishing is done by you in TracePass; I never publish.",
+        });
+      },
+    },
+
+    // -------------------------------------------------------------------------
+    // 6. report_answer
+    //
+    // Annotation: readOnlyHint=false, idempotentHint=false — adds a report to the
+    // review queue, which is a durable write (unlike scope_check which is a
+    // stateless POST).
+    // -------------------------------------------------------------------------
+    {
+      name: "report_answer",
+      title: "Report a wrong or unclear answer",
+      description:
+        "Use it when the user says an answer was wrong or unclear. Pass their words and the `ruleIds` of the answer. The report goes to a review queue." +
+        HARD_RULES,
+      inputSchema: {
+        what: z
+          .string()
+          .min(1)
+          .max(2000)
+          .describe("The user's own words describing what was wrong or unclear."),
+        ruleIds: z
+          .array(z.string())
+          .optional()
+          .describe("The ruleIds from the answer that was reported. Pass them from the result unchanged."),
+        toolName: z
+          .string()
+          .max(100)
+          .optional()
+          .describe("The tool whose answer is being reported (e.g. scope_check)."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      handler: async (args) =>
+        complianceResult(
+          await client.post("/api/v1/scope/reports", {
+            what: args.what,
+            ...(args.ruleIds ? { ruleIds: args.ruleIds } : {}),
+            ...(args.toolName ? { toolName: args.toolName } : {}),
+          }),
+        ),
+    },
+
+    // -------------------------------------------------------------------------
+    // 7. get_profile
+    // -------------------------------------------------------------------------
+    {
+      name: "get_profile",
+      title: "Read stored company facts",
+      description:
+        "Shows the company facts the assistant has stored (categories, markets, role, own-brand flag, etc.) and when they were last updated." +
+        HARD_RULES,
+      inputSchema: {},
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      handler: async () => complianceResult(await client.get("/api/v1/company/compliance-profile")),
+    },
+
+    // -------------------------------------------------------------------------
+    // 8. update_profile
+    //
+    // Annotation: destructiveHint=true — a correction overwrites a stored fact.
+    // -------------------------------------------------------------------------
+    {
+      name: "update_profile",
+      title: "Save or correct company facts",
+      description:
+        "Saves or corrects company facts. Use it when the user states a lasting fact about their company (role, categories, markets, own-brand), or to save a `learnable` fact from a result. The update merges the given facts into the existing profile; it does not replace the whole profile." +
+        HARD_RULES,
+      inputSchema: {
+        role: z
+          .enum(["maker", "importer", "distributor", "retailer", "brand_owner", "advisor"])
+          .optional()
+          .describe("The company's role in the supply chain."),
+        ownBrand: z
+          .boolean()
+          .optional()
+          .describe("True if the company sells under its own brand or trademark."),
+        categories: z
+          .array(z.string().max(100))
+          .optional()
+          .describe("Product categories the company handles, e.g. [\"battery\", \"textile\"]."),
+        markets: z
+          .array(z.string().max(10))
+          .optional()
+          .describe("ISO country codes where the company sells, or [\"EU\"]."),
+        sizeBand: z
+          .enum(["sme", "large"])
+          .optional()
+          .describe("Whether the company is an SME or a large enterprise."),
+        salesChannels: z
+          .array(z.enum(["own_shop", "marketplace", "retail", "b2b", "fulfilment"]))
+          .optional()
+          .describe("Sales channels the company uses."),
+        dataSystems: z
+          .string()
+          .max(200)
+          .optional()
+          .describe("Short description of the data systems the company uses (e.g. SAP, custom ERP)."),
+        products: z
+          .array(
+            z.object({
+              name: z.string().max(255),
+              category: z.string().max(100),
+              facts: z.record(z.string(), z.unknown()).optional(),
+            }),
+          )
+          .max(50)
+          .optional()
+          .describe("Up to 50 representative products, used as defaults for passport creation."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+      handler: async (args) => {
+        const patch: Record<string, unknown> = {};
+        if (args.role !== undefined) patch.role = args.role;
+        if (args.ownBrand !== undefined) patch.ownBrand = args.ownBrand;
+        if (args.categories !== undefined) patch.categories = args.categories;
+        if (args.markets !== undefined) patch.markets = args.markets;
+        if (args.sizeBand !== undefined) patch.sizeBand = args.sizeBand;
+        if (args.salesChannels !== undefined) patch.salesChannels = args.salesChannels;
+        if (args.dataSystems !== undefined) patch.dataSystems = args.dataSystems;
+        if (args.products !== undefined) patch.products = args.products;
+        return complianceResult(await client.patch("/api/v1/company/compliance-profile", patch));
+      },
+    },
+
+    // -------------------------------------------------------------------------
+    // 9. delete_profile
+    //
+    // Annotation: destructiveHint=true — removes every stored fact.
+    // -------------------------------------------------------------------------
+    {
+      name: "delete_profile",
+      title: "Delete all stored company facts",
+      description:
+        "Deletes every stored company fact. Use it only when the user explicitly asks to delete their profile. This is a separate tool so the assistant asks for confirmation before running it." +
+        HARD_RULES,
+      inputSchema: {},
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+      handler: async () => complianceResult(await client.delete("/api/v1/company/compliance-profile")),
+    },
+  ];
+}
+
+/** Build the compliance `McpServer`. The caller connects it to a transport. */
+export function createComplianceMcpServer(config: CreateComplianceMcpServerConfig): McpServer {
+  const server = new McpServer(COMPLIANCE_SERVER_INFO, {
+    instructions:
+      "You are the TracePass DPP Compliance Assistant. You answer EU Digital Product Passport scope, field, registry and change questions. " +
+      "Use only what the tools return: add no facts, dates or articles of your own. Keep every citation and the disclaimer. " +
+      "For a scope question, call scope_check. For field requirements, call required_fields. For law changes, call what_changed. For registry, call registry_guidance. " +
+      "When the user asks to create a passport, call create_draft_passport — it never publishes. " +
+      "Offer to save any lasting company facts the user states (role, categories, markets) with update_profile. " +
+      "If an answer is flagged as wrong, call report_answer with the user's words and the ruleIds. " +
+      "Say answers are \"Planned, not law yet\" for planned items. " +
+      "Where ruleStatus is needs_recheck, say the law behind the act changed and the rules are being re-checked. " +
+      "End every answer with the disclaimer line from the result.",
+  });
+
+  const client = new TracePassClient({
+    baseUrl: config.baseUrl,
+    apiKey: config.apiKey,
+    source: COMPLIANCE_SOURCE,
+  });
+
+  for (const tool of buildComplianceTools(client)) {
+    const cb = async (args: Record<string, unknown>) => {
+      try {
+        return await tool.handler(args ?? {});
+      } catch (err) {
+        return errorResult(`Tool "${tool.name}" failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    };
+    server.registerTool(
+      tool.name,
+      {
+        title: tool.title,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+        annotations: tool.annotations,
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      cb as any,
+    );
+  }
+
+  return server;
+}

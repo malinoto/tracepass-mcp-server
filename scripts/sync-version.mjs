@@ -55,6 +55,18 @@ if (serverJsonOut !== serverJsonRaw) {
   changed.push("server.json");
 }
 
+// server.compliance.json — top-level version only (no npm packages, hosted-only).
+const serverComplianceJsonPath = join(root, "server.compliance.json");
+const serverComplianceJsonRaw = readFileSync(serverComplianceJsonPath, "utf8");
+const serverComplianceJson = JSON.parse(serverComplianceJsonRaw);
+serverComplianceJson.version = version;
+const serverComplianceJsonOut =
+  JSON.stringify(serverComplianceJson, null, 2) + (serverComplianceJsonRaw.endsWith("\n") ? "\n" : "");
+if (serverComplianceJsonOut !== serverComplianceJsonRaw) {
+  writeFileSync(serverComplianceJsonPath, serverComplianceJsonOut);
+  changed.push("server.compliance.json");
+}
+
 // src/server.ts — the single literal inside MCP_SERVER_INFO.
 const serverTsPath = join(root, "src", "server.ts");
 const serverTs = readFileSync(serverTsPath, "utf8");

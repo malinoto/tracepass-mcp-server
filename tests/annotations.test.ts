@@ -4,6 +4,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createMcpServer } from "../src/server.js";
 import { createSupplierMcpServer } from "../src/supplier-server.js";
+import { createComplianceMcpServer } from "../src/compliance-server.js";
 import { buildTools } from "../src/tools.js";
 import type { TracePassClient } from "../src/api-client.js";
 
@@ -29,6 +30,7 @@ async function listTools(server: McpServer) {
 describe.each([
   ["main /mcp", () => createMcpServer({ baseUrl: "https://app.example", apiKey: "tp_test" })],
   ["supplier", () => createSupplierMcpServer({ baseUrl: "https://app.example", token: "" })],
+  ["compliance", () => createComplianceMcpServer({ baseUrl: "https://app.example", apiKey: "tp_test" })],
 ])("%s server — tools/list annotations", (_, make) => {
   it("every tool has a title and all four hints as explicit booleans", async () => {
     const tools = await listTools(make());
