@@ -60,6 +60,24 @@ const DASHBOARD_ORIGIN = "https://app.tracepass.eu";
 // ---------------------------------------------------------------------------
 
 /**
+ * Add the envelope's disclaimer as its own closing instruction. Left inside the
+ * JSON, models drop it from most answers; a separate line next to the data is
+ * what they keep.
+ */
+export function withClosingDisclaimer(result: ToolResult, body: unknown): ToolResult {
+  const disclaimer =
+    body && typeof body === "object" ? (body as Record<string, unknown>).disclaimer : undefined;
+  if (typeof disclaimer !== "string" || disclaimer.trim() === "") return result;
+  return {
+    ...result,
+    content: [
+      ...result.content,
+      { type: "text", text: `End your answer with this line, word for word:\n${disclaimer}` },
+    ],
+  };
+}
+
+/**
  * Turn a platform response into a ToolResult for the compliance channel.
  *
  * The compliance channel adds two 403 sub-cases (account gate) and the
@@ -67,7 +85,7 @@ const DASHBOARD_ORIGIN = "https://app.tracepass.eu";
  * cases.
  */
 export function complianceResult(res: { status: number; ok: boolean; body: unknown }): ToolResult {
-  if (res.ok) return jsonResult(res.body);
+  if (res.ok) return withClosingDisclaimer(jsonResult(res.body), res.body);
   const body = (res.body ?? {}) as Record<string, unknown>;
   const errorCode = typeof body.error === "string" ? body.error : undefined;
   const message = typeof body.message === "string" ? body.message : undefined;
@@ -148,7 +166,7 @@ export function complianceResult(res: { status: number; ok: boolean; body: unkno
 // ---------------------------------------------------------------------------
 
 const HARD_RULES =
-  " Use only what this tool returns: add no facts, dates or articles of your own. Keep every citation and the disclaimer line, and any \"Planned, not law yet\" or \"being re-checked\" label. Phrase answers about the product type, never as personal duties (\"you must\"). Never rank or recommend vendors. Never call this advice or yourself a consultant. If the result is not_covered, say so and point to the article given.";
+  " Use only what this tool returns: add no facts, dates or articles of your own, not even today's date. Keep every citation and the disclaimer line, and any \"Planned, not law yet\" or \"being re-checked\" label. Phrase answers about the product type, never as personal duties (\"you must\"). Never rank or recommend vendors. Never call this advice or yourself a consultant. If the result is not_covered, say so and point to the article given.";
 
 // ---------------------------------------------------------------------------
 // Tool interface (same pattern as supplier-server.ts)
@@ -178,7 +196,7 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
       name: "scope_check",
       title: "Check if a product needs a passport",
       description:
-        "Checks whether EU law requires a Digital Product Passport for a type of product, from when, and what the law requires of each role. Use it for \"do I need a passport\", \"from when\", \"who is responsible\", and for repurposing, remanufacturing, waste or a battery inside another product. Pass whatever facts the user gave; if the result is needs_input, ask the user its questions in plain words and call again. The result's data.inScope is one of: yes, no, pending, depends." +
+        "Checks whether EU law requires a Digital Product Passport for a type of product, from when, and what the law requires of each role. Use it for \"do I need a passport\", \"from when\", \"who is responsible\", whether that responsibility can be handed to another company, who keeps and stores the passport and whether it must stay available after the company ceases, whether there is one passport per item, batch or model, and for repurposing, remanufacturing, waste or a battery inside another product. Pass whatever facts the user gave; if the result is needs_input, ask the user its questions in plain words and call again. The result's data.inScope is one of: yes, no, pending, depends." +
         HARD_RULES,
       inputSchema: {
         category: z.string().max(100).optional().describe("Product category, e.g. battery, textile, electronics."),
@@ -308,7 +326,7 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
       name: "registry_guidance",
       title: "EU DPP Registry guidance",
       description:
-        "Explains the EU DPP Registry and the technical side: registration, identifiers, QR and data carriers, data formats and standards, and where a passport is created. Each point carries the date of its source." +
+        "Explains the EU DPP Registry and the technical side: registration in the registry, identifiers, QR and data carriers, data formats (JSON, HTML, data models) and standards, and where passport data is kept. Each point carries the date of its source. For who owes, keeps or may hand off a passport, use scope_check." +
         HARD_RULES,
       inputSchema: {
         topic: z
@@ -345,7 +363,7 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
       name: "create_draft_passport",
       title: "Create a draft passport",
       description:
-        "Creates a **draft** passport in the user's own TracePass account from facts they stated. Use it only when the user asks to create one. It never publishes — publishing is done by you in TracePass; I never publish. If the result asks for an identifier, ask the user; never invent one." +
+        "Creates a **draft** passport in the user's own TracePass account from facts they stated. Use it whenever the user asks to create a passport, including \"create and publish\": create the draft, then say that publishing is done by the user in TracePass. It never publishes. If the result asks for an identifier, ask the user; never invent one." +
         HARD_RULES,
       inputSchema: {
         category: z.string().max(100).describe("Product category, e.g. battery, textile."),
@@ -627,7 +645,8 @@ export function createComplianceMcpServer(config: CreateComplianceMcpServerConfi
   const server = new McpServer(COMPLIANCE_SERVER_INFO, {
     instructions:
       "You are the TracePass DPP Compliance Assistant. You answer EU Digital Product Passport scope, field, registry and change questions. " +
-      "Use only what the tools return: add no facts, dates or articles of your own. Keep every citation and the disclaimer. " +
+      "Answer every EU DPP question from a tool result: call the closest tool first, even when you think you know the answer, and if the result does not cover the question, say so. " +
+      "Use only what the tools return: add no facts, dates or articles of your own, not even today's date. Keep every citation and the disclaimer. " +
       "For a scope question, call scope_check. For field requirements, call required_fields. For law changes, call what_changed. For registry, call registry_guidance. " +
       "When the user asks to create a passport, call create_draft_passport — it never publishes. " +
       "Offer to save any lasting company facts the user states (role, categories, markets) with update_profile. " +

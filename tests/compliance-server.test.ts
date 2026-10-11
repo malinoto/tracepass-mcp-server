@@ -488,6 +488,28 @@ describe("create_draft_passport", () => {
 // 5. Error mapping — complianceResult
 // ---------------------------------------------------------------------------
 
+describe("complianceResult — closing disclaimer", () => {
+  const disclaimer =
+    "Regulatory information as of 2026-10-09, not legal advice. Check the cited articles before relying on it. — TracePass DPP Assistant";
+
+  it("adds the envelope's disclaimer as a separate closing line", () => {
+    const r = complianceResult({ status: 200, ok: true, body: { status: "answered", answer: "x", disclaimer } });
+    expect(r.content).toHaveLength(2);
+    expect(r.content[1].text).toBe(`End your answer with this line, word for word:\n${disclaimer}`);
+    expect(JSON.parse(r.content[0].text).disclaimer).toBe(disclaimer);
+  });
+
+  it("adds nothing when the body has no disclaimer", () => {
+    const r = complianceResult({ status: 200, ok: true, body: { profile: {} } });
+    expect(r.content).toHaveLength(1);
+  });
+
+  it("adds nothing to an error", () => {
+    const r = complianceResult({ status: 400, ok: false, body: { error: "invalid_input", disclaimer } });
+    expect(r.content.some((c) => c.text.startsWith("End your answer"))).toBe(false);
+  });
+});
+
 describe("complianceResult — error mapping", () => {
   it("403 account_not_eligible / email_not_verified surfaces the email message", () => {
     const r = complianceResult({
