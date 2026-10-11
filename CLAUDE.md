@@ -42,6 +42,27 @@ the hosted endpoint and the local package.**
   server card or the tool count above, and its README table deliberately avoids
   the `` `name` — description `` pattern so mcppedia does not count its tools as
   the main server's.
+- `src/compliance-server.ts` — a **third server**, the DPP Assistant, served by
+  `http.ts` at `/compliance/mcp`. It answers what EU DPP law asks of a company
+  (scope, required fields, what changed, registry guidance, the saved compliance
+  profile) and can start a draft passport; the tool array is
+  `buildComplianceTools()`. Unlike the supplier path it authenticates like the main
+  endpoint (`tp_` key or OAuth, with its own `WWW-Authenticate` challenge and
+  per-path RFC 9728 metadata at
+  `/.well-known/oauth-protected-resource/compliance/mcp`, whose `resource` is exactly
+  `https://ai.tracepass.eu/compliance/mcp`), and it has its own card at
+  `/.well-known/mcp/compliance-server-card.json`, not mirrored on www. Every platform
+  call carries `X-Source: assistant`, so answers are logged and capped on that
+  channel. The platform owns every answer; the server adds two things only:
+  - **the hard-rule block** (`HARD_RULES`) in each tool description and the server
+    instructions: answer from a tool result, never from memory, never rank vendors;
+  - **the closing disclaimer**: `withClosingDisclaimer` repeats the envelope's
+    `disclaimer` as a separate final text block ("End your answer with this line,
+    word for word"). Left only inside the JSON, models drop it from most answers.
+  Its registry entry is `server.compliance.json` (`eu.tracepass/compliance`), a
+  separate listing from `server.json`. Its behaviour is measured by an eval set in
+  the private runner repo; a tool-description change can move the scores, so re-run
+  it after one.
 
 **Auth: the hosted server supports BOTH a `tp_` API key AND OAuth 2.0 — and it's
 a pass-through, not a branch.** `src/http.ts` forwards the client's
