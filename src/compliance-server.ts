@@ -240,7 +240,7 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
           .string()
           .max(100)
           .optional()
-          .describe("Sub-type filter, e.g. ev, lmt, industrial. Filters requiredBy the same way the compliance engine does."),
+          .describe("Battery only: EV, LMT or industrial_gt_2kwh (an industrial battery over 2 kWh). Narrows the required fields to that battery type; an unknown value is refused with the allowed list."),
         group: z
           .string()
           .max(100)
@@ -366,7 +366,7 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
           .string()
           .max(100)
           .optional()
-          .describe("Sub-type of the product, e.g. ev, lmt, industrial (battery)."),
+          .describe("Battery only: EV, LMT or industrial_gt_2kwh. Used to count the required fields for that battery type; ask the user rather than guess."),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
       handler: async (args) => {
@@ -401,7 +401,6 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
         // `model` is a required unique key per company; reuse productName as the model
         // value (unique within the company's catalogue).
         const productBody: Record<string, unknown> = { name: productName, model: productName, category };
-        if (args.subType) productBody.subType = args.subType;
         const productRes = await client.post("/api/v1/products", productBody);
         if (!productRes.ok) return complianceResult(productRes);
         const productData = (productRes.body ?? {}) as Record<string, unknown>;
