@@ -3,7 +3,7 @@
   "name": "eu.tracepass/compliance",
   "title": "TracePass DPP Compliance Assistant",
   "description": "Answers EU Digital Product Passport scope, field, registry and change questions for your product categories. Hosted-only; not published to npm.",
-  "version": "1.18.0",
+  "version": "1.19.0",
   "websiteUrl": "https://www.tracepass.eu",
   "icons": [
     {

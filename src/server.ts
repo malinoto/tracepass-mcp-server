@@ -28,7 +28,7 @@ import { errorResult } from "./result.js";
  *  the endpoint keeps reporting the old version while serving the new code. */
 export const MCP_SERVER_INFO = {
   name: "tracepass",
-  version: "1.18.0",
+  version: "1.19.0",
 } as const;
 
 export interface CreateMcpServerConfig {
