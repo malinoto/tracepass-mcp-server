@@ -243,6 +243,31 @@ request only; there is no account and no OAuth. The assistant can then:
 Answers go to the requester's human review; they never publish anything on
 their own.
 
+## DPP Assistant: EU passport questions
+
+A third endpoint answers **questions about EU Digital Product Passport law**
+for anyone with a free TracePass account:
+
+```
+https://ai.tracepass.eu/compliance/mcp
+```
+
+Add it to an AI assistant as a custom connector (in Claude: Customize →
+Connectors → "+ Add" → "Add custom connector"), then sign in with a TracePass
+account when asked. It uses OAuth; no API key is needed. Answers cite their
+source, and each company gets about 100 answers a day. Full guide:
+[tracepass.eu/docs/dpp-assistant](https://www.tracepass.eu/docs/dpp-assistant).
+
+| Tool | What it does |
+|---|---|
+| `scope_check` | Whether EU law requires a passport for a type of product, from when, and what it requires of each role |
+| `required_fields` | The data a passport must contain for a category, with the article requiring each field and who may see it |
+| `what_changed` | Changes in EU passport law and standards for your categories since a date; planned items are marked as not yet law |
+| `registry_guidance` | The EU DPP Registry and the technical side: registration, identifiers, data carriers, formats and standards |
+| `create_draft_passport` | Creates a **draft** passport in your own account; publishing stays with you in TracePass |
+| `report_answer` | Reports an answer you think is wrong or unclear, for review |
+| `get_profile`, `update_profile`, `delete_profile` | The company facts the assistant remembers between questions, so you do not repeat them |
+
 ## Development
 
 ```bash
