@@ -186,8 +186,9 @@ descriptions tell the model so:
 - **`tracepass_passports` `archive`** is irreversible — the public QR
   permanently 404s. Use `suspend` (reversible) when a change might be
   undone.
-- **`tracepass_epcis` `capture` / `query`** require the paid EPCIS
-  add-on; `export` is included on Starter plans and up.
+- **`tracepass_epcis`** — `export`, `capture` and `query` are on every plan,
+  Free included; captured events count against the plan's event allowance,
+  and `capture` over it returns an overage or hard-block message.
 
 ## Resources
 

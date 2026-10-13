@@ -1044,7 +1044,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     name: "tracepass_epcis",
     title: "TracePass EPCIS 2.0",
     description:
-      "GS1 EPCIS 2.0 supply-chain events. `export` is included on Starter plans and up; `capture`, `capture_job`, and `query` require the paid EPCIS add-on (those actions return a 403-style message without it).\n\n" +
+      "GS1 EPCIS 2.0 supply-chain events. `export`, `capture`, `capture_job` and `query` are on every plan, Free included. Captured events count against the plan's event allowance (10 a month on Free); over it, `capture` returns an overage or hard-block message.\n\n" +
       "Actions (pass via `action`, with `args`):\n" +
       "- export — args: { id }. Export a passport's events as an EPCIS 2.0 JSON-LD document. Read-only.\n" +
       "- export_by_serial — args: { serial, gtin? }. Same as export, addressed by your own serial. A serial is unique only WITHIN a GTIN — if it isn't unique in your account the call returns 409 ambiguous_serial; pass `gtin` (or use export by id). Read-only.\n" +
