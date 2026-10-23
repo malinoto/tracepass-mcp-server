@@ -15,10 +15,17 @@
 import { describe, it, expect } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { buildComplianceTools, complianceResult, createComplianceMcpServer } from "../src/compliance-server.js";
+import { z } from "zod";
+import {
+  buildComplianceTools,
+  complianceResult,
+  createComplianceMcpServer,
+  SCOPE_CATEGORIES,
+  TEMPLATE_CATEGORIES,
+} from "../src/compliance-server.js";
 import type { TracePassClient } from "../src/api-client.js";
 import { COMPLIANCE_SERVER_CARD } from "../src/http.js";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -750,5 +757,43 @@ describe("scope_check request contract", () => {
     await scope.handler(Object.fromEntries(advertised.map((k) => [k, samples[k]])) as never);
     const sent = Object.keys(calls[0]!.body as Record<string, unknown>);
     expect(sent.filter((k) => !declared.includes(k))).toEqual([]);
+  });
+
+  it("offers exactly the categories the published OpenAPI spec accepts", () => {
+    const specPath = join(ROOT, "..", "tracepass", "public", "openapi.json");
+    if (!existsSync(specPath)) return; // CI clones this repo alone.
+    const spec = JSON.parse(readFileSync(specPath, "utf-8"));
+    const accepted: string[] =
+      spec.paths["/api/v1/scope/check"].post.requestBody.content["application/json"].schema.properties.category.enum;
+    expect([...SCOPE_CATEGORIES].sort()).toEqual([...accepted].sort());
+  });
+
+  it("declares category as an enum, so a free-text category never reaches the API", () => {
+    // The model once passed "lamps", "paint" and "bicycle frame", each a 400.
+    const scope = tool(buildComplianceTools(stubClient().client), "scope_check");
+    const category = (scope.inputSchema as Record<string, z.ZodType>).category!;
+    for (const k of SCOPE_CATEGORIES) expect(category.safeParse(k).success, k).toBe(true);
+    for (const words of ["lamps", "paint", "bicycle frame"]) expect(category.safeParse(words).success, words).toBe(false);
+  });
+});
+
+describe("template-category tools", () => {
+  // /regulatory/required-fields and /products answer an unknown category with a 400,
+  // so these tools offer only categories that have a passport template.
+  it("offers exactly the platform's template categories", () => {
+    const dir = join(ROOT, "..", "tracepass-platform", "templates");
+    if (!existsSync(dir)) return; // CI clones this repo alone.
+    const categories = readdirSync(dir)
+      .filter((f) => f.endsWith(".json"))
+      .map((f) => JSON.parse(readFileSync(join(dir, f), "utf-8")).category)
+      .filter((c): c is string => typeof c === "string");
+    expect([...TEMPLATE_CATEGORIES].sort()).toEqual(categories.sort());
+  });
+
+  it.each(["required_fields", "create_draft_passport"])("%s declares category as the template enum", (name) => {
+    const t = tool(buildComplianceTools(stubClient().client), name);
+    const category = (t.inputSchema as Record<string, z.ZodType>).category!;
+    for (const k of TEMPLATE_CATEGORIES) expect(category.safeParse(k).success, k).toBe(true);
+    for (const v of ["lamps", "paint", "other", "vehicles"]) expect(category.safeParse(v).success, v).toBe(false);
   });
 });

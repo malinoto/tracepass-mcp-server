@@ -163,6 +163,59 @@ export function complianceResult(res: { status: number; ok: boolean; body: unkno
 }
 
 // ---------------------------------------------------------------------------
+// The categories /api/v1/scope/check accepts
+// ---------------------------------------------------------------------------
+
+/**
+ * The endpoint's request schema is strict: any other category is 400
+ * invalid_input. Declared as an enum so the model picks a key instead of
+ * passing the user's words ("lamps", "paint"). Pinned to the published
+ * OpenAPI enum by tests/compliance-server.test.ts.
+ */
+export const SCOPE_CATEGORIES = [
+  "battery",
+  "construction",
+  "detergents",
+  "electronics",
+  "fmcg",
+  "furniture",
+  "jewelry",
+  "packaging",
+  "paints-coatings",
+  "steel",
+  "textile",
+  "toys",
+  "tyres",
+  "vehicles",
+  "other",
+] as const;
+
+/**
+ * The categories with a passport template: what /api/v1/regulatory/required-fields
+ * and /api/v1/products accept (an unknown one is a 400). No "vehicles" or
+ * "other": neither has a template. Pinned to the platform's templates/ folder
+ * by tests/compliance-server.test.ts.
+ */
+export const TEMPLATE_CATEGORIES = [
+  "battery",
+  "construction",
+  "detergents",
+  "electronics",
+  "fmcg",
+  "furniture",
+  "jewelry",
+  "packaging",
+  "paints-coatings",
+  "steel",
+  "textile",
+  "toys",
+  "tyres",
+] as const;
+
+const TEMPLATE_CATEGORY_HINT =
+  "Product category key, one of the listed values. Map the user's product to the closest key (paint → paints-coatings, an e-bike battery → battery). Never pass the user's own words. If none fits, there is no passport template for it: say so instead of calling.";
+
+// ---------------------------------------------------------------------------
 // Hard-rule block appended to every tool description (draft C)
 // ---------------------------------------------------------------------------
 
@@ -200,7 +253,12 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
         "Checks whether EU law requires a Digital Product Passport for a type of product, from when, and what the law requires of each role. Use it for \"do I need a passport\", \"from when\", \"who is responsible\", whether that responsibility can be handed to another company, who keeps and stores the passport and whether it must stay available after the company ceases, whether there is one passport per item, batch or model, and for repurposing, remanufacturing, waste or a battery inside another product. Pass whatever facts the user gave; if the result is needs_input, ask the user its questions in plain words and call again. The result's data.inScope is one of: yes, no, pending, depends." +
         HARD_RULES,
       inputSchema: {
-        category: z.string().max(100).optional().describe("Product category, e.g. battery, textile, electronics."),
+        category: z
+          .enum(SCOPE_CATEGORIES)
+          .optional()
+          .describe(
+            "Product category key, one of the listed values. Map the user's product to the closest key (paint → paints-coatings, an e-bike battery → battery); use \"other\" when no key fits. Never pass the user's own words.",
+          ),
         role: z
           .string()
           .max(120)
@@ -249,7 +307,7 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
         "Lists the data a passport must contain for a product category, with the article requiring each field, who may see it, how often it changes, and whether it usually comes from the maker or a supplier. Call it without `group` for a summary (counts by group), then with a `group` for the fields." +
         HARD_RULES,
       inputSchema: {
-        category: z.string().max(100).describe("Product category, e.g. battery."),
+        category: z.enum(TEMPLATE_CATEGORIES).describe(TEMPLATE_CATEGORY_HINT),
         subType: z
           .string()
           .max(100)
@@ -362,7 +420,7 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
         "Creates a **draft** passport in the user's own TracePass account from facts they stated. Use it whenever the user asks to create a passport, including \"create and publish\": create the draft, then say that publishing is done by the user in TracePass. It never publishes. If the result asks for an identifier, ask the user; never invent one." +
         HARD_RULES,
       inputSchema: {
-        category: z.string().max(100).describe("Product category, e.g. battery, textile."),
+        category: z.enum(TEMPLATE_CATEGORIES).describe(TEMPLATE_CATEGORY_HINT),
         productName: z.string().min(1).max(255).describe("The product's name."),
         gtin: z
           .string()
