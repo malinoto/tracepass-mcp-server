@@ -594,6 +594,14 @@ describe("complianceResult — error mapping", () => {
     expect(r.content[0]!.text).toMatch(/resolve billing/i);
   });
 
+  it("403 'Subscription is not active' points to billing, not a plan change or re-auth", () => {
+    // v1 auth answers every call this way while the account is past due.
+    const r = complianceResult({ status: 403, ok: false, body: { error: "Subscription is not active" } });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/resolve billing/i);
+    expect(r.content[0]!.text).not.toMatch(/plan change/i);
+  });
+
   it("403 non-account_not_eligible is a plan gate with do not retry", () => {
     const r = complianceResult({
       status: 403,

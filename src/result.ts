@@ -58,6 +58,26 @@ export function errorResult(message: string): ToolResult {
  * meaningful non-2xx cases get a specific, actionable explanation;
  * anything else gets a generic error carrying the status + body.
  */
+/**
+ * The text for a 403 that is about the account's state rather than its plan
+ * tier, or null. v1 auth answers every call with 403 "Subscription is not
+ * active" while the subscription is past due, unpaid or cancelled, and with
+ * "API access is disabled for this account." when access was switched off.
+ * Neither is fixed by a plan change or by re-authorising, so say what is.
+ */
+export function inactiveAccountMessage(errorCode: string | undefined): string | null {
+  if (errorCode && /subscription is not active/i.test(errorCode)) {
+    return (
+      "The TracePass account's subscription is not active (for example a failed payment or a cancelled plan), so TracePass refuses every request until billing is resolved." +
+      " Do not retry, and do not ask the user to re-authorise: tell them to resolve billing in TracePass (Billing page)."
+    );
+  }
+  if (errorCode && /api access is disabled/i.test(errorCode)) {
+    return "API access is switched off for this TracePass account. Do not retry: tell the user to contact TracePass support.";
+  }
+  return null;
+}
+
 export function apiResult(res: {
   status: number;
   ok: boolean;
@@ -86,6 +106,7 @@ export function apiResult(res: {
       );
     case 403:
       return errorResult(
+        inactiveAccountMessage(errorCode) ??
         `Not permitted on this account's plan${errorCode ? ` (${errorCode})` : ""}. ${message ?? "This feature may require a higher plan or a paid add-on."}`.trim() +
           " Do not retry — tell the user this needs a plan change.",
       );

@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { apiResult, textResult, jsonResult, errorResult } from "../src/result.js";
+import { credentialAccepted } from "../src/http.js";
+import { vi, afterEach } from "vitest";
 
 describe("textResult / jsonResult / errorResult", () => {
   it("textResult wraps a string", () => {
@@ -84,5 +86,42 @@ describe("apiResult — status mapping", () => {
     const r = apiResult({ status: 500, ok: false, body: { message: "boom" } });
     expect(r.isError).toBe(true);
     expect(r.content[0]!.text).toContain("500");
+  });
+});
+
+describe("403 about the account, not the plan", () => {
+  it("an inactive subscription says resolve billing, never re-authorise or change plan", () => {
+    const r = apiResult({ status: 403, ok: false, body: { error: "Subscription is not active" } });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/resolve billing/i);
+    expect(r.content[0]!.text).not.toMatch(/plan change/i);
+  });
+
+  it("a plan-tier 403 keeps the plan-change text", () => {
+    const r = apiResult({ status: 403, ok: false, body: { error: "epcis_capture_not_available" } });
+    expect(r.content[0]!.text).toMatch(/plan change/i);
+  });
+});
+
+describe("credential probe", () => {
+  // A 403 used to count as a rejected credential, so the endpoint answered an
+  // inactive account with an invalid_token challenge and clients asked the user
+  // to re-authorise, which can never help.
+  afterEach(() => vi.unstubAllGlobals());
+  const probeWith = (status: number) => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status })));
+    return credentialAccepted("tp_test");
+  };
+
+  it("rejects only a 401", async () => {
+    expect(await probeWith(401)).toBe(false);
+  });
+
+  it("lets a 403 (inactive subscription, API access off, missing scope) through to the tool", async () => {
+    expect(await probeWith(403)).toBe(true);
+  });
+
+  it("does not block on a transient failure", async () => {
+    expect(await probeWith(503)).toBe(true);
   });
 });

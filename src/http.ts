@@ -423,19 +423,22 @@ function requestRequiresAuth(body: string | undefined): boolean {
 
 /**
  * Probe whether a present credential is actually valid, with a cheap read
- * against the v1 API (the same endpoint the credential test uses). Returns true
- * if the API accepts it, false on a 401/403 (rejected), and — deliberately —
- * true on any other failure (network blip, 5xx) so we DON'T block a connect over
- * a transient error; the real call will surface that later as an isError result.
+ * against the v1 API (the same endpoint the credential test uses). Returns false
+ * only on a 401, which is how v1 auth answers every bad, expired or revoked
+ * credential. A 403 is about the account, not the credential (subscription not
+ * active, API access off, a missing OAuth scope): answering it with an
+ * invalid_token challenge made clients ask the user to re-authorise, which can
+ * never fix it, so the call goes through and the tool result says what is wrong.
+ * Any other failure (network blip, 5xx) also passes, so a transient error does
+ * not block a connect; the real call surfaces it as an isError result.
  */
-async function credentialAccepted(bearerToken: string): Promise<boolean> {
+export async function credentialAccepted(bearerToken: string): Promise<boolean> {
   try {
     const res = await fetch(`${BASE_URL}/api/v1/products?limit=1`, {
       method: "GET",
       headers: { Authorization: `Bearer ${bearerToken}`, Accept: "application/json", "X-Source": "mcp" },
     });
-    // Only a hard auth rejection blocks the connect. Everything else passes.
-    return res.status !== 401 && res.status !== 403;
+    return res.status !== 401;
   } catch {
     return true; // transient/network — don't block on it
   }

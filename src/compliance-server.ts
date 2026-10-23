@@ -34,7 +34,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { TracePassClient } from "./api-client.js";
 import { MCP_SERVER_INFO } from "./server.js";
-import { errorResult, jsonResult, type ToolResult } from "./result.js";
+import { errorResult, inactiveAccountMessage, jsonResult, type ToolResult } from "./result.js";
 import type { ToolAnnotations } from "./tools.js";
 
 /** Source tag for all platform calls from the compliance channel. */
@@ -140,8 +140,11 @@ export function complianceResult(res: { status: number; ok: boolean; body: unkno
     );
   }
 
-  // 403 plan-gated (all other 403 codes, not account_not_eligible).
+  // 403 plan-gated (all other 403 codes, not account_not_eligible), unless it
+  // is about the account's state (inactive subscription, API access off).
   if (res.status === 403) {
+    const inactive = inactiveAccountMessage(errorCode);
+    if (inactive) return errorResult(inactive);
     return errorResult(
       `Not permitted on this account's plan${errorCode ? ` (${errorCode})` : ""}.` +
         ` ${message ?? "This feature may require a higher plan or a paid add-on."}` +
