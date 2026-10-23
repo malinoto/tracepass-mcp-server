@@ -37,15 +37,18 @@ describe("apiResult — status mapping", () => {
     expect(r.content[0]!.text).toMatch(/authentication failed/i);
   });
 
-  it("402 → overage message that explains confirmOverage", () => {
+  it("402 → payment-required message that says do not retry, with no overage offer", () => {
     const r = apiResult({
       status: 402,
       ok: false,
-      body: { error: "overage_required", message: "Plan includes 150 DPPs." },
+      body: { error: "epcis_events_overage_required", message: "Plan includes 10 events a month." },
     });
     expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toContain("Plan includes 150 DPPs.");
-    expect(r.content[0]!.text).toMatch(/confirmOverage: true/);
+    expect(r.content[0]!.text).toContain("Plan includes 10 events a month.");
+    expect(r.content[0]!.text).toContain("epcis_events_overage_required");
+    expect(r.content[0]!.text).toMatch(/do not retry/i);
+    // No tool forwards confirmOverage, so the message must not offer it.
+    expect(r.content[0]!.text).not.toMatch(/confirmOverage/);
   });
 
   it("403 → plan-gate error that says do not retry", () => {

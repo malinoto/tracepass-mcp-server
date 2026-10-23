@@ -10,8 +10,7 @@
  * Each prompt here encodes a common DPP workflow so a user doesn't
  * have to phrase it from scratch — and so the model approaches the
  * task the way TracePass intends (e.g. always reviewing before
- * publishing, never bulk-creating billable passports without
- * consent).
+ * publishing, never bulk-creating passports without consent).
  *
  * Pure — no IO. `registerPrompts(server)` wires them onto the server.
  */
@@ -87,9 +86,8 @@ export function registerPrompts(server: McpServer): void {
           `   • did — a W3C Decentralised Identifier (DID string + method).\n` +
           `   • doi — an ISO 26324 Digital Object Identifier (bare "10.<registrant>/<suffix>" form) plus a required granularity: "model", "batch", or "item" (EN 18219 §5.6.2(b)).\n` +
           `   Note: battery passports accept ONLY gs1 or iso15459 (Battery Regulation Art. 77(3)).\n` +
-          `3. Before creating the passport, remind me that a passport is BILLABLE and consumes a plan DPP slot. ` +
-          `Only after I confirm, create it with tracepass_passports (action: create, args: { productId, identifier: {...} }).\n` +
-          `4. If the account is over its plan quota, tell me the overage cost and wait for my explicit go-ahead before retrying with confirmOverage.`,
+          `3. Create the passport with tracepass_passports (action: create, args: { productId, identifier: {...} }). ` +
+          `Tell me it is a draft: it takes no plan DPP slot and is not billed until someone publishes it in TracePass.`,
       ),
   );
 

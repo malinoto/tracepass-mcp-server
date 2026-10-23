@@ -35,8 +35,8 @@ To try it against a real account, set `TRACEPASS_API_KEY` and run the stdio form
 npm run start:stdio
 ```
 
-Use a key from a **Free-plan account** for development. Creating passports is
-billable, and some actions are irreversible — the tool descriptions say which.
+Use a key from a **Free-plan account** for development. Writes count against the
+daily API budget, and some actions are irreversible — the tool descriptions say which.
 
 ## Before opening a PR
 
@@ -71,8 +71,7 @@ early.
 ## Conventions worth keeping
 
 - **402 / 403 / 429 are results, not exceptions.** They're surfaced as readable
-  `isError: true` text so a model can explain them to the user and, for 402, retry
-  with `confirmOverage: true`. Don't let them throw.
+  `isError: true` text so a model can explain them to the user. Don't let them throw.
 - **Resources are read-only** (`tracepass://…`) — they may do GET I/O but must never
   mutate or trigger a billable call. **Prompts are pure** — static text, no I/O.
 - **Never log or store a credential.** The `Authorization` header is forwarded to

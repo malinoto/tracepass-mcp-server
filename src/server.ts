@@ -48,9 +48,11 @@ export function createMcpServer(config: CreateMcpServerConfig): McpServer {
   const server = new McpServer(MCP_SERVER_INFO, {
     instructions:
       "Tools for the TracePass Digital Product Passport platform. " +
-      "Reads are free; writes that create passports are billable and " +
-      "consume plan quota — never create passports in bulk or accept " +
-      "an overage charge without the user's explicit consent. " +
+      "Reads are free. Creating a passport makes an unbilled draft: a " +
+      "plan slot, and any overage past the cap, is taken only when it " +
+      "is published in TracePass. Writes count against the daily API " +
+      "budget, so never create passports in bulk without the user's " +
+      "explicit consent. " +
       "The archive action of tracepass_passports is irreversible; prefer " +
       "its suspend action when a change might need undoing.",
   });

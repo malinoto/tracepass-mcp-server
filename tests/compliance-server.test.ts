@@ -444,12 +444,12 @@ describe("create_draft_passport", () => {
     expect(text.toLowerCase()).toMatch(/never publish|not publish/);
   });
 
-  it("relays product-create 402 as a plan limit message", async () => {
+  it("relays product-create 402 as a payment-required message", async () => {
     const client = {
       post: async () => ({
         status: 402,
         ok: false,
-        body: { message: "Plan quota exceeded." },
+        body: { message: "Subscription is past due." },
       }),
     } as unknown as TracePassClient;
     const r = await tool(buildComplianceTools(client), "create_draft_passport").handler({
@@ -459,7 +459,8 @@ describe("create_draft_passport", () => {
       serialNumber: "SN-001",
     });
     expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toMatch(/plan limit/i);
+    expect(r.content[0]!.text).toMatch(/payment required/i);
+    expect(r.content[0]!.text).toContain("Subscription is past due.");
   });
 
   it("relays passport-create 403 plan-gate as a readable message", async () => {
@@ -579,10 +580,11 @@ describe("complianceResult — error mapping", () => {
     expect(r.content[0]!.text).toMatch(/Product model already exists/);
   });
 
-  it("402 surfaces a plan limit message", () => {
-    const r = complianceResult({ status: 402, ok: false, body: { message: "Quota exceeded." } });
+  it("402 surfaces a payment-required message", () => {
+    const r = complianceResult({ status: 402, ok: false, body: { message: "Subscription is past due." } });
     expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toMatch(/plan limit/i);
+    expect(r.content[0]!.text).toMatch(/payment required/i);
+    expect(r.content[0]!.text).toMatch(/resolve billing/i);
   });
 
   it("403 non-account_not_eligible is a plan gate with do not retry", () => {

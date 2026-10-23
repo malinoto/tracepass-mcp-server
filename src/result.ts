@@ -9,8 +9,9 @@
  * errors.
  *
  * The three responses an agent MUST be able to act on:
- *   - 402 overage_required — the write would exceed the plan's DPP
- *     quota; the agent can retry with `confirmOverage: true`.
+ *   - 402 payment required — the subscription is past due, or a
+ *     metered write (EPCIS capture, measurements) would exceed the
+ *     plan's allowance; the agent should tell the user, not retry.
  *   - 403 plan-gated (e.g. epcis_capture_not_available) — the
  *     feature isn't on the tenant's plan; the agent should tell the
  *     user, not retry.
@@ -74,12 +75,14 @@ export function apiResult(res: {
         "Authentication failed — the TracePass API key is missing or invalid. Check the key configured for this MCP server.",
       );
     case 402:
-      // The overage flow. The v1 create-passport routes return this
-      // with the plan limit + per-DPP price; the agent can re-call
-      // the same tool with confirmOverage: true to accept the charge.
+      // Payment required: a past-due subscription (every write), or a
+      // metered write over the plan's allowance (EPCIS capture,
+      // measurements). No tool here accepts an overage charge, so the
+      // agent explains it rather than retrying. Creating a passport
+      // never returns an overage 402: a draft takes no plan slot.
       return errorResult(
-        `This action would exceed the plan's included quota. ${message ?? ""}`.trim() +
-          " Re-run the tool with confirmOverage: true to accept the per-passport overage charge, or tell the user they've hit their plan limit.",
+        `Payment required${errorCode ? ` (${errorCode})` : ""}. ${message ?? "The account's subscription or plan allowance blocks this write."}`.trim() +
+          " Do not retry — tell the user to resolve billing or raise the plan's allowance in TracePass.",
       );
     case 403:
       return errorResult(

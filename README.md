@@ -179,10 +179,10 @@ metered.
 Some actions **cost money or are irreversible** — the server's tool
 descriptions tell the model so:
 
-- **`tracepass_passports` `create`** consumes billable DPP slots.
-  Over-quota creation incurs a per-passport overage charge; the tool
-  surfaces a 402-style message and only proceeds with
-  `args.confirmOverage: true` after the user agrees.
+- **`tracepass_passports` `create`** makes a draft passport. A draft
+  takes no plan DPP slot and is not billed; the slot, and any overage
+  past the plan cap, is taken when the passport is published in the
+  TracePass dashboard. Each create counts against the daily write budget.
 - **`tracepass_passports` `archive`** is irreversible — the public QR
   permanently 404s. Use `suspend` (reversible) when a change might be
   undone.

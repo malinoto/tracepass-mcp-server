@@ -350,7 +350,6 @@ const SCHEMAS = {
       // must be present.
       gtin: z.string().optional(),
       serialNumber: z.string().min(1).max(100).optional(),
-      confirmOverage: z.boolean().optional(),
       lineage: lineageSchema.optional(),
     })
     .refine(
@@ -614,7 +613,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     title: "TracePass passports",
     description:
       "Manage Digital Product Passports — create, read, and run lifecycle actions.\n\n" +
-      "IMPORTANT: `create` consumes DPP slots and IS BILLABLE. Over-quota creation incurs a per-passport charge; the tool surfaces a 402-style message — only re-run with args.confirmOverage=true after the user explicitly agrees. `archive` is IRREVERSIBLE (the public QR permanently 404s); prefer `suspend` when a change might be undone.\n\n" +
+      "IMPORTANT: `create` makes a DRAFT passport. A draft takes no plan DPP slot and is never billed; the slot, and any per-DPP overage past the plan cap, is taken when the passport is published, which happens in the TracePass dashboard, not through this tool. Each create counts against the daily write budget. `archive` is IRREVERSIBLE (the public QR permanently 404s); prefer `suspend` when a change might be undone.\n\n" +
       "IDENTIFIER SCHEMES (EN 18219): passports are identified by one of five schemes. Battery passports (Battery Regulation Art. 77(3)) accept ONLY gs1 and iso15459.\n" +
       "  • gs1 — { scheme:\"gs1\", gtin, serialNumber } — GS1 GTIN + serial; gtin is 8/12/13/14 digits, stored as GTIN-14.\n" +
       "  • iso15459 — { scheme:\"iso15459\", issuingAgencyCode, primaryId, serial? } — ISO/IEC 15459; the server derives raw (IAC + primaryId + serial).\n" +
@@ -628,7 +627,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "- get_by_serial — args: { serial, format?, lang?, gtin? }. Read-only. Addresses the passport by your own serial. A serial is unique only WITHIN a GTIN — if the same serial exists under two GTINs in your account the call returns 409 ambiguous_serial; pass `gtin` (or use the by-id action) to resolve exactly.\n" +
       "- compliance — args: { id }. Read-only. Returns a three-tier compliance verdict (compliant | compliant_with_warnings | incomplete) with regulation-cited findings — use to gap-check a passport against the rules for its category, fix the cited fields/parties, then re-check. Also returns byRegulation[]: the same findings grouped per regulation, worst first, so you can tell WHICH regime is failing instead of reading one `incomplete` as everything being wrong. A regulation absent from that array raised no finding — that is not the same as it having passed.\n" +
       "- registry_readiness — args: { id }. Read-only. Returns { ready, findings[] } — whether the passport would pass the EU DPP Registry's FORMAL submission gate (mandatory fields present, correct formatting, a resolvable public link, item-level granularity via a serial number, and a well-formed commodity code where the category carries one). This is the registry's mechanical pre-submission check, NOT the substantive compliance verdict; a passport can be registry-ready yet not substantively compliant. Battery passports only.\n" +
-      "- create — args: { productId, identifier?, gtin?, serialNumber?, confirmOverage?, lineage? }. BILLABLE. Provide identifier (preferred) or legacy gtin + serialNumber. Battery passports accept only gs1 and iso15459 schemes — other schemes return 400. A duplicate identifier returns 409.\n" +
+      "- create — args: { productId, identifier?, gtin?, serialNumber?, lineage? }. Creates a draft (not billed). Provide identifier (preferred) or legacy gtin + serialNumber. Battery passports accept only gs1 and iso15459 schemes — other schemes return 400. A duplicate identifier returns 409.\n" +
       "  lineage (battery only) — a repurposed, remanufactured or reused battery needs a NEW passport linked to the original(s) (Battery Regulation Art. 77(7)): { predecessors: [ { internalPassportId? | identifier?, trigger: preparation_for_reuse|preparation_for_repurposing|repurposing|remanufacturing } ] (≤10), noPredecessorReason? (only with an empty list, e.g. placed on the market before 18 Feb 2027) }. The server derives batteryStatus from the triggers and links your own predecessor passports back. Immutable after create. Rule violations return 422 with the rule code (duplicate_predecessor, predecessor_not_found, status_trigger_mismatch, …).\n" +
       "- suspend — args: { id }. Reversible — public QR shows 'suspended'.\n" +
       "- suspend_by_serial — args: { serial, gtin? }. Same as suspend, addressed by your serial. 409 ambiguous_serial if the serial isn't unique in your account — pass `gtin`.\n" +
@@ -677,7 +676,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           "get_snapshot",
         ])
         .describe(
-          "Which passport operation to run. Reads: list | get | get_by_serial | compliance | registry_readiness | get_condition_flags | get_condition_flags_by_serial | get_qr | get_qr_by_serial | list_snapshots | get_snapshot | list_measurements(_by_serial) | latest_measurements(_by_serial). Writes: set_condition_flags | set_condition_flags_by_serial | capture_measurements(_by_serial) | create (BILLABLE). Lifecycle: suspend (reversible) | archive (IRREVERSIBLE), each with a _by_serial variant.",
+          "Which passport operation to run. Reads: list | get | get_by_serial | compliance | registry_readiness | get_condition_flags | get_condition_flags_by_serial | get_qr | get_qr_by_serial | list_snapshots | get_snapshot | list_measurements(_by_serial) | latest_measurements(_by_serial). Writes: set_condition_flags | set_condition_flags_by_serial | capture_measurements(_by_serial) | create (a draft, not billed). Lifecycle: suspend (reversible) | archive (IRREVERSIBLE), each with a _by_serial variant.",
         ),
       args: z
         .object({
@@ -697,7 +696,6 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
               "EN 18219 scheme-tagged identifier for create. Must have `scheme` plus scheme-specific fields. Schemes: gs1 {gtin, serialNumber} | iso15459 {issuingAgencyCode, primaryId, serial?} | iec61406 {uri} | did {did, method} | doi {doi, granularity} (granularity: \"model\"|\"batch\"|\"item\" REQUIRED per EN 18219 §5.6.2(b)). Battery passports: gs1 and iso15459 only.",
             ),
           serialNumber: z.string().optional().describe("Serial for the new passport (create, legacy gs1 path)."),
-          confirmOverage: z.boolean().optional().describe("Set true to accept per-passport overage charges when over the plan quota (402). Applies to create."),
           lineage: lineageSchema
             .optional()
             .describe("create, battery only: link a second-life battery's new passport to the original passport(s) (Art. 77(7)). See the create action."),
@@ -774,7 +772,6 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
             // Legacy flat GS1 fields — still accepted as a deprecated alias.
             body.gs1 = { gtin: p.gtin, serialNumber: p.serialNumber };
           }
-          if (p.confirmOverage) body.confirmOverage = true;
           if (p.lineage) body.lineage = p.lineage;
           return apiResult(await client.post("/api/v1/passports", body));
         }

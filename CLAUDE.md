@@ -128,16 +128,18 @@ negligible. Don't "optimize" this into direct lib calls.
   add an action to the right resource tool — don't add a 6th flat tool unless it's
   genuinely a new resource.
 - **402 / 403 / 429 are meaningful results, not exceptions** (`src/result.ts`).
-  402 overage → agent can retry with `confirmOverage: true`; 403 plan-gate → tell
-  the user, don't retry; 429 → daily budget spent, retry tomorrow. Surface these as
+  402 payment required (past-due subscription, or a metered write over the plan's
+  allowance) → tell the user, don't retry: no tool accepts an overage charge;
+  403 plan-gate → tell the user, don't retry; 429 → daily budget spent, retry tomorrow. Surface these as
   readable `isError: true` text so the model can explain them. Don't let them throw.
 - **Billable / irreversible actions are spelled out in the tool description** so
   the model warns the user first. Keep that discipline when adding actions —
-  especially anything that creates passports (billable) or publishes.
+  especially anything that publishes or bills. Creating a passport makes an
+  unbilled draft; plan slots and overage are taken at publish, in the dashboard.
 - Resources = read-only context (`tracepass://…` URIs) — they DO I/O (GET-only
   fetches against the v1 API via the shared client) but never mutate; keep them
   side-effect-free (no writes, no billable calls). Prompts = workflow seeds that
-  encode TracePass's intended approach (review before publish, no bulk-billable
+  encode TracePass's intended approach (review before publish, no bulk
   creation without consent) and are genuinely pure (static `GetPromptResult` text,
   no I/O at registration or get). Keep prompts pure and resources read-only.
 

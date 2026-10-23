@@ -110,7 +110,7 @@ describe("tracepass_products — action routing", () => {
   });
 });
 
-describe("tracepass_passports — billable + lifecycle actions", () => {
+describe("tracepass_passports — create + lifecycle actions", () => {
   function passportsTool() {
     const stub = stubClient();
     const tool = buildTools(stub.client).find((t) => t.name === "tracepass_passports")!;
@@ -132,13 +132,19 @@ describe("tracepass_passports — billable + lifecycle actions", () => {
     expect((calls[0]!.body as Record<string, unknown>).identifier).toBeUndefined();
   });
 
-  it("create forwards confirmOverage only when true", async () => {
+  it("create sends no confirmOverage: a draft takes no plan slot", async () => {
     const { tool, calls } = passportsTool();
     await tool.handler({
       action: "create",
       args: { productId: "p1", gtin: "1", serialNumber: "s", confirmOverage: true },
     });
-    expect(calls[0]!.body).toMatchObject({ confirmOverage: true });
+    expect((calls[0]!.body as Record<string, unknown>).confirmOverage).toBeUndefined();
+  });
+
+  it("no tool description calls passport create billable", () => {
+    const passports = buildTools(stubClient().client).find((t) => t.name === "tracepass_passports")!;
+    expect(passports.description).not.toMatch(/BILLABLE|confirmOverage/);
+    expect(passports.description).toMatch(/DRAFT passport/);
   });
 
   // ── battery measurements (living record) ──

@@ -131,11 +131,12 @@ export function complianceResult(res: { status: number; ok: boolean; body: unkno
     );
   }
 
-  // 402 overage (create_draft_passport): plan quota exceeded.
+  // 402 (create_draft_passport): the subscription is past due. A draft
+  // takes no plan slot, so creating one never hits the plan limit.
   if (res.status === 402) {
     return errorResult(
-      `Plan limit reached: ${message ?? "this action would exceed the plan's passport quota."}` +
-        " Publishing is done in TracePass; I never publish. Tell the user to upgrade their plan to continue.",
+      `Payment required: ${message ?? "the account's subscription is past due."}` +
+        " Tell the user to resolve billing in TracePass before creating more drafts.",
     );
   }
 
