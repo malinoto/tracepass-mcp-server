@@ -1,7 +1,7 @@
 # TracePass MCP Server
 
 [![Listed on Glama](https://glama.ai/mcp/servers/malinoto/tracepass-mcp-server/badges/score.svg)](https://glama.ai/mcp/servers/malinoto/tracepass-mcp-server)
-[![smithery badge](https://smithery.ai/badge/malinoto/tracepass-mcp-server)](https://smithery.ai/servers/malinoto/tracepass-mcp-server)
+[![LightNow capabilities](https://lightnow.ai/badge/eu.tracepass/tracepass)](https://lightnow.ai/servers/eu.tracepass/tracepass)
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server for
 **[TracePass](https://www.tracepass.eu)** — the EU Digital Product
