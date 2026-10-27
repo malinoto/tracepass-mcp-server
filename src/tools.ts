@@ -412,6 +412,10 @@ const SCHEMAS = {
     legalName: z.string().min(1),
     gln: z.string().optional(),
     country: z.string().optional(),
+    url: z.string().optional(),
+    tradeName: z.string().optional(),
+    postalAddress: z.string().optional(),
+    email: z.string().optional(),
     legacyOperatorId: z.string().optional(),
     operatorIdentifier: operatorIdentifierSchema.optional(),
     facilityIdentifier: facilityIdentifierSchema.optional(),
@@ -992,7 +996,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "  • doi — { scheme:\"doi\", doi:\"10.<registrant>/<suffix>\" } — doi:/https://doi.org/ prefix accepted and stripped.\n\n" +
       "facilityIdentifier schemes: same four; the gln variant also accepts optional `extension` (GS1 SGLN sub-location).\n\n" +
       "Actions (pass via `action`, with `args`):\n" +
-      "- set — args: { id, role, legalName, gln?, country?, legacyOperatorId?, operatorIdentifier?, facilityIdentifier? }. Sets or updates one role.\n" +
+      "- set — args: { id, role, legalName, gln?, country?, url?, tradeName?, postalAddress?, email?, legacyOperatorId?, operatorIdentifier?, facilityIdentifier? }. Sets or updates one role. tradeName, postalAddress and email are shown on the public passport; for a battery importer they are its Battery Regulation Art. 41(3) details.\n" +
       "- remove — args: { id, role }. Clears one role.",
     inputSchema: {
       action: z
@@ -1005,6 +1009,10 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           legalName: z.string().optional().describe("Party legal name. Required for set."),
           gln: z.string().optional().describe("GS1 Global Location Number (13 digits). Strongly recommended for multi-role disambiguation."),
           country: z.string().optional().describe("ISO 3166-1 alpha-2 country code (set, optional)."),
+          url: z.string().optional().describe("Organisation web address (set, optional)."),
+          tradeName: z.string().optional().describe("Registered trade name or registered trade mark, max 200 chars (set, optional). Public."),
+          postalAddress: z.string().optional().describe("Postal address with a single contact point, one line, max 500 chars (set, optional). Public."),
+          email: z.string().optional().describe("Company contact e-mail, not a person's (set, optional). Public."),
           legacyOperatorId: z.string().optional().describe("Free-text fallback identifier (VAT, EORI, supplier code). Required when gln and operatorIdentifier are both absent."),
           operatorIdentifier: z.record(z.string(), z.unknown()).optional().describe(
             "Structured operator identifier per EN 18219 §6.2–6.5. Must have `scheme` plus scheme fields. " +

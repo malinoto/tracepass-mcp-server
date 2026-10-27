@@ -667,6 +667,30 @@ describe("tracepass_passport_parties — set action routing and identifier valid
     expect(calls[0]!.body).toMatchObject({ legalName: "Acme GmbH", gln: "4012345678901" });
   });
 
+  it("set forwards url, tradeName, postalAddress and email to the PATCH body", async () => {
+    const { tool, calls } = partiesTool();
+    await tool.handler({
+      action: "set",
+      args: {
+        id: "pass3",
+        role: "importer",
+        legalName: "Importer SRL",
+        gln: "4012345678901",
+        url: "https://importer.example",
+        tradeName: "Importer",
+        postalAddress: "Via Roma 1, 00100 Roma, Italy",
+        email: "compliance@importer.example",
+      },
+    });
+    // Revert: the strict party schema strips fields it does not list
+    expect(calls[0]!.body).toMatchObject({
+      url: "https://importer.example",
+      tradeName: "Importer",
+      postalAddress: "Via Roma 1, 00100 Roma, Italy",
+      email: "compliance@importer.example",
+    });
+  });
+
   it("set forwards operatorIdentifier iso6523 to the PATCH body", async () => {
     const { tool, calls } = partiesTool();
     await tool.handler({
