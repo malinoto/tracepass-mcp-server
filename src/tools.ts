@@ -131,6 +131,16 @@ function isErr(v: unknown): v is ToolResult {
   return typeof v === "object" && v !== null && "content" in v;
 }
 
+/**
+ * A field value. `z.unknown()` alone accepts a missing key, and the platform
+ * answers a field update with no `value` with 400, so the omission is caught
+ * here with a message the model can act on. `null` is a value: it clears the
+ * field.
+ */
+const FIELD_VALUE = z
+  .unknown()
+  .refine((v) => v !== undefined, { message: "value is required (pass null to clear the field)" });
+
 // ── Per-action arg schemas ──────────────────────────────────────
 // Reused by the handlers as validators. Kept here, one per action,
 // so the per-action contract is explicit and testable.
@@ -385,13 +395,13 @@ const SCHEMAS = {
   fieldUpdate: z.object({
     id: z.string().min(1),
     fieldKey: z.string().min(1),
-    value: z.unknown(),
+    value: FIELD_VALUE,
     source: FIELD_SOURCE.optional(),
   }),
   fieldUpdateBySerial: z.object({
     serial: z.string().min(1),
     fieldKey: z.string().min(1),
-    value: z.unknown(),
+    value: FIELD_VALUE,
     gtin: z.string().optional(),
     source: FIELD_SOURCE.optional(),
   }),

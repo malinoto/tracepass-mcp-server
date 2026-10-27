@@ -579,6 +579,23 @@ describe("tracepass_passport_fields — actions", () => {
     expect(calls[0]!.body).toEqual({ value: 12 });
   });
 
+  it("refuses a field update with no value on both actions, without calling the API", async () => {
+    const { tool, calls } = fieldsTool();
+    const byId = await tool.handler({ action: "update", args: { id: "p1", fieldKey: "weight" } });
+    const bySerial = await tool.handler({ action: "update_by_serial", args: { serial: "SN-1", fieldKey: "weight" } });
+    for (const r of [byId, bySerial]) {
+      expect(r.isError).toBe(true);
+      expect(JSON.stringify(r.content)).toContain("value is required (pass null to clear the field)");
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  it("sends value: null to clear a field", async () => {
+    const { tool, calls } = fieldsTool();
+    await tool.handler({ action: "update", args: { id: "p1", fieldKey: "weight", value: null } });
+    expect(calls[0]!.body).toEqual({ value: null });
+  });
+
   it("passes a declared source through on both actions", async () => {
     const { tool, calls } = fieldsTool();
     await tool.handler({ action: "update", args: { id: "p1", fieldKey: "weight", value: 12, source: "ai_suggested" } });
