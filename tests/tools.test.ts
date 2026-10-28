@@ -364,6 +364,47 @@ describe("tracepass_passports — create + lifecycle actions", () => {
     expect(calls[0]!.method).toBe("POST");
   });
 
+  it("archive sends the battery end reason as the JSON body", async () => {
+    const { tool, calls } = passportsTool();
+    const r = await tool.handler({ action: "archive", args: { id: "x1", reason: "recycled" } });
+    expect(r.isError).toBeFalsy();
+    expect(calls[0]!.path).toBe("/api/v1/passports/x1/archive");
+    expect(calls[0]!.body).toEqual({ reason: "recycled" });
+  });
+
+  it("archive_by_serial sends the reason as the JSON body, gtin stays in the query", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({
+      action: "archive_by_serial",
+      args: { serial: "SN-1", gtin: "09506000134369", reason: "never_placed" },
+    });
+    expect(calls[0]!.path).toBe("/api/v1/passports/by-serial/SN-1/archive?gtin=09506000134369");
+    expect(calls[0]!.body).toEqual({ reason: "never_placed" });
+  });
+
+  it("archive without a reason sends no body (non-battery passports need none)", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({ action: "archive", args: { id: "x1" } });
+    expect(calls[0]!.body).toBeUndefined();
+  });
+
+  it("archive rejects a reason outside the closed set before calling the API", async () => {
+    const { tool, calls } = passportsTool();
+    const r = await tool.handler({ action: "archive_by_serial", args: { serial: "SN-1", reason: "sold" } });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/reason/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("the passports inputSchema advertises the archive reason enum", () => {
+    const { tool } = passportsTool();
+    const args = tool.inputSchema.args as unknown as { unwrap: () => { shape: Record<string, unknown> } };
+    const reason = args.unwrap().shape.reason as { safeParse: (v: unknown) => { success: boolean } } | undefined;
+    expect(reason).toBeDefined();
+    expect(reason!.safeParse("duplicate_or_error").success).toBe(true);
+    expect(reason!.safeParse("sold").success).toBe(false);
+  });
+
   it("compliance routes to a read of the compliance endpoint", async () => {
     const { tool, calls } = passportsTool();
     await tool.handler({ action: "compliance", args: { id: "x1" } });

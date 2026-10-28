@@ -126,6 +126,11 @@ function parseArgs<T extends z.ZodTypeAny>(
       `Check the tool description for this action's required args.`,
   );
 }
+/** The archive request body: `{ reason }` when one was given, else none. */
+function archiveBody(reason: string | undefined): Record<string, unknown> | undefined {
+  return reason === undefined ? undefined : { reason };
+}
+
 /** Type guard — did parseArgs return an error result? */
 function isErr(v: unknown): v is ToolResult {
   return typeof v === "object" && v !== null && "content" in v;
@@ -290,6 +295,13 @@ const measurementSchema = z.object({
  *  callers, so only these two are offered. */
 const FIELD_SOURCE = z.enum(["manual", "ai_suggested"]);
 
+/** Why a passport is archived. The platform requires one of these for a battery
+ *  passport (400 reason_required / invalid_reason otherwise) and validates it
+ *  when given for any other category. Sent as the JSON body `{ reason }`. */
+const ARCHIVE_REASON = z.enum(["recycled", "never_placed", "duplicate_or_error"]);
+const ARCHIVE_REASON_DESCRIPTION =
+  "Required for battery passports: why the passport ends. A battery passport ends only when the battery has been recycled, so the choices are recycled, never placed on the market or put into service, or a duplicate or erroneous record.";
+
 const SCHEMAS = {
   productList: z.object({
     page: z.number().int().positive().optional(),
@@ -379,6 +391,15 @@ const SCHEMAS = {
   passportSerial: z.object({
     serial: z.string().min(1),
     gtin: z.string().optional(),
+  }),
+  passportArchive: z.object({
+    id: z.string().min(1),
+    reason: ARCHIVE_REASON.optional(),
+  }),
+  passportArchiveBySerial: z.object({
+    serial: z.string().min(1),
+    gtin: z.string().optional(),
+    reason: ARCHIVE_REASON.optional(),
   }),
   passportQr: z.object({
     id: z.string().min(1),
@@ -645,8 +666,8 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "  lineage (battery only) — a repurposed, remanufactured or reused battery needs a NEW passport linked to the original(s) (Battery Regulation Art. 77(7)): { predecessors: [ { internalPassportId? | identifier?, trigger: preparation_for_reuse|preparation_for_repurposing|repurposing|remanufacturing } ] (≤10), noPredecessorReason? (only with an empty list, e.g. placed on the market before 18 Feb 2027) }. The server derives batteryStatus from the triggers and links your own predecessor passports back. Immutable after create. Rule violations return 422 with the rule code (duplicate_predecessor, predecessor_not_found, status_trigger_mismatch, …).\n" +
       "- suspend — args: { id }. Reversible — public QR shows 'suspended'.\n" +
       "- suspend_by_serial — args: { serial, gtin? }. Same as suspend, addressed by your serial. 409 ambiguous_serial if the serial isn't unique in your account — pass `gtin`.\n" +
-      "- archive — args: { id }. IRREVERSIBLE — confirm with the user first.\n" +
-      "- archive_by_serial — args: { serial, gtin? }. IRREVERSIBLE, addressed by your serial — confirm first. 409 ambiguous_serial if the serial isn't unique — pass `gtin`.\n" +
+      "- archive — args: { id, reason? (recycled|never_placed|duplicate_or_error) }. IRREVERSIBLE and destructive — confirm with the user first. reason is REQUIRED for battery passports (400 reason_required / invalid_reason without a valid one): recycled, never_placed (never placed on the market or put into service), or duplicate_or_error (a duplicate or erroneous record); for other categories it is optional. A passport marked for deletion cannot be archived (409).\n" +
+      "- archive_by_serial — args: { serial, gtin?, reason? }. IRREVERSIBLE and destructive, addressed by your serial — confirm first. Same reason rule as archive. 409 ambiguous_serial if the serial isn't unique — pass `gtin`.\n" +
       "- get_qr — args: { id, format? (svg|png), symbology? (qr|datamatrix) }. Read-only. symbology=datamatrix renders an ISO/IEC 16022 Data Matrix instead of a QR (EN 18220 permits both; same passport URL).\n" +
       "- get_qr_by_serial — args: { serial, format? (svg|png), symbology? (qr|datamatrix), gtin? }. Read-only. Same as get_qr, addressed by your own serial. A serial is unique only WITHIN a GTIN — if the same serial exists under two GTINs in your account the call returns 409 ambiguous_serial; pass `gtin` (or use get_qr by id) to resolve exactly.\n" +
       "- list_snapshots — args: { id, page?, limit? (≤100), at? (ISO 8601) }. Read-only. Returns a paginated list of snapshots for the passport (newest first). A snapshot is written on publish and after every change to a non-draft passport (EN 18221 change archive); each carries id, version, reason (e.g. published|field_edit|status_change|baseline), actor (who caused it, when known), snapshotAt, contentHash, hashValid (re-verified on every read), restorable, fieldCount. With `at`, returns instead the single snapshot valid at that instant (full record plus validFrom/validUntil) — answers \"what did this passport say on date D\"; 404 before the first snapshot. Counts 1 against the daily read budget.\n" +
@@ -690,7 +711,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           "get_snapshot",
         ])
         .describe(
-          "Which passport operation to run. Reads: list | get | get_by_serial | compliance | registry_readiness | get_condition_flags | get_condition_flags_by_serial | get_qr | get_qr_by_serial | list_snapshots | get_snapshot | list_measurements(_by_serial) | latest_measurements(_by_serial). Writes: set_condition_flags | set_condition_flags_by_serial | capture_measurements(_by_serial) | create (a draft, not billed). Lifecycle: suspend (reversible) | archive (IRREVERSIBLE), each with a _by_serial variant.",
+          "Which passport operation to run. Reads: list | get | get_by_serial | compliance | registry_readiness | get_condition_flags | get_condition_flags_by_serial | get_qr | get_qr_by_serial | list_snapshots | get_snapshot | list_measurements(_by_serial) | latest_measurements(_by_serial). Writes: set_condition_flags | set_condition_flags_by_serial | capture_measurements(_by_serial) | create (a draft, not billed). Lifecycle: suspend (reversible) | archive (IRREVERSIBLE; battery passports need `reason`), each with a _by_serial variant.",
         ),
       args: z
         .object({
@@ -734,6 +755,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
             .record(z.string(), z.union([z.boolean(), z.null()]))
             .optional()
             .describe("For set_condition_flags / set_condition_flags_by_serial: Record<flagKey, boolean|null>. null clears the flag."),
+          reason: ARCHIVE_REASON.optional().describe(`archive / archive_by_serial: ${ARCHIVE_REASON_DESCRIPTION}`),
         })
         .partial()
         .optional()
@@ -802,15 +824,20 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           );
         }
         case "archive": {
-          const p = parseArgs(SCHEMAS.passportId, a.args, "tracepass_passports", action);
-          if (isErr(p)) return p;
-          return apiResult(await client.post(`/api/v1/passports/${seg(p.id)}/archive`));
-        }
-        case "archive_by_serial": {
-          const p = parseArgs(SCHEMAS.passportSerial, a.args, "tracepass_passports", action);
+          const p = parseArgs(SCHEMAS.passportArchive, a.args, "tracepass_passports", action);
           if (isErr(p)) return p;
           return apiResult(
-            await client.post(`/api/v1/passports/by-serial/${seg(p.serial)}/archive${qs({ gtin: p.gtin })}`),
+            await client.post(`/api/v1/passports/${seg(p.id)}/archive`, archiveBody(p.reason)),
+          );
+        }
+        case "archive_by_serial": {
+          const p = parseArgs(SCHEMAS.passportArchiveBySerial, a.args, "tracepass_passports", action);
+          if (isErr(p)) return p;
+          return apiResult(
+            await client.post(
+              `/api/v1/passports/by-serial/${seg(p.serial)}/archive${qs({ gtin: p.gtin })}`,
+              archiveBody(p.reason),
+            ),
           );
         }
         case "get_qr": {
