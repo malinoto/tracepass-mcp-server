@@ -39,7 +39,7 @@ the hosted endpoint and the local package.**
   the two in lockstep) sit over the platform's `/api/supplier/v1/*`, which owns
   every rule (requested keys only, merge until
   review, rate limit). It is not in the `eu.tracepass/tracepass` listing, the
-  server card or the tool count above, and its README table deliberately avoids
+  server card or the main tool list, and its README table deliberately avoids
   the `` `name` — description `` pattern so mcppedia does not count its tools as
   the main server's.
 - `src/compliance-server.ts` — a **third server**, the DPP Assistant, served by
@@ -79,11 +79,10 @@ token. The MCP server never inspects the token type. OAuth-capable clients
 API-key-only (`TRACEPASS_API_KEY`) because a subprocess has no browser for the
 OAuth consent step. **Consequence:** `401` responses from the hosted endpoint are
 *normal* — they're the RFC 9728 start-auth signal an OAuth client gets before it
-has a token, plus token-expiry retries. A 401 here is not a fault; the path is
-verified working with both `api_key` and `oauth` 200s in prod
-(`apiRequestLog`, 2026-06-18). Don't "fix" the 401s by removing the challenge.
+has a token, plus token-expiry retries. A 401 here is not a fault; the path
+works with both `api_key` and `oauth` (both show 200s in `apiRequestLog`). Don't "fix" the 401s by removing the challenge.
 
-**Auth is METHOD-AWARE, not blanket (since v1.4.4).** The MCP handshake +
+**Auth is METHOD-AWARE, not blanket.** The MCP handshake +
 discovery — `initialize`, `tools/list`, `prompts/list`, `resources/list`,
 `ping`, etc. (`PUBLIC_METHODS` in `src/http.ts`) — are served WITHOUT a
 credential; only methods whose handlers hit the v1 API (`tools/call`,
@@ -125,7 +124,7 @@ negligible. Don't "optimize" this into direct lib calls.
   (enum) + `args` (shape depends on `action`). MCP `inputSchema` can't branch on
   `action`, so `args` is declared permissively and each handler validates against
   the specific per-action Zod schema (`ACTION_SCHEMAS`). When adding an endpoint,
-  add an action to the right resource tool — don't add a 6th flat tool unless it's
+  add an action to the right resource tool — don't add a new flat tool unless it's
   genuinely a new resource.
 - **402 / 403 / 429 are meaningful results, not exceptions** (`src/result.ts`).
   402 payment required (past-due subscription, or a metered write over the plan's
@@ -152,8 +151,8 @@ endpoint**:
 1. **npm** — `v*.*.*` git tag push → `.github/workflows/publish.yml` (OIDC), never
    laptop `npm publish`. **Bump with `npm version patch|minor|major`, never by hand.**
    The `version` lifecycle script (`scripts/sync-version.mjs`) writes the new version
-   into `server.json` (both spots: top-level `version` + `packages[0].version`) and
-   `MCP_SERVER_INFO` in `src/server.ts`, and stages them into the same release
+   into `server.json` (both spots: top-level `version` + `packages[0].version`), the top-level `version` of
+   `server.compliance.json` and `MCP_SERVER_INFO` in `src/server.ts`, and stages them into the same release
    commit. When the marketing repo is a sibling checkout it also regenerates the www
    server-card mirror; commit that one there. `tests/version-lockstep.test.ts` still
    fails if any copy drifts. Keep `"mcpName": "eu.tracepass/tracepass"`.
