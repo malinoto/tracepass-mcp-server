@@ -662,6 +662,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "- get_by_serial — args: { serial, format?, lang?, gtin? }. Read-only. Addresses the passport by your own serial. A serial is unique only WITHIN a GTIN — if the same serial exists under two GTINs in your account the call returns 409 ambiguous_serial; pass `gtin` (or use the by-id action) to resolve exactly.\n" +
       "- compliance — args: { id }. Read-only. Returns a three-tier compliance verdict (compliant | compliant_with_warnings | incomplete) with regulation-cited findings — use to gap-check a passport against the rules for its category, fix the cited fields/parties, then re-check. Also returns byRegulation[]: the same findings grouped per regulation, worst first, so you can tell WHICH regime is failing instead of reading one `incomplete` as everything being wrong. A regulation absent from that array raised no finding — that is not the same as it having passed.\n" +
       "- registry_readiness — args: { id }. Read-only. Returns { ready, findings[] } — whether the passport would pass the EU DPP Registry's FORMAL submission gate (mandatory fields present, correct formatting, a resolvable public link, item-level granularity via a serial number, and a well-formed commodity code where the category carries one). This is the registry's mechanical pre-submission check, NOT the substantive compliance verdict; a passport can be registry-ready yet not substantively compliant. Battery passports only.\n" +
+      "- place_on_market — args: { id }. WRITE, battery passports only, published only. Places the passport on the market: registers it in the EU DPP registry under the account's own registry access (Battery Regulation Art. 77(4)). A legal act for the economic operator — confirm with the user first. ASYNCHRONOUS: answers 202 { passport, passportId, status: \"placing\", dppId } and the registry call follows in the background; read the passport (get) to follow placeOnMarketStatus: placing → placed (placedOnMarketAt, registrationId) or rejected (registrationRejectionReason). To retry a rejected passport, fix the cause and call place_on_market again. Refusals are 409 with a code: not_a_battery | not_published | already_placed (placing or placed) | operator_id_missing (no economic-operator identifier on the account) | registry_not_configured (an admin sets registry access in the dashboard) | registry_not_ready (findings[] lists what stands in the way — run registry_readiness for the structured findings; an empty list means the configured registry is not open to submissions from TracePass yet). After placement the passport's party operatorIdentifier / facilityIdentifier are locked (409 operator_locked on a change). Counts 1 write.\n" +
       "- create — args: { productId, identifier?, gtin?, serialNumber?, lineage? }. Creates a draft (not billed). Provide identifier (preferred) or legacy gtin + serialNumber. Battery passports accept only gs1 and iso15459 schemes — other schemes return 400. A duplicate identifier returns 409.\n" +
       "  lineage (battery only) — a repurposed, remanufactured or reused battery needs a NEW passport linked to the original(s) (Battery Regulation Art. 77(7)): { predecessors: [ { internalPassportId? | identifier?, trigger: preparation_for_reuse|preparation_for_repurposing|repurposing|remanufacturing } ] (≤10), noPredecessorReason? (only with an empty list, e.g. placed on the market before 18 Feb 2027) }. The server derives batteryStatus from the triggers and links your own predecessor passports back. Immutable after create. Rule violations return 422 with the rule code (duplicate_predecessor, predecessor_not_found, status_trigger_mismatch, …).\n" +
       "- suspend — args: { id }. Reversible — public QR shows 'suspended'.\n" +
@@ -690,6 +691,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           "get_by_serial",
           "compliance",
           "registry_readiness",
+          "place_on_market",
           "get_condition_flags",
           "get_condition_flags_by_serial",
           "set_condition_flags",
@@ -711,11 +713,11 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           "get_snapshot",
         ])
         .describe(
-          "Which passport operation to run. Reads: list | get | get_by_serial | compliance | registry_readiness | get_condition_flags | get_condition_flags_by_serial | get_qr | get_qr_by_serial | list_snapshots | get_snapshot | list_measurements(_by_serial) | latest_measurements(_by_serial). Writes: set_condition_flags | set_condition_flags_by_serial | capture_measurements(_by_serial) | create (a draft, not billed). Lifecycle: suspend (reversible) | archive (IRREVERSIBLE; battery passports need `reason`), each with a _by_serial variant.",
+          "Which passport operation to run. Reads: list | get | get_by_serial | compliance | registry_readiness | get_condition_flags | get_condition_flags_by_serial | get_qr | get_qr_by_serial | list_snapshots | get_snapshot | list_measurements(_by_serial) | latest_measurements(_by_serial). Writes: set_condition_flags | set_condition_flags_by_serial | capture_measurements(_by_serial) | create (a draft, not billed). Lifecycle: place_on_market (battery, published; async EU registry entry — confirm first) | suspend (reversible) | archive (IRREVERSIBLE; battery passports need `reason`), the last two each with a _by_serial variant.",
         ),
       args: z
         .object({
-          id: z.string().optional().describe("Passport id. Required for get/compliance/suspend/archive/get_qr (the by-id actions)."),
+          id: z.string().optional().describe("Passport id. Required for get/compliance/place_on_market/suspend/archive/get_qr (the by-id actions)."),
           serial: z.string().optional().describe("Your own serial number. Required for the *_by_serial actions."),
           gtin: z
             .string()
@@ -796,6 +798,11 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           const p = parseArgs(SCHEMAS.passportId, a.args, "tracepass_passports", action);
           if (isErr(p)) return p;
           return apiResult(await client.get(`/api/v1/passports/${seg(p.id)}/registry-readiness`));
+        }
+        case "place_on_market": {
+          const p = parseArgs(SCHEMAS.passportId, a.args, "tracepass_passports", action);
+          if (isErr(p)) return p;
+          return apiResult(await client.post(`/api/v1/passports/${seg(p.id)}/place-on-market`));
         }
         case "create": {
           const p = parseArgs(SCHEMAS.passportCreate, a.args, "tracepass_passports", action);
@@ -1024,7 +1031,8 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "facilityIdentifier schemes: same four; the gln variant also accepts optional `extension` (GS1 SGLN sub-location).\n\n" +
       "Actions (pass via `action`, with `args`):\n" +
       "- set — args: { id, role, legalName, gln?, country?, url?, tradeName?, postalAddress?, email?, legacyOperatorId?, operatorIdentifier?, facilityIdentifier? }. Sets or updates one role. tradeName, postalAddress and email are shown on the public passport; for a battery importer they are its Battery Regulation Art. 41(3) details.\n" +
-      "- remove — args: { id, role }. Clears one role.",
+      "- remove — args: { id, role }. Clears one role.\n" +
+      "Once a battery passport is placed on the market, a change to a stored operatorIdentifier or facilityIdentifier returns 409 operator_locked; other party edits stay allowed. To correct a locked identifier, the passport is marked for deletion and a new one created.",
     inputSchema: {
       action: z
         .enum(["set", "remove"])

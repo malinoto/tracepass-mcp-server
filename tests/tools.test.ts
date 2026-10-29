@@ -405,6 +405,29 @@ describe("tracepass_passports — create + lifecycle actions", () => {
     expect(reason!.safeParse("sold").success).toBe(false);
   });
 
+  it("place_on_market POSTs to the place-on-market endpoint with no body", async () => {
+    const { tool, calls } = passportsTool();
+    await tool.handler({ action: "place_on_market", args: { id: "6650b2c3d4e5f6a7b8c9d0e1" } });
+    expect(calls[0]!.method).toBe("POST");
+    expect(calls[0]!.path).toBe("/api/v1/passports/6650b2c3d4e5f6a7b8c9d0e1/place-on-market");
+    expect(calls[0]!.body).toBeUndefined();
+  });
+
+  it("place_on_market without an id is refused with no HTTP call", async () => {
+    const { tool, calls } = passportsTool();
+    const r = await tool.handler({ action: "place_on_market", args: {} });
+    expect(r.isError).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("place_on_market is in the action enum and its description warns it is a legal act", () => {
+    const { tool } = passportsTool();
+    const action = tool.inputSchema.action as unknown as { safeParse: (v: unknown) => { success: boolean } };
+    expect(action.safeParse("place_on_market").success).toBe(true);
+    expect(tool.description).toMatch(/place_on_market[^\n]*confirm with the user first/);
+    expect(tool.description).toMatch(/place_on_market[^\n]*ASYNCHRONOUS/);
+  });
+
   it("compliance routes to a read of the compliance endpoint", async () => {
     const { tool, calls } = passportsTool();
     await tool.handler({ action: "compliance", args: { id: "x1" } });

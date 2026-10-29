@@ -114,10 +114,22 @@ export function apiResult(res: {
       return errorResult(
         `Not found — ${message ?? "no resource matches that id or serial."}`,
       );
-    case 409:
+    case 409: {
+      // Refusal codes (e.g. place-on-market's registry_not_ready) often carry no
+      // `message`; the code and any `findings[]` are what the agent must act on.
+      const findings = Array.isArray(body.findings)
+        ? body.findings.filter((f): f is string => typeof f === "string")
+        : [];
+      const detail =
+        message ??
+        (errorCode ? undefined : "this would collide with existing data (e.g. a duplicate GTIN or serial).");
       return errorResult(
-        `Conflict — ${message ?? "this would collide with existing data (e.g. a duplicate GTIN or serial)."}`,
+        [
+          `Conflict${errorCode ? ` (${errorCode})` : ""}${detail ? ` — ${detail}` : "."}`,
+          ...(findings.length > 0 ? ["Findings:", ...findings.map((f) => `- ${f}`)] : []),
+        ].join("\n"),
       );
+    }
     case 422:
       return errorResult(
         `Validation error — ${message ?? "the request payload was rejected. Check the tool arguments against the schema."}`,

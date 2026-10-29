@@ -75,6 +75,33 @@ describe("apiResult — status mapping", () => {
     expect(r.content[0]!.text).toMatch(/conflict/i);
   });
 
+  it("409 with a code and no message names the code, not a duplicate-data guess", () => {
+    const r = apiResult({ status: 409, ok: false, body: { error: "already_placed" } });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toContain("already_placed");
+    expect(r.content[0]!.text).not.toMatch(/duplicate GTIN/);
+  });
+
+  it("409 carries findings[] through to the agent", () => {
+    const r = apiResult({
+      status: 409,
+      ok: false,
+      body: { error: "registry_not_ready", findings: ['Required field "carbonFootprintTotal" has no value.'] },
+    });
+    expect(r.content[0]!.text).toContain("registry_not_ready");
+    expect(r.content[0]!.text).toContain('Required field "carbonFootprintTotal" has no value.');
+  });
+
+  it("409 with a message keeps the message and adds the code", () => {
+    const r = apiResult({
+      status: 409,
+      ok: false,
+      body: { error: "operator_locked", message: "Operator and facility identifiers are locked after Place on market." },
+    });
+    expect(r.content[0]!.text).toContain("operator_locked");
+    expect(r.content[0]!.text).toContain("locked after Place on market");
+  });
+
   it("429 → rate-limit error mentioning the UTC reset", () => {
     const r = apiResult({ status: 429, ok: false, body: {} });
     expect(r.isError).toBe(true);
