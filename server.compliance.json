@@ -3,7 +3,7 @@
   "name": "eu.tracepass/compliance",
   "title": "TracePass DPP Compliance Assistant",
   "description": "Answers EU Digital Product Passport questions: scope, required fields, registry and law changes.",
-  "version": "1.23.0",
+  "version": "1.23.1",
   "websiteUrl": "https://www.tracepass.eu",
   "icons": [
     {
