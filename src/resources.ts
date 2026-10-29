@@ -227,7 +227,7 @@ export function registerResources(
     {
       title: "DPP category schema",
       description:
-        "The full regulatory field schema for one DPP category — every required/optional field with its data type, access level, and (where known) the regulation article/annex that mandates it. For battery, required-ness varies by battery type: read `requiredBy` per field and `requiredFieldCountByCategory` rather than the flat `required` / `requiredFieldCount`, and note that portable and SLI batteries owe no passport at all. tracepass://template/{category} where category is battery, textile, electronics, construction, steel, detergents, paints-coatings, packaging, furniture, tyres, jewelry, toys, or fmcg.",
+        "The full regulatory field schema for one DPP category — every required/optional field with its data type, access level, and (where known) the regulation article/annex that mandates it. For battery, required-ness varies by battery type: read `requiredBy` per field and `requiredFieldCountByCategory` rather than the flat `required` / `requiredFieldCount`, and note that portable and SLI batteries owe no passport at all. A `conditional` field is owed only when a fact holds (a warranty offered, a BMS present, the battery in service); Annex XIII 4(d) use data is expected once in service and never blocks publishing. tracepass://template/{category} where category is battery, textile, electronics, construction, steel, detergents, paints-coatings, packaging, furniture, tyres, jewelry, toys, or fmcg.",
       mimeType: "application/json",
     },
     async (uri, variables) => {
