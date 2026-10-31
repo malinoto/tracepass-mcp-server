@@ -38,6 +38,8 @@ export interface CreateMcpServerConfig {
   baseUrl: string;
   /** The caller's tp_ API key — every v1 call is made as this key. */
   apiKey: string;
+  /** The end user's IP, forwarded to the platform (hosted only). */
+  forwardedFor?: string;
 }
 
 /**
@@ -60,6 +62,7 @@ export function createMcpServer(config: CreateMcpServerConfig): McpServer {
   const client = new TracePassClient({
     baseUrl: config.baseUrl,
     apiKey: config.apiKey,
+    forwardedFor: config.forwardedFor,
   });
 
   for (const tool of buildTools(client)) {

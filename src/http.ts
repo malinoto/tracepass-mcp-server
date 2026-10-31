@@ -51,6 +51,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { createMcpServer, MCP_SERVER_INFO } from "./server.js";
 import { createSupplierMcpServer, matchSupplierPath } from "./supplier-server.js";
 import { createComplianceMcpServer } from "./compliance-server.js";
+import { clientIpFromForwardedFor } from "./api-client.js";
 
 const PORT = Number(process.env.PORT) || 8080;
 const DEFAULT_BASE_URL = "https://app.tracepass.eu";
@@ -638,7 +639,12 @@ async function handleRequestAsync(req: IncomingMessage, res: ServerResponse): Pr
         ...summarizeRpc(sBodyStr, null),
         auth: token ? "supplier_token" : "none",
       });
-      const sServer = createSupplierMcpServer({ token, baseUrl: BASE_URL, publicBaseUrl: PUBLIC_AUTH_SERVER_URL });
+      const sServer = createSupplierMcpServer({
+        token,
+        baseUrl: BASE_URL,
+        publicBaseUrl: PUBLIC_AUTH_SERVER_URL,
+        forwardedFor: clientIpFromForwardedFor(req.headers["x-forwarded-for"]),
+      });
       const sTransport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       await sServer.connect(sTransport);
       // Release the per-request server if the client disconnects before the response completes.
@@ -699,7 +705,11 @@ async function handleRequestAsync(req: IncomingMessage, res: ServerResponse): Pr
         return;
       }
 
-      const cServer = createComplianceMcpServer({ apiKey: cBearerToken ?? "", baseUrl: BASE_URL });
+      const cServer = createComplianceMcpServer({
+        apiKey: cBearerToken ?? "",
+        baseUrl: BASE_URL,
+        forwardedFor: clientIpFromForwardedFor(req.headers["x-forwarded-for"]),
+      });
       const cTransport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       await cServer.connect(cTransport);
       req.once("close", () => { void cServer.close().catch(() => {}); });
@@ -778,7 +788,11 @@ async function handleRequestAsync(req: IncomingMessage, res: ServerResponse): Pr
     // required) this is "" — discovery (tools/list etc.) never calls the API,
     // and the api-client renders a readable 401 if a key-less tool call ever
     // slips through.
-    const server = createMcpServer({ apiKey: bearerToken ?? "", baseUrl: BASE_URL });
+    const server = createMcpServer({
+      apiKey: bearerToken ?? "",
+      baseUrl: BASE_URL,
+      forwardedFor: clientIpFromForwardedFor(req.headers["x-forwarded-for"]),
+    });
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined, // stateless
     });

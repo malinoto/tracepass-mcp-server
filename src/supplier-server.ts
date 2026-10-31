@@ -42,6 +42,8 @@ export interface CreateSupplierMcpServerConfig {
    *  Empty when the client connected without one: discovery still works, and
    *  every tool explains how to connect. */
   token: string;
+  /** The end user's IP, forwarded to the platform (hosted only). */
+  forwardedFor?: string;
 }
 
 /**
@@ -303,7 +305,11 @@ export function createSupplierMcpServer(config: CreateSupplierMcpServerConfig): 
       "Answers can be corrected until the requester reviews them; get_review_status shows the outcome.",
   });
   const hasToken = config.token.trim() !== "";
-  const client = new TracePassClient({ baseUrl: config.baseUrl, apiKey: config.token });
+  const client = new TracePassClient({
+    baseUrl: config.baseUrl,
+    apiKey: config.token,
+    forwardedFor: config.forwardedFor,
+  });
   const upload = hasToken ? { token: config.token, publicBaseUrl: config.publicBaseUrl ?? config.baseUrl } : undefined;
   for (const tool of buildSupplierTools(client, hasToken, upload)) {
     const cb = async (args: Record<string, unknown>) => {

@@ -21,9 +21,28 @@
  * AI agent must see and act on, not errors to swallow.
  */
 
+import { isIP } from "node:net";
+
 /** Value sent in the `X-Source` header on every request, so the TracePass
  *  request log can attribute v1 traffic to this client (vs n8n / raw api). */
 export const SOURCE_TAG = "mcp";
+
+/**
+ * The end user's IP from the inbound request's `X-Forwarded-For`, or
+ * undefined. Only the first entry counts, and only if it parses as an IP.
+ *
+ * Hosted, the MCP server reaches the platform over the internal docker
+ * network, so without this every MCP user arrives from the same address and
+ * shares one per-IP rate-limit bucket. Forwarding is safe there for the same
+ * reason the platform trusts Caddy: Caddy overwrites `X-Forwarded-For` with
+ * the TCP peer on the way into this server, and the platform is reachable
+ * only from inside the docker network.
+ */
+export function clientIpFromForwardedFor(value: string | string[] | undefined): string | undefined {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const first = raw?.split(",")[0]?.trim();
+  return first && isIP(first) !== 0 ? first : undefined;
+}
 
 export interface TracePassApiResponse {
   /** HTTP status code. */
@@ -44,6 +63,10 @@ export interface TracePassClientConfig {
    *  The compliance assistant sets this to "assistant" so the platform can
    *  attribute v1 traffic to the correct channel. */
   source?: string;
+  /** The end user's IP, sent as `X-Forwarded-For` (see
+   *  `clientIpFromForwardedFor`). Hosted only; the stdio package leaves it
+   *  unset. */
+  forwardedFor?: string;
 }
 
 /** Generate a random Idempotency-Key for a write request. */
@@ -57,11 +80,13 @@ export class TracePassClient {
   private readonly baseUrl: string;
   private readonly apiKey: string;
   private readonly source: string;
+  private readonly forwardedFor: string | undefined;
 
   constructor(config: TracePassClientConfig) {
     this.baseUrl = config.baseUrl.replace(/\/+$/, "");
     this.apiKey = config.apiKey;
     this.source = config.source ?? SOURCE_TAG;
+    this.forwardedFor = clientIpFromForwardedFor(config.forwardedFor);
   }
 
   /**
@@ -105,6 +130,7 @@ export class TracePassClient {
       // The compliance assistant overrides this to "assistant".
       "X-Source": this.source,
     };
+    if (this.forwardedFor) headers["X-Forwarded-For"] = this.forwardedFor;
     const init: RequestInit = { method, headers };
 
     if (body !== undefined && method !== "GET") {

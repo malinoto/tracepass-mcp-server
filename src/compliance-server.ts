@@ -50,6 +50,8 @@ export interface CreateComplianceMcpServerConfig {
   /** The caller's bearer token — a tp_ API key or an OAuth access token.
    *  Forwarded verbatim to the v1 API, which decides validity. */
   apiKey: string;
+  /** The end user's IP, forwarded to the platform (hosted only). */
+  forwardedFor?: string;
 }
 
 /** The public dashboard origin, for the passport link returned by create_draft_passport. */
@@ -718,6 +720,7 @@ export function createComplianceMcpServer(config: CreateComplianceMcpServerConfi
     baseUrl: config.baseUrl,
     apiKey: config.apiKey,
     source: COMPLIANCE_SOURCE,
+    forwardedFor: config.forwardedFor,
   });
 
   for (const tool of buildComplianceTools(client)) {
