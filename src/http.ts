@@ -22,15 +22,27 @@
  * This is the SAME server core (`createMcpServer`) the stdio
  * entrypoint uses — only the transport + the key source differ.
  *
+ * Only POST is accepted on MCP endpoints. GET and DELETE would cause the
+ * SDK's stateless transport to open an infinite SSE stream; without a
+ * session to close it the stream drains indefinitely and leaks memory.
+ *
  * Env:
- *   PORT                (optional) — listen port, default 8080
- *   TRACEPASS_BASE_URL  (optional) — the TracePass API base URL the
- *                       tools call, default https://app.tracepass.eu. In prod
- *                       this is the INTERNAL Docker address (platform:3000).
+ *   PORT                     (optional) — listen port, default 8080
+ *   TRACEPASS_BASE_URL        (optional) — the TracePass API base URL the
+ *                             tools call, default https://app.tracepass.eu. In
+ *                             prod this is the INTERNAL Docker address
+ *                             (platform:3000).
  *   TRACEPASS_AUTH_SERVER_URL (optional) — the PUBLIC authorization-server
- *                       origin advertised in OAuth discovery metadata, default
- *                       https://app.tracepass.eu. Set this when BASE_URL is an
- *                       internal address so clients get a reachable auth server.
+ *                             origin advertised in OAuth discovery metadata,
+ *                             default https://app.tracepass.eu. Set this when
+ *                             BASE_URL is an internal address so clients get a
+ *                             reachable auth server.
+ *   MCP_BODY_LIMIT_BYTES      (optional) — maximum request body size in bytes,
+ *                             default 1 048 576 (1 MB). Requests over the limit
+ *                             are rejected with 413 before reaching the SDK.
+ *   MCP_BATCH_LIMIT           (optional) — maximum JSON-RPC messages per batch
+ *                             request, default 10. Oversized batches are rejected
+ *                             with 400 batch_too_large.
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -51,6 +63,15 @@ const BASE_URL = process.env.TRACEPASS_BASE_URL?.trim() || DEFAULT_BASE_URL;
 // internal loopback. Defaults to the public app origin.
 const PUBLIC_AUTH_SERVER_URL =
   process.env.TRACEPASS_AUTH_SERVER_URL?.trim() || DEFAULT_BASE_URL;
+
+/** Maximum allowed request body size (bytes). Requests over this limit are
+ *  rejected with 413 before the body reaches the SDK or is parsed as JSON. */
+const BODY_LIMIT_BYTES = Number(process.env.MCP_BODY_LIMIT_BYTES) || 1_048_576; // 1 MB
+
+/** Maximum number of JSON-RPC messages in a single batch request. A batch
+ *  larger than this is rejected with 400 batch_too_large before the SDK sees
+ *  it. */
+const BATCH_LIMIT = Number(process.env.MCP_BATCH_LIMIT) || 10;
 
 /** The MCP endpoint path. `/mcp` is the conventional path. */
 const MCP_PATH = "/mcp";
@@ -285,6 +306,17 @@ export const COMPLIANCE_SERVER_CARD = {
 } as const;
 
 /**
+ * Thrown by readBody when the incoming request body exceeds BODY_LIMIT_BYTES.
+ * Caught in handleRequestAsync to send a 413 response and log nothing (the
+ * caller is responsible for the oversized data, not us).
+ */
+class BodyTooLargeError extends Error {
+  constructor() {
+    super("Request body exceeds the size limit");
+  }
+}
+
+/**
  * Extract the Bearer credential from the Authorization header. This is EITHER a
  * `tp_…` API key OR an OAuth 2.0 access token — we don't distinguish here. The
  * token is forwarded verbatim to the v1 API, whose unified auth gate branches on
@@ -297,13 +329,45 @@ function extractBearerToken(req: IncomingMessage): string | null {
   return m ? m[1]!.trim() : null;
 }
 
-/** Read a Node request body into a string. */
+/**
+ * Read the request body into a string, capping at BODY_LIMIT_BYTES.
+ * When the limit is exceeded we stop accumulating but keep draining (reading
+ * and discarding) so Node can flush the socket and the 413 response can be
+ * written. Calling req.destroy() immediately would close the socket before
+ * the response headers reach the client. BodyTooLargeError is thrown from the
+ * "end" handler, after all data has been consumed. The `requestTimeout` on the
+ * HTTP server caps how long we drain.
+ */
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-    req.on("error", reject);
+    let size = 0;
+    let tooLarge = false;
+    let settled = false;
+    req.on("data", (c: Buffer) => {
+      if (settled) return;
+      size += c.length;
+      if (tooLarge) return; // already over limit — drain but discard
+      if (size > BODY_LIMIT_BYTES) {
+        tooLarge = true;
+        return; // stop accumulating; drain the rest in subsequent "data" events
+      }
+      chunks.push(c);
+    });
+    req.on("end", () => {
+      if (settled) return;
+      settled = true;
+      if (tooLarge) {
+        reject(new BodyTooLargeError());
+      } else {
+        resolve(Buffer.concat(chunks).toString("utf8"));
+      }
+    });
+    req.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    });
   });
 }
 
@@ -404,7 +468,7 @@ const PUBLIC_METHODS: ReadonlySet<string> = new Set([
  * still establish the stream; the actual tools/call within it is gated.
  */
 function requestRequiresAuth(body: string | undefined): boolean {
-  if (!body) return false; // GET/SSE open or empty — gate the method calls, not the stream
+  if (!body) return false; // empty body — gate the method calls, not the stream
   let parsed: unknown;
   try {
     parsed = JSON.parse(body);
@@ -444,15 +508,49 @@ export async function credentialAccepted(bearerToken: string): Promise<boolean> 
   }
 }
 
-/** Write a Web `Response` back through a Node ServerResponse. */
+/**
+ * Write a Web `Response` back through a Node ServerResponse, streaming the
+ * body chunk-by-chunk. Streaming avoids buffering a potentially large or
+ * infinite response body (e.g. an SSE stream) in memory, and sends the HTTP
+ * status line as soon as the first chunk arrives. Cancels the body reader if
+ * the client disconnects mid-response.
+ */
 async function writeWebResponse(
   webRes: Response,
   res: ServerResponse,
+  req: IncomingMessage,
 ): Promise<void> {
   res.statusCode = webRes.status;
   webRes.headers.forEach((value, key) => res.setHeader(key, value));
-  const text = await webRes.text();
-  res.end(text);
+
+  if (!webRes.body) {
+    res.end();
+    return;
+  }
+
+  const reader = webRes.body.getReader();
+  const onClose = (): void => { void reader.cancel().catch(() => {}); };
+  req.once("close", onClose);
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      // Respect backpressure: wait for drain before reading the next chunk.
+      if (!res.write(value)) {
+        await new Promise<void>((r, j) => {
+          res.once("drain", r);
+          res.once("error", j);
+        });
+      }
+    }
+    res.end();
+  } catch {
+    // Client disconnected or write error — destroy the socket cleanly.
+    res.destroy();
+  } finally {
+    req.removeListener("close", onClose);
+  }
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -461,188 +559,270 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
-const httpServer = createServer((req, res) => {
-  void (async () => {
-    try {
-      const url = req.url ?? "/";
+/**
+ * Exported request handler so tests can mount it on a port-0 server without
+ * triggering the module-level listen() call. Production entry point is the
+ * httpServer.listen() call below, guarded by the VITEST env check.
+ */
+export function requestHandler(req: IncomingMessage, res: ServerResponse): void {
+  void handleRequestAsync(req, res);
+}
 
-      // Health check — for the Hetzner container's liveness probe.
-      if (url === "/health" || url === "/healthz") {
-        sendJson(res, 200, { status: "ok", service: "tracepass-mcp" });
-        return;
-      }
+async function handleRequestAsync(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  try {
+    const url = req.url ?? "/";
+    const method = req.method ?? "GET";
 
-      // MCP server card discovery (SEP-1649). Public + unauthenticated —
-      // discovery precedes auth. NB: the edge (Caddy) catch-all redirect
-      // for ai.tracepass.eu must EXCLUDE this path, or the card never
-      // reaches this handler (see tracepass-ops Caddyfile).
-      if (url.split("?")[0] === SERVER_CARD_PATH) {
-        sendJson(res, 200, SERVER_CARD);
-        return;
-      }
-
-      // RFC 9728 Protected Resource Metadata. Public + unauthenticated —
-      // an OAuth-capable client fetches this (pointed here by the 401
-      // WWW-Authenticate `resource_metadata` param) to discover the
-      // authorization server. NB: the edge catch-all redirect must EXCLUDE
-      // this path too (same as the card / glama paths).
-      if (url.split("?")[0] === PROTECTED_RESOURCE_METADATA_PATH) {
-        sendJson(res, 200, PROTECTED_RESOURCE_METADATA);
-        return;
-      }
-
-      // Glama connector ownership claim. Public + unauthenticated. NB:
-      // the edge (Caddy) catch-all redirect for ai.tracepass.eu must
-      // EXCLUDE this path, or the claim file never reaches this handler
-      // (see tracepass-ops Caddyfile) — same requirement as the card above.
-      if (url.split("?")[0] === GLAMA_CLAIM_PATH) {
-        sendJson(res, 200, GLAMA_CLAIM);
-        return;
-      }
-
-      // The supplier endpoint. Deliberately NO auth gate and NO
-      // WWW-Authenticate challenge here: a supplier has no account, so an
-      // OAuth prompt would be a dead end. An invalid or missing token reaches
-      // the tools, which explain it in plain words (supplier-server.ts).
-      const supplier = matchSupplierPath(url.split("?")[0]!);
-      if (supplier) {
-        const method = req.method ?? "GET";
-        const bodyStr = method !== "GET" && method !== "HEAD" ? await readBody(req) : undefined;
-        const token = supplier.pathToken || extractBearerToken(req) || "";
-        logUsageOnFinish(req, res, "supplier", {
-          ...summarizeRpc(bodyStr, null),
-          auth: token ? "supplier_token" : "none",
-        });
-        const server = createSupplierMcpServer({ token, baseUrl: BASE_URL, publicBaseUrl: PUBLIC_AUTH_SERVER_URL });
-        const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-        await server.connect(transport);
-        const webRes = await transport.handleRequest(toWebRequest(req, bodyStr));
-        await writeWebResponse(webRes, res);
-        await server.close();
-        return;
-      }
-
-      // Compliance server card. Public + unauthenticated — discovery precedes auth.
-      // Per-path server cards: the main /mcp card is at SERVER_CARD_PATH; the
-      // compliance card is at COMPLIANCE_SERVER_CARD_PATH. Not mirrored on the
-      // marketing site (compliance endpoint is in-house only).
-      if (url.split("?")[0] === COMPLIANCE_SERVER_CARD_PATH) {
-        sendJson(res, 200, COMPLIANCE_SERVER_CARD);
-        return;
-      }
-
-      // RFC 9728 Protected Resource Metadata for /compliance/mcp. Public +
-      // unauthenticated. The `resource` is exactly `https://ai.tracepass.eu/compliance/mcp`.
-      if (url.split("?")[0] === COMPLIANCE_PROTECTED_RESOURCE_METADATA_PATH) {
-        sendJson(res, 200, COMPLIANCE_PROTECTED_RESOURCE_METADATA);
-        return;
-      }
-
-      // Compliance MCP path. Auth-gated (OAuth or API key), like /mcp, but the
-      // WWW-Authenticate challenge points to the per-path resource metadata so a
-      // client connecting to /compliance/mcp discovers the correct OAuth resource.
-      if (url.split("?")[0] === COMPLIANCE_MCP_PATH) {
-        const cMethod = req.method ?? "GET";
-        const cBodyStr =
-          cMethod !== "GET" && cMethod !== "HEAD" ? await readBody(req) : undefined;
-        const cBearerToken = extractBearerToken(req);
-        const cNeedsAuth = requestRequiresAuth(cBodyStr);
-        logUsageOnFinish(req, res, "compliance", summarizeRpc(cBodyStr, cBearerToken));
-
-        if (cNeedsAuth && !cBearerToken) {
-          sendComplianceAuthChallenge(res, "missing");
-          return;
-        }
-        if (cNeedsAuth && cBearerToken && !(await credentialAccepted(cBearerToken))) {
-          sendComplianceAuthChallenge(res, "invalid");
-          return;
-        }
-
-        const cServer = createComplianceMcpServer({ apiKey: cBearerToken ?? "", baseUrl: BASE_URL });
-        const cTransport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-        await cServer.connect(cTransport);
-        const cWebRes = await cTransport.handleRequest(toWebRequest(req, cBodyStr));
-        await writeWebResponse(cWebRes, res);
-        await cServer.close();
-        return;
-      }
-
-      // Only the main MCP path remains.
-      if (url.split("?")[0] !== MCP_PATH) {
-        sendJson(res, 404, {
-          error: "not_found",
-          message: `This service serves MCP at ${MCP_PATH} and ${COMPLIANCE_MCP_PATH}.`,
-        });
-        return;
-      }
-
-      // Read the body once (the stream is single-use); we both inspect it for
-      // the JSON-RPC method (to decide auth) and hand the buffered copy to the
-      // transport below.
-      const method = req.method ?? "GET";
-      const bodyStr =
-        method !== "GET" && method !== "HEAD" ? await readBody(req) : undefined;
-
-      // Method-aware auth. The MCP HANDSHAKE + DISCOVERY (initialize,
-      // tools/list, prompts/list, resources/list, ping, …) are PUBLIC — no
-      // credential needed — so catalogs/scanners (mcppedia, Glama) and clients
-      // can enumerate capabilities before the user supplies a token. Only the
-      // methods whose handlers actually hit the v1 API (tools/call,
-      // resources/read, prompts/get) require a credential. See PUBLIC_METHODS.
-      const bearerToken = extractBearerToken(req);
-      const needsAuth = requestRequiresAuth(bodyStr);
-      logUsageOnFinish(req, res, "mcp", summarizeRpc(bodyStr, bearerToken));
-
-      // A MISSING credential on an auth-required method → real 401 +
-      // WWW-Authenticate so a discovery-capable client learns the scheme + the
-      // OAuth resource_metadata pointer.
-      if (needsAuth && !bearerToken) {
-        sendAuthChallenge(res, "missing");
-        return;
-      }
-
-      // A PRESENT-but-rejected credential on an auth-required method gets a real
-      // 401 + challenge — so an OAuth client knows to refresh / re-authenticate
-      // rather than only seeing an isError tool result. (Previously probed on
-      // `initialize`; initialize is now public, so we validate on the first
-      // auth-required method instead.)
-      if (needsAuth && bearerToken && !(await credentialAccepted(bearerToken))) {
-        sendAuthChallenge(res, "invalid");
-        return;
-      }
-
-      // Fresh, stateless server + transport per request, bound to this
-      // request's credential. The `apiKey` config field carries whatever Bearer
-      // token arrived (tp_ key OR OAuth access token) — it's forwarded verbatim;
-      // the v1 API's unified gate validates it. For a PUBLIC method (no token
-      // required) this is "" — discovery (tools/list etc.) never calls the API,
-      // and the api-client renders a readable 401 if a key-less tool call ever
-      // slips through.
-      const server = createMcpServer({ apiKey: bearerToken ?? "", baseUrl: BASE_URL });
-      const transport = new WebStandardStreamableHTTPServerTransport({
-        sessionIdGenerator: undefined, // stateless
-      });
-      await server.connect(transport);
-
-      const webReq = toWebRequest(req, bodyStr);
-      const webRes = await transport.handleRequest(webReq);
-      await writeWebResponse(webRes, res);
-
-      // Stateless — release the per-request server once answered.
-      await server.close();
-    } catch (err) {
-      // Never leak a stack trace; never leave the socket hanging.
-      if (!res.headersSent) {
-        sendJson(res, 500, {
-          error: "internal_error",
-          message: err instanceof Error ? err.message : "Unexpected error",
-        });
-      } else {
-        res.end();
-      }
+    // Health check — for the Hetzner container's liveness probe.
+    if (url === "/health" || url === "/healthz") {
+      sendJson(res, 200, { status: "ok", service: "tracepass-mcp" });
+      return;
     }
-  })();
-});
+
+    // MCP server card discovery (SEP-1649). Public + unauthenticated —
+    // discovery precedes auth. NB: the edge (Caddy) catch-all redirect
+    // for ai.tracepass.eu must EXCLUDE this path, or the card never
+    // reaches this handler (see tracepass-ops Caddyfile).
+    if (url.split("?")[0] === SERVER_CARD_PATH) {
+      sendJson(res, 200, SERVER_CARD);
+      return;
+    }
+
+    // RFC 9728 Protected Resource Metadata. Public + unauthenticated —
+    // an OAuth-capable client fetches this (pointed here by the 401
+    // WWW-Authenticate `resource_metadata` param) to discover the
+    // authorization server. NB: the edge catch-all redirect must EXCLUDE
+    // this path too (same as the card / glama paths).
+    if (url.split("?")[0] === PROTECTED_RESOURCE_METADATA_PATH) {
+      sendJson(res, 200, PROTECTED_RESOURCE_METADATA);
+      return;
+    }
+
+    // Glama connector ownership claim. Public + unauthenticated. NB:
+    // the edge (Caddy) catch-all redirect for ai.tracepass.eu must
+    // EXCLUDE this path, or the claim file never reaches this handler
+    // (see tracepass-ops Caddyfile) — same requirement as the card above.
+    if (url.split("?")[0] === GLAMA_CLAIM_PATH) {
+      sendJson(res, 200, GLAMA_CLAIM);
+      return;
+    }
+
+    // The supplier endpoint. Deliberately NO auth gate and NO
+    // WWW-Authenticate challenge here: a supplier has no account, so an
+    // OAuth prompt would be a dead end for someone with no TracePass account.
+    // An invalid or missing token reaches the tools, which explain it in plain
+    // words (supplier-server.ts).
+    const supplier = matchSupplierPath(url.split("?")[0]!);
+    if (supplier) {
+      // Only POST: stateless — no SSE session to resume; GET or DELETE would
+      // open an infinite SSE stream that writeWebResponse streams indefinitely.
+      if (method !== "POST") {
+        res.setHeader("Allow", "POST");
+        sendJson(res, 405, { error: "method_not_allowed", message: "This endpoint accepts POST only." });
+        return;
+      }
+      const sBodyStr = await readBody(req);
+      // Batch cap: reject oversized batches before the SDK processes them.
+      try {
+        const sParsed = JSON.parse(sBodyStr) as unknown;
+        if (Array.isArray(sParsed) && sParsed.length > BATCH_LIMIT) {
+          sendJson(res, 400, {
+            error: "batch_too_large",
+            message: `JSON-RPC batch exceeds the limit of ${BATCH_LIMIT} requests per call.`,
+          });
+          return;
+        }
+      } catch { /* unparseable — let the transport produce the JSON-RPC error */ }
+      const token = supplier.pathToken || extractBearerToken(req) || "";
+      logUsageOnFinish(req, res, "supplier", {
+        ...summarizeRpc(sBodyStr, null),
+        auth: token ? "supplier_token" : "none",
+      });
+      const sServer = createSupplierMcpServer({ token, baseUrl: BASE_URL, publicBaseUrl: PUBLIC_AUTH_SERVER_URL });
+      const sTransport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+      await sServer.connect(sTransport);
+      // Release the per-request server if the client disconnects before the response completes.
+      req.once("close", () => { void sServer.close().catch(() => {}); });
+      const sWebRes = await sTransport.handleRequest(toWebRequest(req, sBodyStr));
+      await writeWebResponse(sWebRes, res, req);
+      await sServer.close().catch(() => {});
+      return;
+    }
+
+    // Compliance server card. Public + unauthenticated — discovery precedes auth.
+    // Per-path server cards: the main /mcp card is at SERVER_CARD_PATH; the
+    // compliance card is at COMPLIANCE_SERVER_CARD_PATH. Not mirrored on the
+    // marketing site (compliance endpoint is in-house only).
+    if (url.split("?")[0] === COMPLIANCE_SERVER_CARD_PATH) {
+      sendJson(res, 200, COMPLIANCE_SERVER_CARD);
+      return;
+    }
+
+    // RFC 9728 Protected Resource Metadata for /compliance/mcp. Public +
+    // unauthenticated. The `resource` is exactly `https://ai.tracepass.eu/compliance/mcp`.
+    if (url.split("?")[0] === COMPLIANCE_PROTECTED_RESOURCE_METADATA_PATH) {
+      sendJson(res, 200, COMPLIANCE_PROTECTED_RESOURCE_METADATA);
+      return;
+    }
+
+    // Compliance MCP path. Auth-gated (OAuth or API key), like /mcp, but the
+    // WWW-Authenticate challenge points to the per-path resource metadata so a
+    // client connecting to /compliance/mcp discovers the correct OAuth resource.
+    if (url.split("?")[0] === COMPLIANCE_MCP_PATH) {
+      // Only POST: same reason as the supplier and main /mcp paths.
+      if (method !== "POST") {
+        res.setHeader("Allow", "POST");
+        sendJson(res, 405, { error: "method_not_allowed", message: "This endpoint accepts POST only." });
+        return;
+      }
+      const cBodyStr = await readBody(req);
+      try {
+        const cParsed = JSON.parse(cBodyStr) as unknown;
+        if (Array.isArray(cParsed) && cParsed.length > BATCH_LIMIT) {
+          sendJson(res, 400, {
+            error: "batch_too_large",
+            message: `JSON-RPC batch exceeds the limit of ${BATCH_LIMIT} requests per call.`,
+          });
+          return;
+        }
+      } catch { /* unparseable */ }
+      const cBearerToken = extractBearerToken(req);
+      const cNeedsAuth = requestRequiresAuth(cBodyStr);
+      logUsageOnFinish(req, res, "compliance", summarizeRpc(cBodyStr, cBearerToken));
+
+      if (cNeedsAuth && !cBearerToken) {
+        sendComplianceAuthChallenge(res, "missing");
+        return;
+      }
+      if (cNeedsAuth && cBearerToken && !(await credentialAccepted(cBearerToken))) {
+        sendComplianceAuthChallenge(res, "invalid");
+        return;
+      }
+
+      const cServer = createComplianceMcpServer({ apiKey: cBearerToken ?? "", baseUrl: BASE_URL });
+      const cTransport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+      await cServer.connect(cTransport);
+      req.once("close", () => { void cServer.close().catch(() => {}); });
+      const cWebRes = await cTransport.handleRequest(toWebRequest(req, cBodyStr));
+      await writeWebResponse(cWebRes, res, req);
+      await cServer.close().catch(() => {});
+      return;
+    }
+
+    // Only the main MCP path remains.
+    if (url.split("?")[0] !== MCP_PATH) {
+      sendJson(res, 404, {
+        error: "not_found",
+        message: `This service serves MCP at ${MCP_PATH} and ${COMPLIANCE_MCP_PATH}.`,
+      });
+      return;
+    }
+
+    // Only POST: stateless — no SSE session to resume; GET or DELETE would
+    // open an infinite SSE stream that writeWebResponse streams indefinitely.
+    if (method !== "POST") {
+      res.setHeader("Allow", "POST");
+      sendJson(res, 405, { error: "method_not_allowed", message: "This endpoint accepts POST only." });
+      return;
+    }
+
+    // Read the body once (the stream is single-use); we both inspect it for
+    // the JSON-RPC method (to decide auth) and hand the buffered copy to the
+    // transport below.
+    const bodyStr = await readBody(req);
+
+    // Batch cap: reject oversized batches before the SDK processes them.
+    try {
+      const parsed = JSON.parse(bodyStr) as unknown;
+      if (Array.isArray(parsed) && parsed.length > BATCH_LIMIT) {
+        sendJson(res, 400, {
+          error: "batch_too_large",
+          message: `JSON-RPC batch exceeds the limit of ${BATCH_LIMIT} requests per call.`,
+        });
+        return;
+      }
+    } catch { /* unparseable — let the transport produce the JSON-RPC error */ }
+
+    // Method-aware auth. The MCP HANDSHAKE + DISCOVERY (initialize,
+    // tools/list, prompts/list, resources/list, ping, …) are PUBLIC — no
+    // credential needed — so catalogs/scanners (mcppedia, Glama) and clients
+    // can enumerate capabilities before the user supplies a token. Only the
+    // methods whose handlers actually hit the v1 API (tools/call,
+    // resources/read, prompts/get) require a credential. See PUBLIC_METHODS.
+    const bearerToken = extractBearerToken(req);
+    const needsAuth = requestRequiresAuth(bodyStr);
+    logUsageOnFinish(req, res, "mcp", summarizeRpc(bodyStr, bearerToken));
+
+    // A MISSING credential on an auth-required method → real 401 +
+    // WWW-Authenticate so a discovery-capable client learns the scheme + the
+    // OAuth resource_metadata pointer.
+    if (needsAuth && !bearerToken) {
+      sendAuthChallenge(res, "missing");
+      return;
+    }
+
+    // A PRESENT-but-rejected credential on an auth-required method gets a real
+    // 401 + challenge — so an OAuth client knows to refresh / re-authenticate
+    // rather than only seeing an isError tool result. (Previously probed on
+    // `initialize`; initialize is now public, so we validate on the first
+    // auth-required method instead.)
+    if (needsAuth && bearerToken && !(await credentialAccepted(bearerToken))) {
+      sendAuthChallenge(res, "invalid");
+      return;
+    }
+
+    // Fresh, stateless server + transport per request, bound to this
+    // request's credential. The `apiKey` config field carries whatever Bearer
+    // token arrived (tp_ key OR OAuth access token) — it's forwarded verbatim;
+    // the v1 API's unified gate validates it. For a PUBLIC method (no token
+    // required) this is "" — discovery (tools/list etc.) never calls the API,
+    // and the api-client renders a readable 401 if a key-less tool call ever
+    // slips through.
+    const server = createMcpServer({ apiKey: bearerToken ?? "", baseUrl: BASE_URL });
+    const transport = new WebStandardStreamableHTTPServerTransport({
+      sessionIdGenerator: undefined, // stateless
+    });
+    await server.connect(transport);
+
+    // Release the per-request server if the client disconnects before the
+    // response completes.
+    req.once("close", () => { void server.close().catch(() => {}); });
+
+    const webReq = toWebRequest(req, bodyStr);
+    const webRes = await transport.handleRequest(webReq);
+    await writeWebResponse(webRes, res, req);
+
+    // Stateless — release the per-request server once answered.
+    await server.close().catch(() => {});
+
+  } catch (err) {
+    // Body too large: client sent more than BODY_LIMIT_BYTES. Send 413 and
+    // don't log (the client is responsible for the oversized payload).
+    if (err instanceof BodyTooLargeError) {
+      if (!res.headersSent) {
+        sendJson(res, 413, { error: "request_too_large", message: "Request body exceeds the maximum allowed size." });
+      } else {
+        res.destroy();
+      }
+      return;
+    }
+    // Unexpected error: log with a random reference id and return a generic
+    // message so internal details (paths, internal URLs, stack traces) never
+    // leave the server.
+    const eid = Math.random().toString(36).slice(2, 10);
+    process.stderr.write(
+      `[mcp:${eid}] ${err instanceof Error ? (err.stack ?? err.message) : String(err)}\n`,
+    );
+    if (!res.headersSent) {
+      sendJson(res, 500, {
+        error: "internal_error",
+        message: `An unexpected error occurred (ref: ${eid}).`,
+      });
+    } else {
+      res.end();
+    }
+  }
+}
 
 /**
  * Write one `mcp_usage` line when the response finishes, whatever path answered
@@ -669,16 +849,28 @@ function logUsageOnFinish(
   });
 }
 
-httpServer.listen(PORT, () => {
-  process.stdout.write(
-    `tracepass-mcp-server listening on :${PORT}${MCP_PATH} ` +
-      `(TracePass API: ${BASE_URL})\n`,
-  );
-});
+const httpServer = createServer(
+  // headersTimeout: abort connections that are slow to deliver request headers
+  // (slow-loris header attacks). requestTimeout: abort connections that are slow
+  // to deliver the request body. Both in milliseconds.
+  { headersTimeout: 10_000, requestTimeout: 30_000 },
+  requestHandler,
+);
 
-// Graceful shutdown so a container stop / redeploy drains cleanly.
-for (const signal of ["SIGTERM", "SIGINT"] as const) {
-  process.on(signal, () => {
-    httpServer.close(() => process.exit(0));
+// Skip starting the listener when imported by the Vitest test runner — prevents
+// EADDRINUSE conflicts when multiple test workers import this module.
+if (!process.env.VITEST) {
+  httpServer.listen(PORT, () => {
+    process.stdout.write(
+      `tracepass-mcp-server listening on :${PORT}${MCP_PATH} ` +
+        `(TracePass API: ${BASE_URL})\n`,
+    );
   });
+
+  // Graceful shutdown so a container stop / redeploy drains cleanly.
+  for (const signal of ["SIGTERM", "SIGINT"] as const) {
+    process.on(signal, () => {
+      httpServer.close(() => process.exit(0));
+    });
+  }
 }

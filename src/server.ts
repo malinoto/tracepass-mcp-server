@@ -14,7 +14,7 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { TracePassClient } from "./api-client.js";
-import { buildTools } from "./tools.js";
+import { buildTools, SegError } from "./tools.js";
 import { registerResources } from "./resources.js";
 import { registerPrompts } from "./prompts.js";
 import { errorResult } from "./result.js";
@@ -73,9 +73,19 @@ export function createMcpServer(config: CreateMcpServerConfig): McpServer {
       try {
         return await tool.handler(args);
       } catch (err) {
-        return errorResult(
-          `Tool "${tool.name}" failed: ${err instanceof Error ? err.message : String(err)}`,
+        // SegError has a safe, user-facing message (path-segment rejection) —
+        // surface it directly so the caller knows which argument to fix.
+        if (err instanceof SegError) {
+          return errorResult(err.message);
+        }
+        // All other errors may contain internal details (paths, URLs, stack
+        // traces). Log them server-side with a random ref id and return only
+        // the generic message to the caller.
+        const eid = Math.random().toString(36).slice(2, 10);
+        process.stderr.write(
+          `[tool:${tool.name}:${eid}] ${err instanceof Error ? (err.stack ?? err.message) : String(err)}\n`,
         );
+        return errorResult(`Tool "${tool.name}" failed unexpectedly (ref: ${eid}).`);
       }
     };
     server.registerTool(

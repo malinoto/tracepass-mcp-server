@@ -1240,3 +1240,76 @@ describe("tracepass_scope — scope-services actions", () => {
     expect(r.content[0]!.text).toMatch(/Unknown action/);
   });
 });
+
+// ── SEC-08: path traversal guard ─────────────────────────────────────────────
+describe("seg() — path-traversal guard", () => {
+  /**
+   * A tool handler calls seg() immediately before making the v1 API fetch.
+   * Passing "." or ".." would normalise the URL to a different path
+   * (e.g. /api/v1/passports/.. → /api/v1/), so seg() must reject them.
+   *
+   * Proven-red: with the original `const seg = (s) => encodeURIComponent(s)`
+   * no error is thrown — the test's `rejects.toThrow()` assertion fails and
+   * `calls` would have a hit (path traversal succeeded). After the fix the
+   * assertion passes and `calls` remains empty.
+   */
+
+  it('tracepass_products get: id=".." throws SegError before any API call', async () => {
+    const { client, calls } = stubClient();
+    const tools = buildTools(client);
+    const tool = tools.find((t) => t.name === "tracepass_products")!;
+    await expect(
+      tool.handler({ action: "get", args: { id: ".." } }),
+    ).rejects.toThrow(/Invalid path segment/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('tracepass_products get: id="." throws SegError before any API call', async () => {
+    const { client, calls } = stubClient();
+    const tools = buildTools(client);
+    const tool = tools.find((t) => t.name === "tracepass_products")!;
+    await expect(
+      tool.handler({ action: "get", args: { id: "." } }),
+    ).rejects.toThrow(/Invalid path segment/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('tracepass_passports get: id=".." throws SegError before any API call', async () => {
+    const { client, calls } = stubClient();
+    const tools = buildTools(client);
+    const tool = tools.find((t) => t.name === "tracepass_passports")!;
+    await expect(
+      tool.handler({ action: "get", args: { id: ".." } }),
+    ).rejects.toThrow(/Invalid path segment/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('tracepass_passport_fields update: fieldKey=".." throws SegError before any API call', async () => {
+    const { client, calls } = stubClient();
+    const tools = buildTools(client);
+    const tool = tools.find((t) => t.name === "tracepass_passport_fields")!;
+    await expect(
+      tool.handler({ action: "update", args: { id: "abc123", fieldKey: "..", value: "x" } }),
+    ).rejects.toThrow(/Invalid path segment/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('tracepass_templates get: category=".." throws SegError before any API call', async () => {
+    const { client, calls } = stubClient();
+    const tools = buildTools(client);
+    const tool = tools.find((t) => t.name === "tracepass_templates")!;
+    await expect(
+      tool.handler({ action: "get", args: { category: ".." } }),
+    ).rejects.toThrow(/Invalid path segment/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("a normal id with special chars is still URL-encoded correctly", async () => {
+    const { client, calls } = stubClient();
+    const tools = buildTools(client);
+    const tool = tools.find((t) => t.name === "tracepass_products")!;
+    // "abc/def" — the slash must be percent-encoded, not traversal
+    await tool.handler({ action: "get", args: { id: "abc/def" } });
+    expect(calls[0]!.path).toBe("/api/v1/products/abc%2Fdef");
+  });
+});

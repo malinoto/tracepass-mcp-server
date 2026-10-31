@@ -93,9 +93,17 @@ OAuth consent step, so it's API-key only, via the `TRACEPASS_API_KEY` env:
 }
 ```
 
-Optional env var: `TRACEPASS_BASE_URL` (defaults to
-`https://app.tracepass.eu`) — point the tools at a different
-TracePass deployment.
+Optional env vars:
+
+| Var | Default | Purpose |
+|---|---|---|
+| `TRACEPASS_BASE_URL` | `https://app.tracepass.eu` | Override the TracePass API base URL (e.g. point at a local stack). |
+| `TRACEPASS_AUTH_SERVER_URL` | `https://app.tracepass.eu` | Public OAuth authorization-server origin advertised in discovery metadata. Set this when `TRACEPASS_BASE_URL` is an internal address. |
+| `MCP_BODY_LIMIT_BYTES` | `1048576` (1 MB) | Maximum request body size. Requests over the limit are rejected with 413 before reaching the SDK. |
+| `MCP_BATCH_LIMIT` | `10` | Maximum JSON-RPC messages in a single batch request. Oversized batches are rejected with 400 `batch_too_large`. |
+| `PORT` | `8080` | Listen port for the hosted HTTP service. |
+
+The hosted endpoint accepts **POST only** on `/mcp`, `/compliance/mcp`, and the supplier paths. GET and DELETE are rejected with 405 to prevent the SDK's stateless transport from opening an unbounded SSE stream.
 
 ## Tools
 

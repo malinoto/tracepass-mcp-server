@@ -57,8 +57,34 @@ export interface McpToolDefinition {
   handler: (args: Record<string, unknown>) => Promise<ToolResult>;
 }
 
-/** Encode a path segment (serials may contain spaces / slashes). */
-const seg = (s: string) => encodeURIComponent(s);
+/**
+ * Thrown when a value passed to seg() is rejected as a path segment. Kept as a
+ * named, exported class so server.ts can surface the message directly rather than
+ * hiding it behind a generic "Tool failed unexpectedly" wrapper.
+ */
+export class SegError extends Error {
+  constructor(msg: string) {
+    super(msg);
+    this.name = "SegError";
+  }
+}
+
+/**
+ * Encode a path segment for use in a v1 URL. Rejects empty strings, ".", and
+ * ".." — all three are valid URI characters that encodeURIComponent leaves
+ * intact, but all three cause URL normalisation to traverse to a different path
+ * (e.g. /api/v1/products/.. normalises to /api/v1/). The Zod schemas already
+ * enforce min(1), so the empty check is defence-in-depth; "." and ".." are the
+ * real risk.
+ */
+function seg(s: string): string {
+  if (s === "" || s === "." || s === "..") {
+    throw new SegError(
+      `Invalid path segment ${JSON.stringify(s)} — must not be ".", ".." or empty.`,
+    );
+  }
+  return encodeURIComponent(s);
+}
 
 /**
  * Output schema shared by every tool. The tools pass the v1 API JSON straight
