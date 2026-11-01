@@ -55,8 +55,9 @@ export function createMcpServer(config: CreateMcpServerConfig): McpServer {
       "is published in TracePass. Writes count against the daily API " +
       "budget, so never create passports in bulk without the user's " +
       "explicit consent. " +
-      "The archive action of tracepass_passports is irreversible; prefer " +
-      "its suspend action when a change might need undoing.",
+      "Irreversible actions (archive, suspend, place_on_market) are in " +
+      "tracepass_passport_lifecycle — always confirm with the user before " +
+      "calling them; prefer suspend when a change might need undoing.",
   });
 
   const client = new TracePassClient({

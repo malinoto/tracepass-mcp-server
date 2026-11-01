@@ -3,7 +3,7 @@
  *
  * The v1 surface has ~23 endpoints. Exposing 23 flat MCP tools would
  * swamp the model's tool list and slow tool selection. Instead the
- * surface is grouped into SIX resource tools, each taking:
+ * surface is grouped into eight resource tools, each taking:
  *   - `action` — a required enum naming the operation;
  *   - `args`   — an object whose required shape DEPENDS on `action`.
  *
@@ -583,7 +583,7 @@ const SCHEMAS = {
 } as const;
 
 /**
- * Build the 5 grouped tools, bound to a TracePass API client.
+ * Build the 8 grouped tools, bound to a TracePass API client.
  */
 export function buildTools(client: TracePassClient): McpToolDefinition[] {
   // ─────────────────────────── products ────────────────────────
@@ -597,12 +597,12 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "- create — args: { name, model, category, description? }. `category` is one of: battery, textile, electronics, construction, steel, detergents, paints-coatings, packaging, furniture, tyres, jewelry, toys, fmcg.\n" +
       "- update — args: { id, name?, model?, description? }; pass at least one field to change.\n" +
       "- create_batch — args: { products: [ { name, model, category, description? }, … ] }, up to 100. Partial-success: the response carries a per-item status, so some items can be created while others error. The whole batch consumes N writes upfront; if that would exceed the daily cap NOTHING is created (429).\n" +
-      "- archive — args: { id }. Soft-archive a product. Blocked with 409 while any non-archived passport still references it — archive those passports first. This is reversible and is NOT deletion.",
+      "Archive is in tracepass_passport_lifecycle.",
     inputSchema: {
       action: z
-        .enum(["list", "get", "create", "create_batch", "update", "archive"])
+        .enum(["list", "get", "create", "create_batch", "update"])
         .describe(
-          "Which product operation to run: list | get | create | create_batch | update | archive.",
+          "Which product operation to run: list | get | create | create_batch | update. (archive is in tracepass_passport_lifecycle.)",
         ),
       args: z
         .object({
@@ -657,12 +657,12 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           const { id, ...patch } = p;
           return apiResult(await client.patch(`/api/v1/products/${seg(id)}`, patch));
         }
-        case "archive": {
-          const p = parseArgs(SCHEMAS.productArchive, a.args, "tracepass_products", action);
-          if (isErr(p)) return p;
-          return apiResult(await client.post(`/api/v1/products/${seg(p.id)}/archive`));
-        }
         default:
+          if (action === "archive") {
+            return errorResult(
+              `Unknown action "archive" for tracepass_products. Irreversible actions moved to tracepass_passport_lifecycle in 1.24.0.`,
+            );
+          }
           return errorResult(`Unknown action "${action}" for tracepass_products.`);
       }
     },
@@ -673,8 +673,9 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     name: "tracepass_passports",
     title: "TracePass passports",
     description:
-      "Manage Digital Product Passports — create, read, and run lifecycle actions.\n\n" +
-      "IMPORTANT: `create` makes a DRAFT passport. A draft takes no plan DPP slot and is never billed; the slot, and any per-DPP overage past the plan cap, is taken when the passport is published, which happens in the TracePass dashboard, not through this tool. Each create counts against the daily write budget. `archive` is IRREVERSIBLE (the public QR permanently 404s); prefer `suspend` when a change might be undone.\n\n" +
+      "Manage Digital Product Passports — create, read, and run compliance checks.\n\n" +
+      "IMPORTANT: `create` makes a DRAFT passport. A draft takes no plan DPP slot and is never billed; the slot, and any per-DPP overage past the plan cap, is taken when the passport is published, which happens in the TracePass dashboard, not through this tool. Each create counts against the daily write budget.\n\n" +
+      "Archive, suspend and place on market are in tracepass_passport_lifecycle.\n\n" +
       "IDENTIFIER SCHEMES (EN 18219): passports are identified by one of five schemes. Battery passports (Battery Regulation Art. 77(3)) accept ONLY gs1 and iso15459.\n" +
       "  • gs1 — { scheme:\"gs1\", gtin, serialNumber } — GS1 GTIN + serial; gtin is 8/12/13/14 digits, stored as GTIN-14.\n" +
       "  • iso15459 — { scheme:\"iso15459\", issuingAgencyCode, primaryId, serial? } — ISO/IEC 15459; the server derives raw (IAC + primaryId + serial).\n" +
@@ -688,13 +689,8 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "- get_by_serial — args: { serial, format?, lang?, gtin? }. Read-only. Addresses the passport by your own serial. A serial is unique only WITHIN a GTIN — if the same serial exists under two GTINs in your account the call returns 409 ambiguous_serial; pass `gtin` (or use the by-id action) to resolve exactly.\n" +
       "- compliance — args: { id }. Read-only. Returns a three-tier compliance verdict (compliant | compliant_with_warnings | incomplete) with regulation-cited findings — use to gap-check a passport against the rules for its category, fix the cited fields/parties, then re-check. Also returns byRegulation[]: the same findings grouped per regulation, worst first, so you can tell WHICH regime is failing instead of reading one `incomplete` as everything being wrong. A regulation absent from that array raised no finding — that is not the same as it having passed.\n" +
       "- registry_readiness — args: { id }. Read-only. Returns { ready, findings[] } — whether the passport would pass the EU DPP Registry's FORMAL submission gate (mandatory fields present, correct formatting, a resolvable public link, item-level granularity via a serial number, and a well-formed commodity code where the category carries one, and, for EV, LMT and industrial (over 2 kWh) batteries, conformance to the Commission's battery data model that the Registry validates against (REG-READY-SEMANTIC)). This is the registry's mechanical pre-submission check, NOT the substantive compliance verdict; a passport can be registry-ready yet not substantively compliant. Battery passports only.\n" +
-      "- place_on_market — args: { id }. WRITE, battery passports only, published only. Places the passport on the market: registers it in the EU DPP registry under the account's own registry access (the upload Battery Regulation Art. 77(10) requires of the operator placing the battery on the market). A legal act for the economic operator — confirm with the user first. ASYNCHRONOUS: answers 202 { passport, passportId, status: \"placing\", dppId } and the registry call follows in the background; read the passport (get) to follow placeOnMarketStatus: placing → placed (placedOnMarketAt, registrationId) or rejected (registrationRejectionReason). To retry a rejected passport, fix the cause and call place_on_market again. Refusals are 409 with a code: not_a_battery | not_published | already_placed (placing or placed) | operator_id_missing (no economic-operator identifier on the account) | registry_not_configured (an admin sets registry access in the dashboard) | registry_host_not_allowed (TracePass does not send registrations to the configured registry address; check the registry URL), registry_not_ready (findings[] lists what stands in the way — run registry_readiness for the structured findings). After placement the passport's party operatorIdentifier / facilityIdentifier are locked (409 operator_locked on a change). Counts 1 write.\n" +
       "- create — args: { productId, identifier?, gtin?, serialNumber?, lineage? }. Creates a draft (not billed). Provide identifier (preferred) or legacy gtin + serialNumber. Battery passports accept only gs1 and iso15459 schemes — other schemes return 400. A duplicate identifier returns 409.\n" +
       "  lineage (battery only) — a repurposed, remanufactured or reused battery needs a NEW passport linked to the original(s) (Battery Regulation Art. 77(7)): { predecessors: [ { internalPassportId? | identifier?, trigger: preparation_for_reuse|preparation_for_repurposing|repurposing|remanufacturing } ] (≤10), noPredecessorReason? (only with an empty list, e.g. placed on the market before 18 Feb 2027) }. The server derives batteryStatus from the triggers and links your own predecessor passports back. Immutable after create. Rule violations return 422 with the rule code (duplicate_predecessor, predecessor_not_found, status_trigger_mismatch, …).\n" +
-      "- suspend — args: { id }. Reversible — public QR shows 'suspended'.\n" +
-      "- suspend_by_serial — args: { serial, gtin? }. Same as suspend, addressed by your serial. 409 ambiguous_serial if the serial isn't unique in your account — pass `gtin`.\n" +
-      "- archive — args: { id, reason? (recycled|never_placed|duplicate_or_error) }. IRREVERSIBLE and destructive — confirm with the user first. reason is REQUIRED for battery passports (400 reason_required / invalid_reason without a valid one): recycled, never_placed (never placed on the market or put into service), or duplicate_or_error (a duplicate or erroneous record); for other categories it is optional. A passport marked for deletion cannot be archived (409).\n" +
-      "- archive_by_serial — args: { serial, gtin?, reason? }. IRREVERSIBLE and destructive, addressed by your serial — confirm first. Same reason rule as archive. 409 ambiguous_serial if the serial isn't unique — pass `gtin`.\n" +
       "- get_qr — args: { id, format? (svg|png), symbology? (qr|datamatrix) }. Read-only. symbology=datamatrix renders an ISO/IEC 16022 Data Matrix instead of a QR (EN 18220 permits both; same passport URL).\n" +
       "- get_qr_by_serial — args: { serial, format? (svg|png), symbology? (qr|datamatrix), gtin? }. Read-only. Same as get_qr, addressed by your own serial. A serial is unique only WITHIN a GTIN — if the same serial exists under two GTINs in your account the call returns 409 ambiguous_serial; pass `gtin` (or use get_qr by id) to resolve exactly.\n" +
       "- list_snapshots — args: { id, page?, limit? (≤100), at? (ISO 8601) }. Read-only. Returns a paginated list of snapshots for the passport (newest first). A snapshot is written on publish and after every change to a non-draft passport (EN 18221 change archive); each carries id, version, reason (e.g. published|field_edit|status_change|baseline), actor (who caused it, when known), snapshotAt, contentHash, hashValid (re-verified on every read), restorable, fieldCount. With `at`, returns instead the single snapshot valid at that instant (full record plus validFrom/validUntil) — answers \"what did this passport say on date D\"; 404 before the first snapshot. Counts 1 against the daily read budget.\n" +
@@ -717,7 +713,6 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           "get_by_serial",
           "compliance",
           "registry_readiness",
-          "place_on_market",
           "get_condition_flags",
           "get_condition_flags_by_serial",
           "set_condition_flags",
@@ -729,21 +724,17 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           "latest_measurements",
           "latest_measurements_by_serial",
           "create",
-          "suspend",
-          "suspend_by_serial",
-          "archive",
-          "archive_by_serial",
           "get_qr",
           "get_qr_by_serial",
           "list_snapshots",
           "get_snapshot",
         ])
         .describe(
-          "Which passport operation to run. Reads: list | get | get_by_serial | compliance | registry_readiness | get_condition_flags | get_condition_flags_by_serial | get_qr | get_qr_by_serial | list_snapshots | get_snapshot | list_measurements(_by_serial) | latest_measurements(_by_serial). Writes: set_condition_flags | set_condition_flags_by_serial | capture_measurements(_by_serial) | create (a draft, not billed). Lifecycle: place_on_market (battery, published; async EU registry entry — confirm first) | suspend (reversible) | archive (IRREVERSIBLE; battery passports need `reason`), the last two each with a _by_serial variant.",
+          "Which passport operation to run. Reads: list | get | get_by_serial | compliance | registry_readiness | get_condition_flags | get_condition_flags_by_serial | get_qr | get_qr_by_serial | list_snapshots | get_snapshot | list_measurements(_by_serial) | latest_measurements(_by_serial). Writes: set_condition_flags | set_condition_flags_by_serial | capture_measurements(_by_serial) | create (a draft, not billed). (archive, suspend, place_on_market are in tracepass_passport_lifecycle.)",
         ),
       args: z
         .object({
-          id: z.string().optional().describe("Passport id. Required for get/compliance/place_on_market/suspend/archive/get_qr (the by-id actions)."),
+          id: z.string().optional().describe("Passport id. Required for get/compliance/registry_readiness/get_qr (the by-id actions)."),
           serial: z.string().optional().describe("Your own serial number. Required for the *_by_serial actions."),
           gtin: z
             .string()
@@ -783,7 +774,6 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
             .record(z.string(), z.union([z.boolean(), z.null()]))
             .optional()
             .describe("For set_condition_flags / set_condition_flags_by_serial: Record<flagKey, boolean|null>. null clears the flag."),
-          reason: ARCHIVE_REASON.optional().describe(`archive / archive_by_serial: ${ARCHIVE_REASON_DESCRIPTION}`),
         })
         .partial()
         .optional()
@@ -825,11 +815,6 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           if (isErr(p)) return p;
           return apiResult(await client.get(`/api/v1/passports/${seg(p.id)}/registry-readiness`));
         }
-        case "place_on_market": {
-          const p = parseArgs(SCHEMAS.passportId, a.args, "tracepass_passports", action);
-          if (isErr(p)) return p;
-          return apiResult(await client.post(`/api/v1/passports/${seg(p.id)}/place-on-market`));
-        }
         case "create": {
           const p = parseArgs(SCHEMAS.passportCreate, a.args, "tracepass_passports", action);
           if (isErr(p)) return p;
@@ -843,35 +828,6 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           }
           if (p.lineage) body.lineage = p.lineage;
           return apiResult(await client.post("/api/v1/passports", body));
-        }
-        case "suspend": {
-          const p = parseArgs(SCHEMAS.passportId, a.args, "tracepass_passports", action);
-          if (isErr(p)) return p;
-          return apiResult(await client.post(`/api/v1/passports/${seg(p.id)}/suspend`));
-        }
-        case "suspend_by_serial": {
-          const p = parseArgs(SCHEMAS.passportSerial, a.args, "tracepass_passports", action);
-          if (isErr(p)) return p;
-          return apiResult(
-            await client.post(`/api/v1/passports/by-serial/${seg(p.serial)}/suspend${qs({ gtin: p.gtin })}`),
-          );
-        }
-        case "archive": {
-          const p = parseArgs(SCHEMAS.passportArchive, a.args, "tracepass_passports", action);
-          if (isErr(p)) return p;
-          return apiResult(
-            await client.post(`/api/v1/passports/${seg(p.id)}/archive`, archiveBody(p.reason)),
-          );
-        }
-        case "archive_by_serial": {
-          const p = parseArgs(SCHEMAS.passportArchiveBySerial, a.args, "tracepass_passports", action);
-          if (isErr(p)) return p;
-          return apiResult(
-            await client.post(
-              `/api/v1/passports/by-serial/${seg(p.serial)}/archive${qs({ gtin: p.gtin })}`,
-              archiveBody(p.reason),
-            ),
-          );
         }
         case "get_qr": {
           const p = parseArgs(SCHEMAS.passportQr, a.args, "tracepass_passports", action);
@@ -975,8 +931,17 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
             await client.get(`/api/v1/passports/by-serial/${seg(p.serial)}/measurements/latest${qs({ gtin: p.gtin })}`),
           );
         }
-        default:
+        default: {
+          const MOVED: ReadonlySet<string> = new Set([
+            "archive", "archive_by_serial", "suspend", "suspend_by_serial", "place_on_market",
+          ]);
+          if (MOVED.has(action)) {
+            return errorResult(
+              `Unknown action "${action}" for tracepass_passports. Irreversible actions moved to tracepass_passport_lifecycle in 1.24.0.`,
+            );
+          }
           return errorResult(`Unknown action "${action}" for tracepass_passports.`);
+        }
       }
     },
   };
@@ -1372,5 +1337,94 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     },
   };
 
-  return [productsTool, passportsTool, fieldsTool, partiesTool, epcisTool, templatesTool, scopeTool];
+  // ──────────────────── passport lifecycle ─────────────────────
+  // SEC-37: irreversible / public-facing actions separated so a
+  // client's "Always allow" on reading does not also allow them.
+  const lifecycleTool: McpToolDefinition = {
+    name: "tracepass_passport_lifecycle",
+    title: "TracePass passport lifecycle (irreversible actions)",
+    description:
+      "WARNING: Every action here changes what the public sees or is a legal act, some irreversible. `archive` permanently removes the public QR code (it 404s forever). `place_on_market` registers the passport in the EU DPP Registry — a legal act for the economic operator. The assistant MUST confirm with the user before each call. Use `suspend` (reversible — public QR shows 'suspended') as the safe alternative to archive when a change might need to be undone.\n\n" +
+      "Actions (pass via `action`, with `args`):\n" +
+      "- place_on_market — args: { id }. WRITE, battery passports only, published only. Places the passport on the market: registers it in the EU DPP registry under the account's own registry access (the upload Battery Regulation Art. 77(10) requires of the operator placing the battery on the market). A legal act for the economic operator — confirm with the user first. ASYNCHRONOUS: answers 202 { passport, passportId, status: \"placing\", dppId } and the registry call follows in the background; read the passport (get) to follow placeOnMarketStatus: placing → placed (placedOnMarketAt, registrationId) or rejected (registrationRejectionReason). To retry a rejected passport, fix the cause and call place_on_market again. Refusals are 409 with a code: not_a_battery | not_published | already_placed (placing or placed) | operator_id_missing (no economic-operator identifier on the account) | registry_not_configured (an admin sets registry access in the dashboard) | registry_host_not_allowed (TracePass does not send registrations to the configured registry address; check the registry URL), registry_not_ready (findings[] lists what stands in the way — run registry_readiness for the structured findings). After placement the passport's party operatorIdentifier / facilityIdentifier are locked (409 operator_locked on a change). Counts 1 write.\n" +
+      "- suspend — args: { id }. Reversible — public QR shows 'suspended'.\n" +
+      "- suspend_by_serial — args: { serial, gtin? }. Same as suspend, addressed by your serial. 409 ambiguous_serial if the serial isn't unique in your account — pass `gtin`.\n" +
+      "- archive — args: { id, reason? (recycled|never_placed|duplicate_or_error) }. IRREVERSIBLE and destructive — confirm with the user first. The public QR permanently 404s. reason is REQUIRED for battery passports (400 reason_required / invalid_reason without a valid one): recycled, never_placed (never placed on the market or put into service), or duplicate_or_error (a duplicate or erroneous record); for other categories it is optional. A passport marked for deletion cannot be archived (409).\n" +
+      "- archive_by_serial — args: { serial, gtin?, reason? }. IRREVERSIBLE and destructive, addressed by your serial — confirm first. Same reason rule as archive. 409 ambiguous_serial if the serial isn't unique — pass `gtin`.\n" +
+      "- archive_product — args: { id }. Archives a PRODUCT (not a passport). Reversible — this soft-archives the product from the catalogue. Blocked (409) while any non-archived passport still references it — archive those passports first. Not deletion.",
+    inputSchema: {
+      action: z
+        .enum([
+          "place_on_market",
+          "suspend",
+          "suspend_by_serial",
+          "archive",
+          "archive_by_serial",
+          "archive_product",
+        ])
+        .describe(
+          "Which lifecycle action to run. All require user confirmation. place_on_market (battery, published; legal EU registry entry) | suspend (reversible) | suspend_by_serial | archive (IRREVERSIBLE; QR 404s forever; battery passports need reason) | archive_by_serial | archive_product (reversible product archive; blocked while passports reference it).",
+        ),
+      args: z
+        .object({
+          id: z.string().optional().describe("Passport or product id. Required for place_on_market, suspend, archive, archive_product."),
+          serial: z.string().optional().describe("Your own serial number. Required for suspend_by_serial and archive_by_serial."),
+          gtin: z.string().optional().describe("GTIN disambiguator for *_by_serial actions when the serial isn't unique (else 409 ambiguous_serial)."),
+          reason: ARCHIVE_REASON.optional().describe(`archive / archive_by_serial: ${ARCHIVE_REASON_DESCRIPTION}`),
+        })
+        .partial()
+        .optional()
+        .describe("Arguments for the chosen action; required fields depend on `action` (see each action above)."),
+    },
+    outputSchema: API_OUTPUT_SCHEMA,
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    handler: async (a) => {
+      const action = String(a.action);
+      switch (action) {
+        case "place_on_market": {
+          const p = parseArgs(SCHEMAS.passportId, a.args, "tracepass_passport_lifecycle", action);
+          if (isErr(p)) return p;
+          return apiResult(await client.post(`/api/v1/passports/${seg(p.id)}/place-on-market`));
+        }
+        case "suspend": {
+          const p = parseArgs(SCHEMAS.passportId, a.args, "tracepass_passport_lifecycle", action);
+          if (isErr(p)) return p;
+          return apiResult(await client.post(`/api/v1/passports/${seg(p.id)}/suspend`));
+        }
+        case "suspend_by_serial": {
+          const p = parseArgs(SCHEMAS.passportSerial, a.args, "tracepass_passport_lifecycle", action);
+          if (isErr(p)) return p;
+          return apiResult(
+            await client.post(`/api/v1/passports/by-serial/${seg(p.serial)}/suspend${qs({ gtin: p.gtin })}`),
+          );
+        }
+        case "archive": {
+          const p = parseArgs(SCHEMAS.passportArchive, a.args, "tracepass_passport_lifecycle", action);
+          if (isErr(p)) return p;
+          return apiResult(
+            await client.post(`/api/v1/passports/${seg(p.id)}/archive`, archiveBody(p.reason)),
+          );
+        }
+        case "archive_by_serial": {
+          const p = parseArgs(SCHEMAS.passportArchiveBySerial, a.args, "tracepass_passport_lifecycle", action);
+          if (isErr(p)) return p;
+          return apiResult(
+            await client.post(
+              `/api/v1/passports/by-serial/${seg(p.serial)}/archive${qs({ gtin: p.gtin })}`,
+              archiveBody(p.reason),
+            ),
+          );
+        }
+        case "archive_product": {
+          const p = parseArgs(SCHEMAS.productArchive, a.args, "tracepass_passport_lifecycle", action);
+          if (isErr(p)) return p;
+          return apiResult(await client.post(`/api/v1/products/${seg(p.id)}/archive`));
+        }
+        default:
+          return errorResult(`Unknown action "${action}" for tracepass_passport_lifecycle.`);
+      }
+    },
+  };
+
+  return [productsTool, passportsTool, fieldsTool, partiesTool, epcisTool, templatesTool, scopeTool, lifecycleTool];
 }

@@ -107,28 +107,32 @@ The hosted endpoint accepts **POST only** on `/mcp`, `/compliance/mcp`, and the 
 
 ## Tools
 
-The TracePass v1 API operations are grouped into **7 tools**.
+The TracePass v1 API operations are grouped into **8 tools**.
 Each takes an action enum plus action-specific arguments. The tools are:
 
-- `tracepass_products` - manage the product catalogue (list, get, create, create_batch, update, archive products).
-- `tracepass_passports` - manage Digital Product Passports (list, get, compliance check, registry-readiness check, place a battery passport on the market (async EU registry entry), get/set condition flags, create, suspend, archive, get QR, list snapshots, get snapshot), by id or by serial. Passports are identified via GS1 or four additional EN 18219 schemes (iso15459, iec61406, did, doi); battery passports accept only gs1 and iso15459 (Art. 77(3)). **Condition flags** are approved yes/no facts (e.g. battery: `hasBMS`, `rechargeable`, `externalStorageOnly`, `isStationaryBess`) that gate conditional legal duties — setting an approved flag may make additional fields required and block publishing if those fields are empty.
+- `tracepass_products` - manage the product catalogue (list, get, create, create_batch, update products).
+- `tracepass_passports` - manage Digital Product Passports (list, get, compliance check, registry-readiness check, get/set condition flags, create, get QR, list snapshots, get snapshot), by id or by serial. Passports are identified via GS1 or four additional EN 18219 schemes (iso15459, iec61406, did, doi); battery passports accept only gs1 and iso15459 (Art. 77(3)). **Condition flags** are approved yes/no facts (e.g. battery: `hasBMS`, `rechargeable`, `externalStorageOnly`, `isStationaryBess`) that gate conditional legal duties — setting an approved flag may make additional fields required and block publishing if those fields are empty.
 - `tracepass_passport_fields` - update a passport's category-specific data fields, by id or by serial.
 - `tracepass_passport_parties` - set or remove a passport's economic-operator parties (manufacturer, importer, etc.).
 - `tracepass_epcis` - export, capture, and query a passport's GS1 EPCIS 2.0 supply-chain events.
 - `tracepass_templates` - list and get the DPP category field schemas, each field traced to the EU instrument that mandates it.
 - `tracepass_scope` - check whether a product type needs a Digital Product Passport (check), read the company's catalogue-wide scope report (catalogue_report), and trigger or poll a catalogue refresh run (catalogue_run, catalogue_run_status).
+- `tracepass_passport_lifecycle` - irreversible and public-facing passport and product lifecycle actions (place_on_market, suspend, archive, archive_product); the assistant must confirm with the user before each call.
 
 Each tool's full action set:
 
 | Tool | Actions |
 |------|---------|
-| `tracepass_products` | `list`, `get`, `create`, `create_batch`, `update`, `archive` |
-| `tracepass_passports` | `list`, `get`, `get_by_serial`, `compliance`, `registry_readiness`, `place_on_market`, `get_condition_flags`, `get_condition_flags_by_serial`, `set_condition_flags`, `set_condition_flags_by_serial`, `capture_measurements`, `capture_measurements_by_serial`, `list_measurements`, `list_measurements_by_serial`, `latest_measurements`, `latest_measurements_by_serial`, `create`, `suspend`, `suspend_by_serial`, `archive`, `archive_by_serial`, `get_qr`, `get_qr_by_serial`, `list_snapshots`, `get_snapshot` |
+| `tracepass_products` | `list`, `get`, `create`, `create_batch`, `update` |
+| `tracepass_passports` | `list`, `get`, `get_by_serial`, `compliance`, `registry_readiness`, `get_condition_flags`, `get_condition_flags_by_serial`, `set_condition_flags`, `set_condition_flags_by_serial`, `capture_measurements`, `capture_measurements_by_serial`, `list_measurements`, `list_measurements_by_serial`, `latest_measurements`, `latest_measurements_by_serial`, `create`, `get_qr`, `get_qr_by_serial`, `list_snapshots`, `get_snapshot` |
 | `tracepass_passport_fields` | `update`, `update_by_serial` |
 | `tracepass_passport_parties` | `set`, `remove` |
 | `tracepass_epcis` | `export`, `export_by_serial`, `capture`, `capture_job`, `query` |
 | `tracepass_templates` | `list`, `get` |
 | `tracepass_scope` | `check`, `catalogue_report`, `catalogue_run`, `catalogue_run_status` |
+| `tracepass_passport_lifecycle` | `place_on_market`, `suspend`, `suspend_by_serial`, `archive`, `archive_by_serial`, `archive_product` |
+
+**Changed in 1.24.0:** `archive`, `archive_by_serial`, `suspend`, `suspend_by_serial`, and `place_on_market` moved from `tracepass_passports` to `tracepass_passport_lifecycle`; `archive` on products moved there as `archive_product`. This separates irreversible and public-facing actions so a client's "always allow" on the read-only passport tool no longer also allows them. Calls to the old names on the old tools return an error naming the new tool.
 
 The **`*_by_serial`** actions address a passport by the customer's own serial
 number instead of its TracePass id. A serial is unique only *within a GTIN*, so
@@ -191,9 +195,11 @@ descriptions tell the model so:
   takes no plan DPP slot and is not billed; the slot, and any overage
   past the plan cap, is taken when the passport is published in the
   TracePass dashboard. Each create counts against the daily write budget.
-- **`tracepass_passports` `archive`** is irreversible — the public QR
+- **`tracepass_passport_lifecycle` `archive`** is irreversible — the public QR
   permanently 404s. Use `suspend` (reversible) when a change might be
-  undone.
+  undone. `place_on_market` is a legal act (EU Registry registration).
+  These actions live on a separate tool so an "always allow" on reading
+  does not also allow them.
 - **`tracepass_epcis`** — `export`, `capture` and `query` are on every plan,
   Free included; captured events count against the plan's event allowance,
   and `capture` over it returns an overage or hard-block message.

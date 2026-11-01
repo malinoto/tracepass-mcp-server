@@ -194,6 +194,7 @@ export const SERVER_CARD = {
       "tracepass_epcis",
       "tracepass_templates",
       "tracepass_scope",
+      "tracepass_passport_lifecycle",
     ],
     resources: ["tracepass://products", "tracepass://templates"],
     resourceTemplates: [

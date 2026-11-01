@@ -31,12 +31,13 @@ function stubClient(): {
 }
 
 describe("buildTools — tool surface", () => {
-  it("exposes exactly 7 grouped tools", () => {
+  it("exposes exactly 8 grouped tools", () => {
     const { client } = stubClient();
     const tools = buildTools(client);
     expect(tools.map((t) => t.name).sort()).toEqual([
       "tracepass_epcis",
       "tracepass_passport_fields",
+      "tracepass_passport_lifecycle",
       "tracepass_passport_parties",
       "tracepass_passports",
       "tracepass_products",
@@ -107,6 +108,15 @@ describe("tracepass_products — action routing", () => {
     const r = await tool.handler({ action: "frobnicate", args: {} });
     expect(r.isError).toBe(true);
     expect(r.content[0]!.text).toMatch(/Unknown action/);
+  });
+
+  it("archive returns the moved-to error naming the new tool", async () => {
+    const { tool, calls } = productsTool();
+    const r = await tool.handler({ action: "archive", args: { id: "p1" } });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/tracepass_passport_lifecycle/);
+    expect(r.content[0]!.text).toMatch(/1\.24\.0/);
+    expect(calls).toHaveLength(0);
   });
 });
 
@@ -357,75 +367,24 @@ describe("tracepass_passports — create + lifecycle actions", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("archive routes to the archive endpoint", async () => {
-    const { tool, calls } = passportsTool();
-    await tool.handler({ action: "archive", args: { id: "x1" } });
-    expect(calls[0]!.path).toBe("/api/v1/passports/x1/archive");
-    expect(calls[0]!.method).toBe("POST");
-  });
-
-  it("archive sends the battery end reason as the JSON body", async () => {
-    const { tool, calls } = passportsTool();
-    const r = await tool.handler({ action: "archive", args: { id: "x1", reason: "recycled" } });
-    expect(r.isError).toBeFalsy();
-    expect(calls[0]!.path).toBe("/api/v1/passports/x1/archive");
-    expect(calls[0]!.body).toEqual({ reason: "recycled" });
-  });
-
-  it("archive_by_serial sends the reason as the JSON body, gtin stays in the query", async () => {
-    const { tool, calls } = passportsTool();
-    await tool.handler({
-      action: "archive_by_serial",
-      args: { serial: "SN-1", gtin: "09506000134369", reason: "never_placed" },
-    });
-    expect(calls[0]!.path).toBe("/api/v1/passports/by-serial/SN-1/archive?gtin=09506000134369");
-    expect(calls[0]!.body).toEqual({ reason: "never_placed" });
-  });
-
-  it("archive without a reason sends no body (non-battery passports need none)", async () => {
-    const { tool, calls } = passportsTool();
-    await tool.handler({ action: "archive", args: { id: "x1" } });
-    expect(calls[0]!.body).toBeUndefined();
-  });
-
-  it("archive rejects a reason outside the closed set before calling the API", async () => {
-    const { tool, calls } = passportsTool();
-    const r = await tool.handler({ action: "archive_by_serial", args: { serial: "SN-1", reason: "sold" } });
-    expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toMatch(/reason/);
-    expect(calls).toHaveLength(0);
-  });
-
-  it("the passports inputSchema advertises the archive reason enum", () => {
-    const { tool } = passportsTool();
-    const args = tool.inputSchema.args as unknown as { unwrap: () => { shape: Record<string, unknown> } };
-    const reason = args.unwrap().shape.reason as { safeParse: (v: unknown) => { success: boolean } } | undefined;
-    expect(reason).toBeDefined();
-    expect(reason!.safeParse("duplicate_or_error").success).toBe(true);
-    expect(reason!.safeParse("sold").success).toBe(false);
-  });
-
-  it("place_on_market POSTs to the place-on-market endpoint with no body", async () => {
-    const { tool, calls } = passportsTool();
-    await tool.handler({ action: "place_on_market", args: { id: "6650b2c3d4e5f6a7b8c9d0e1" } });
-    expect(calls[0]!.method).toBe("POST");
-    expect(calls[0]!.path).toBe("/api/v1/passports/6650b2c3d4e5f6a7b8c9d0e1/place-on-market");
-    expect(calls[0]!.body).toBeUndefined();
-  });
-
-  it("place_on_market without an id is refused with no HTTP call", async () => {
-    const { tool, calls } = passportsTool();
-    const r = await tool.handler({ action: "place_on_market", args: {} });
-    expect(r.isError).toBe(true);
-    expect(calls).toHaveLength(0);
-  });
-
-  it("place_on_market is in the action enum and its description warns it is a legal act", () => {
+  it("the passports action enum no longer contains lifecycle actions", () => {
     const { tool } = passportsTool();
     const action = tool.inputSchema.action as unknown as { safeParse: (v: unknown) => { success: boolean } };
-    expect(action.safeParse("place_on_market").success).toBe(true);
-    expect(tool.description).toMatch(/place_on_market[^\n]*confirm with the user first/);
-    expect(tool.description).toMatch(/place_on_market[^\n]*ASYNCHRONOUS/);
+    for (const moved of ["archive", "archive_by_serial", "suspend", "suspend_by_serial", "place_on_market"]) {
+      expect(action.safeParse(moved).success, `${moved} should not be in passports`).toBe(false);
+    }
+  });
+
+  it("each moved action name on passports returns the moved-to error", async () => {
+    const { tool, calls } = passportsTool();
+    for (const moved of ["archive", "archive_by_serial", "suspend", "suspend_by_serial", "place_on_market"]) {
+      calls.length = 0;
+      const r = await tool.handler({ action: moved, args: { id: "x1", serial: "SN-1" } });
+      expect(r.isError, moved).toBe(true);
+      expect(r.content[0]!.text, moved).toMatch(/tracepass_passport_lifecycle/);
+      expect(r.content[0]!.text, moved).toMatch(/1\.24\.0/);
+      expect(calls, moved).toHaveLength(0);
+    }
   });
 
   it("compliance routes to a read of the compliance endpoint", async () => {
@@ -441,18 +400,20 @@ describe("tracepass_passports — create + lifecycle actions", () => {
     expect(calls[0]!.path).toContain("LOT%201%2FA");
   });
 
-  it("archive_by_serial routes to the by-serial archive endpoint", async () => {
+  it("archive_by_serial on passports returns the moved-to error (not a routing test)", async () => {
     const { tool, calls } = passportsTool();
-    await tool.handler({ action: "archive_by_serial", args: { serial: "SN-1" } });
-    expect(calls[0]!.path).toBe("/api/v1/passports/by-serial/SN-1/archive");
-    expect(calls[0]!.method).toBe("POST");
+    const r = await tool.handler({ action: "archive_by_serial", args: { serial: "SN-1" } });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/tracepass_passport_lifecycle/);
+    expect(calls).toHaveLength(0);
   });
 
-  it("suspend_by_serial passes the gtin disambiguator as a query param", async () => {
+  it("suspend_by_serial on passports returns the moved-to error (not a routing test)", async () => {
     const { tool, calls } = passportsTool();
-    await tool.handler({ action: "suspend_by_serial", args: { serial: "SN-1", gtin: "09506000134369" } });
-    expect(calls[0]!.path).toBe("/api/v1/passports/by-serial/SN-1/suspend?gtin=09506000134369");
-    expect(calls[0]!.method).toBe("POST");
+    const r = await tool.handler({ action: "suspend_by_serial", args: { serial: "SN-1", gtin: "09506000134369" } });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/tracepass_passport_lifecycle/);
+    expect(calls).toHaveLength(0);
   });
 
   it("get_qr_by_serial GETs the by-serial qr endpoint with format + gtin", async () => {
@@ -617,6 +578,190 @@ describe("tracepass_passports — create + lifecycle actions", () => {
     expect(calls[0]!.path).toBe(
       "/api/v1/passports/by-serial/SN-1/condition-flags?gtin=04012345678901",
     );
+  });
+});
+
+describe("tracepass_passport_lifecycle — tool surface and routing", () => {
+  function lifecycleTool() {
+    const stub = stubClient();
+    const tool = buildTools(stub.client).find((t) => t.name === "tracepass_passport_lifecycle")!;
+    return { tool, calls: stub.calls };
+  }
+
+  // (a) tool surface
+  it("exposes exactly the six lifecycle actions", () => {
+    const { tool } = lifecycleTool();
+    const action = tool.inputSchema.action as unknown as { options: string[] };
+    expect([...action.options].sort()).toEqual([
+      "archive", "archive_by_serial", "archive_product",
+      "place_on_market", "suspend", "suspend_by_serial",
+    ]);
+  });
+
+  it("is marked destructive and not read-only", () => {
+    const { tool } = lifecycleTool();
+    expect(tool.annotations.destructiveHint).toBe(true);
+    expect(tool.annotations.readOnlyHint).toBe(false);
+    expect(tool.annotations.openWorldHint).toBe(false);
+  });
+
+  it("description starts with a WARNING about irreversible actions", () => {
+    const { tool } = lifecycleTool();
+    expect(tool.description).toMatch(/^WARNING:/);
+    expect(tool.description).toMatch(/confirm with the user/);
+    expect(tool.description).toMatch(/suspend.*reversible|reversible.*suspend/i);
+  });
+
+  // (b) passports and products no longer list the moved actions
+  it("tracepass_passports action enum no longer contains the moved actions", () => {
+    const stub = stubClient();
+    const passports = buildTools(stub.client).find((t) => t.name === "tracepass_passports")!;
+    const opts = (passports.inputSchema.action as unknown as { options: string[] }).options;
+    for (const moved of ["archive", "archive_by_serial", "suspend", "suspend_by_serial", "place_on_market"]) {
+      expect(opts, `passports.${moved}`).not.toContain(moved);
+    }
+  });
+
+  it("tracepass_products action enum no longer contains archive", () => {
+    const stub = stubClient();
+    const products = buildTools(stub.client).find((t) => t.name === "tracepass_products")!;
+    const opts = (products.inputSchema.action as unknown as { options: string[] }).options;
+    expect(opts).not.toContain("archive");
+  });
+
+  // (c) moved action names on old tools return the specific error
+  it("each moved name on tracepass_passports returns the moved-to error", async () => {
+    const stub = stubClient();
+    const passports = buildTools(stub.client).find((t) => t.name === "tracepass_passports")!;
+    for (const moved of ["archive", "archive_by_serial", "suspend", "suspend_by_serial", "place_on_market"]) {
+      const r = await passports.handler({ action: moved, args: { id: "x1", serial: "SN-1" } });
+      expect(r.isError, moved).toBe(true);
+      expect(r.content[0]!.text, moved).toMatch(/tracepass_passport_lifecycle/);
+      expect(r.content[0]!.text, moved).toMatch(/1\.24\.0/);
+    }
+  });
+
+  it("archive on tracepass_products returns the moved-to error", async () => {
+    const stub = stubClient();
+    const products = buildTools(stub.client).find((t) => t.name === "tracepass_products")!;
+    const r = await products.handler({ action: "archive", args: { id: "p1" } });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/tracepass_passport_lifecycle/);
+    expect(r.content[0]!.text).toMatch(/1\.24\.0/);
+  });
+
+  // (d) each new action hits the same endpoint/method/body as before
+  it("place_on_market POSTs to the place-on-market endpoint with no body", async () => {
+    const { tool, calls } = lifecycleTool();
+    await tool.handler({ action: "place_on_market", args: { id: "6650b2c3d4e5f6a7b8c9d0e1" } });
+    expect(calls[0]!.method).toBe("POST");
+    expect(calls[0]!.path).toBe("/api/v1/passports/6650b2c3d4e5f6a7b8c9d0e1/place-on-market");
+    expect(calls[0]!.body).toBeUndefined();
+  });
+
+  it("place_on_market without an id is refused with no HTTP call", async () => {
+    const { tool, calls } = lifecycleTool();
+    const r = await tool.handler({ action: "place_on_market", args: {} });
+    expect(r.isError).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("place_on_market description warns it is a legal act and is ASYNCHRONOUS", () => {
+    const { tool } = lifecycleTool();
+    expect(tool.description).toMatch(/place_on_market[^\n]*confirm with the user first/);
+    expect(tool.description).toMatch(/place_on_market[^\n]*ASYNCHRONOUS/);
+    expect(tool.description).toMatch(/registry_host_not_allowed/);
+  });
+
+  it("suspend POSTs to the suspend endpoint", async () => {
+    const { tool, calls } = lifecycleTool();
+    await tool.handler({ action: "suspend", args: { id: "p1" } });
+    expect(calls[0]!.method).toBe("POST");
+    expect(calls[0]!.path).toBe("/api/v1/passports/p1/suspend");
+  });
+
+  it("suspend_by_serial passes the gtin disambiguator as a query param", async () => {
+    const { tool, calls } = lifecycleTool();
+    await tool.handler({ action: "suspend_by_serial", args: { serial: "SN-1", gtin: "09506000134369" } });
+    expect(calls[0]!.path).toBe("/api/v1/passports/by-serial/SN-1/suspend?gtin=09506000134369");
+    expect(calls[0]!.method).toBe("POST");
+  });
+
+  it("archive routes to the archive endpoint", async () => {
+    const { tool, calls } = lifecycleTool();
+    await tool.handler({ action: "archive", args: { id: "x1" } });
+    expect(calls[0]!.path).toBe("/api/v1/passports/x1/archive");
+    expect(calls[0]!.method).toBe("POST");
+  });
+
+  it("archive sends the battery end reason as the JSON body", async () => {
+    const { tool, calls } = lifecycleTool();
+    const r = await tool.handler({ action: "archive", args: { id: "x1", reason: "recycled" } });
+    expect(r.isError).toBeFalsy();
+    expect(calls[0]!.path).toBe("/api/v1/passports/x1/archive");
+    expect(calls[0]!.body).toEqual({ reason: "recycled" });
+  });
+
+  it("archive_by_serial sends the reason as the JSON body, gtin stays in the query", async () => {
+    const { tool, calls } = lifecycleTool();
+    await tool.handler({
+      action: "archive_by_serial",
+      args: { serial: "SN-1", gtin: "09506000134369", reason: "never_placed" },
+    });
+    expect(calls[0]!.path).toBe("/api/v1/passports/by-serial/SN-1/archive?gtin=09506000134369");
+    expect(calls[0]!.body).toEqual({ reason: "never_placed" });
+  });
+
+  it("archive without a reason sends no body (non-battery passports need none)", async () => {
+    const { tool, calls } = lifecycleTool();
+    await tool.handler({ action: "archive", args: { id: "x1" } });
+    expect(calls[0]!.body).toBeUndefined();
+  });
+
+  it("archive rejects a reason outside the closed set before calling the API", async () => {
+    const { tool, calls } = lifecycleTool();
+    const r = await tool.handler({ action: "archive_by_serial", args: { serial: "SN-1", reason: "sold" } });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/reason/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("the lifecycle inputSchema advertises the archive reason enum", () => {
+    const { tool } = lifecycleTool();
+    const args = tool.inputSchema.args as unknown as { unwrap: () => { shape: Record<string, unknown> } };
+    const reason = args.unwrap().shape.reason as { safeParse: (v: unknown) => { success: boolean } } | undefined;
+    expect(reason).toBeDefined();
+    expect(reason!.safeParse("duplicate_or_error").success).toBe(true);
+    expect(reason!.safeParse("sold").success).toBe(false);
+  });
+
+  it("archive_by_serial routes to the by-serial archive endpoint", async () => {
+    const { tool, calls } = lifecycleTool();
+    await tool.handler({ action: "archive_by_serial", args: { serial: "SN-1" } });
+    expect(calls[0]!.path).toBe("/api/v1/passports/by-serial/SN-1/archive");
+    expect(calls[0]!.method).toBe("POST");
+  });
+
+  it("archive_product POSTs to the product archive endpoint", async () => {
+    const { tool, calls } = lifecycleTool();
+    await tool.handler({ action: "archive_product", args: { id: "prod1" } });
+    expect(calls[0]!.method).toBe("POST");
+    expect(calls[0]!.path).toBe("/api/v1/products/prod1/archive");
+    expect(calls[0]!.body).toBeUndefined();
+  });
+
+  it("archive_product description says it archives a PRODUCT and is reversible", () => {
+    const { tool } = lifecycleTool();
+    expect(tool.description).toMatch(/archive_product[^\n]*PRODUCT/);
+    expect(tool.description).toMatch(/archive_product[^\n]*[Rr]eversible/);
+    expect(tool.description).toMatch(/archive_product[^\n]*409/);
+  });
+
+  it("archive_product without an id is refused with no HTTP call", async () => {
+    const { tool, calls } = lifecycleTool();
+    const r = await tool.handler({ action: "archive_product", args: {} });
+    expect(r.isError).toBe(true);
+    expect(calls).toHaveLength(0);
   });
 });
 
