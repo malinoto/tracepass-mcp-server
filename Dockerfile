@@ -9,7 +9,9 @@
 # tracepass-environment/docker-mcp.yml).
 
 # ---- build stage --------------------------------------------------
-FROM node:22-alpine AS build
+# Base image pinned tag@digest (reproducible builds); Dependabot
+# (.github/dependabot.yml) proposes the digest bumps.
+FROM node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914 AS build
 WORKDIR /app
 
 # Install ALL deps (incl. devDependencies) for the tsc build.
@@ -22,7 +24,7 @@ COPY src ./src
 RUN npm run build
 
 # ---- runtime stage ------------------------------------------------
-FROM node:22-alpine AS runtime
+FROM node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914 AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 

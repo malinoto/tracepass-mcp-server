@@ -1,0 +1,9 @@
+# Only the Docker base images: Dependabot opens a PR when the pinned tag's
+# digest moves (security rebuilds of the Node image). npm dependencies are
+# upgraded deliberately, not by bot.
+version: 2
+updates:
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
