@@ -111,26 +111,26 @@ The TracePass v1 API operations are grouped into **8 tools**.
 Each takes an action enum plus action-specific arguments. The tools are:
 
 - `tracepass_products` - manage the product catalogue (list, get, create, create_batch, update products).
-- `tracepass_passports` - manage Digital Product Passports (list, get, compliance check, registry-readiness check, get/set condition flags, create, get QR, list snapshots, get snapshot), by id or by serial. Passports are identified via GS1 or four additional EN 18219 schemes (iso15459, iec61406, did, doi); battery passports accept only gs1 and iso15459 (Art. 77(3)). **Condition flags** are approved yes/no facts (e.g. battery: `hasBMS`, `rechargeable`, `externalStorageOnly`, `isStationaryBess`) that gate conditional legal duties — setting an approved flag may make additional fields required and block publishing if those fields are empty.
+- `tracepass_passports` - manage Digital Product Passports (list, get, compliance check, registry-readiness check, prepare an EU DPP Registry registration, record an acceptance test, get/set condition flags, create, get QR, list snapshots, get snapshot), by id or by serial. Passports are identified via GS1 or four additional EN 18219 schemes (iso15459, iec61406, did, doi); battery passports accept only gs1 and iso15459 (Art. 77(3)). **Condition flags** are approved yes/no facts (e.g. battery: `hasBMS`, `rechargeable`, `externalStorageOnly`, `isStationaryBess`) that gate conditional legal duties — setting an approved flag may make additional fields required and block publishing if those fields are empty.
 - `tracepass_passport_fields` - update a passport's category-specific data fields, by id or by serial.
 - `tracepass_passport_parties` - set or remove a passport's economic-operator parties (manufacturer, importer, etc.).
 - `tracepass_epcis` - export, capture, and query a passport's GS1 EPCIS 2.0 supply-chain events.
 - `tracepass_templates` - list and get the DPP category field schemas, each field traced to the EU instrument that mandates it.
 - `tracepass_scope` - check whether a product type needs a Digital Product Passport (check), read the company's catalogue-wide scope report (catalogue_report), and trigger or poll a catalogue refresh run (catalogue_run, catalogue_run_status).
-- `tracepass_passport_lifecycle` - irreversible and public-facing passport and product lifecycle actions (place_on_market, suspend, archive, archive_product); the assistant must confirm with the user before each call.
+- `tracepass_passport_lifecycle` - irreversible and public-facing passport and product lifecycle actions (record_registration, undo_registration, place_on_market, suspend, archive, archive_product); the assistant must confirm with the user before each call.
 
 Each tool's full action set:
 
 | Tool | Actions |
 |------|---------|
 | `tracepass_products` | `list`, `get`, `create`, `create_batch`, `update` |
-| `tracepass_passports` | `list`, `get`, `get_by_serial`, `compliance`, `registry_readiness`, `get_condition_flags`, `get_condition_flags_by_serial`, `set_condition_flags`, `set_condition_flags_by_serial`, `capture_measurements`, `capture_measurements_by_serial`, `list_measurements`, `list_measurements_by_serial`, `latest_measurements`, `latest_measurements_by_serial`, `create`, `get_qr`, `get_qr_by_serial`, `list_snapshots`, `get_snapshot` |
+| `tracepass_passports` | `list`, `get`, `get_by_serial`, `compliance`, `registry_readiness`, `prepare_registry_upi`, `prepare_registry_upload_file`, `record_acceptance_test`, `get_condition_flags`, `get_condition_flags_by_serial`, `set_condition_flags`, `set_condition_flags_by_serial`, `capture_measurements`, `capture_measurements_by_serial`, `list_measurements`, `list_measurements_by_serial`, `latest_measurements`, `latest_measurements_by_serial`, `create`, `get_qr`, `get_qr_by_serial`, `list_snapshots`, `get_snapshot` |
 | `tracepass_passport_fields` | `update`, `update_by_serial` |
 | `tracepass_passport_parties` | `set`, `remove` |
 | `tracepass_epcis` | `export`, `export_by_serial`, `capture`, `capture_job`, `query` |
 | `tracepass_templates` | `list`, `get` |
 | `tracepass_scope` | `check`, `catalogue_report`, `catalogue_run`, `catalogue_run_status` |
-| `tracepass_passport_lifecycle` | `place_on_market`, `suspend`, `suspend_by_serial`, `archive`, `archive_by_serial`, `archive_product` |
+| `tracepass_passport_lifecycle` | `record_registration`, `undo_registration`, `place_on_market`, `suspend`, `suspend_by_serial`, `archive`, `archive_by_serial`, `archive_product` |
 
 **Changed in 1.24.0:** `archive`, `archive_by_serial`, `suspend`, `suspend_by_serial`, and `place_on_market` moved from `tracepass_passports` to `tracepass_passport_lifecycle`; `archive` on products moved there as `archive_product`. This separates irreversible and public-facing actions so a client's "always allow" on the read-only passport tool no longer also allows them. Calls to the old names on the old tools return an error naming the new tool.
 
@@ -186,6 +186,33 @@ daily write budget. Paid plans keep counting past the allowance at no
 charge; the Free plan stops at its allowance. Reading a passport is never
 metered.
 
+### Registering a battery passport in the EU DPP Registry
+
+The economic operator registers a battery passport itself, on the EU DPP
+Registry website under its own EU Login. TracePass prepares what the
+operator submits and records what the operator reports; it never submits
+to the Registry and never verifies the outcome.
+
+1. `tracepass_passports` `registry_readiness` — would the Registry's
+   formal checks pass?
+2. `tracepass_passports` `prepare_registry_upi` returns the exact address
+   (`upi`) to paste into the Registry's online form. For several passports,
+   `prepare_registry_upload_file` (`{ passportIds }`, up to 100) returns
+   `xml` to upload unchanged under `filename`; passports that would fail are
+   left out and listed in `excluded` with a reason, because the Registry
+   fails a whole file on one bad entry.
+3. The Registry's **acceptance** environment is for testing and has no legal
+   effect: `tracepass_passports` `record_acceptance_test` records its result
+   and changes nothing else.
+4. After registering in **production**, `tracepass_passport_lifecycle`
+   `record_registration` records it (`placedOnMarketAt` defaults to today):
+   the passport is marked placed on the market and its operator and facility
+   identifiers lock. `undo_registration` removes a mistaken record.
+
+These actions need a paid plan; a connected app (OAuth) must act for an
+admin or owner. `place_on_market` submits to an EN 18222 registry API and is
+not a way into the EU DPP Registry, which does not accept it.
+
 ### A note on writes
 
 Some actions **cost money or are irreversible** — the server's tool
@@ -197,7 +224,10 @@ descriptions tell the model so:
   TracePass dashboard. Each create counts against the daily write budget.
 - **`tracepass_passport_lifecycle` `archive`** is irreversible — the public QR
   permanently 404s. Use `suspend` (reversible) when a change might be
-  undone. `place_on_market` is a legal act (EU Registry registration).
+  undone. `record_registration` records the operator's registration in
+  the production EU DPP Registry and locks the passport's operator
+  identifiers. `place_on_market` is a legal act (a registration through an
+  EN 18222 registry API).
   These actions live on a separate tool so an "always allow" on reading
   does not also allow them.
 - **`tracepass_epcis`** — `export`, `capture` and `query` are on every plan,
@@ -229,6 +259,9 @@ Reusable DPP workflows the client surfaces as slash-commands:
   must contain, and the regulation behind each field
 - `compliance_gap_check` — produce a prioritised, regulation-cited list
   of what's blocking a passport's compliant publication
+- `register_battery_passport` — walk the operator through registering a
+  published battery passport in the EU DPP Registry: readiness, the address
+  or upload file to submit on the Registry website, then recording the result
 - `review_epcis_events` — summarise a passport's supply-chain trail
 
 ## For suppliers: answering a data request

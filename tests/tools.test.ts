@@ -589,12 +589,13 @@ describe("tracepass_passport_lifecycle — tool surface and routing", () => {
   }
 
   // (a) tool surface
-  it("exposes exactly the six lifecycle actions", () => {
+  it("exposes exactly the eight lifecycle actions", () => {
     const { tool } = lifecycleTool();
     const action = tool.inputSchema.action as unknown as { options: string[] };
     expect([...action.options].sort()).toEqual([
       "archive", "archive_by_serial", "archive_product",
-      "place_on_market", "suspend", "suspend_by_serial",
+      "place_on_market", "record_registration", "suspend", "suspend_by_serial",
+      "undo_registration",
     ]);
   });
 
@@ -1456,5 +1457,159 @@ describe("seg() — path-traversal guard", () => {
     // "abc/def" — the slash must be percent-encoded, not traversal
     await tool.handler({ action: "get", args: { id: "abc/def" } });
     expect(calls[0]!.path).toBe("/api/v1/products/abc%2Fdef");
+  });
+});
+
+describe("EU DPP Registry (mode C) — prepare, record, undo", () => {
+  const ID = "6650b2c3d4e5f6a7b8c9d0e1";
+  function tools() {
+    const stub = stubClient();
+    const all = buildTools(stub.client);
+    return {
+      passports: all.find((t) => t.name === "tracepass_passports")!,
+      lifecycle: all.find((t) => t.name === "tracepass_passport_lifecycle")!,
+      calls: stub.calls,
+    };
+  }
+
+  it("the preparation and acceptance actions are on tracepass_passports, not lifecycle", () => {
+    const { passports, lifecycle } = tools();
+    const p = (passports.inputSchema.action as unknown as { options: string[] }).options;
+    const l = (lifecycle.inputSchema.action as unknown as { options: string[] }).options;
+    for (const a of ["prepare_registry_upi", "prepare_registry_upload_file", "record_acceptance_test"]) {
+      expect(p, a).toContain(a);
+      expect(l, a).not.toContain(a);
+    }
+    for (const a of ["record_registration", "undo_registration"]) {
+      expect(l, a).toContain(a);
+      expect(p, a).not.toContain(a);
+    }
+  });
+
+  it("prepare_registry_upi POSTs to the registry-upi endpoint", async () => {
+    const { passports, calls } = tools();
+    const r = await passports.handler({ action: "prepare_registry_upi", args: { id: ID } });
+    expect(r.isError).toBeFalsy();
+    expect(calls[0]!.method).toBe("POST");
+    expect(calls[0]!.path).toBe(`/api/v1/passports/${ID}/registry-upi`);
+    expect(calls[0]!.body).toBeUndefined();
+  });
+
+  it("prepare_registry_upi without an id is refused with no HTTP call", async () => {
+    const { passports, calls } = tools();
+    const r = await passports.handler({ action: "prepare_registry_upi", args: {} });
+    expect(r.isError).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("prepare_registry_upload_file POSTs the passport ids", async () => {
+    const { passports, calls } = tools();
+    await passports.handler({ action: "prepare_registry_upload_file", args: { passportIds: [ID, "6650b2c3d4e5f6a7b8c9d0e2"] } });
+    expect(calls[0]!.method).toBe("POST");
+    expect(calls[0]!.path).toBe("/api/v1/registry/upload-file");
+    expect(calls[0]!.body).toEqual({ passportIds: [ID, "6650b2c3d4e5f6a7b8c9d0e2"] });
+  });
+
+  it("prepare_registry_upload_file refuses an empty list and more than 100 ids before calling the API", async () => {
+    const { passports, calls } = tools();
+    const empty = await passports.handler({ action: "prepare_registry_upload_file", args: { passportIds: [] } });
+    expect(empty.isError).toBe(true);
+    const tooMany = await passports.handler({
+      action: "prepare_registry_upload_file",
+      args: { passportIds: Array.from({ length: 101 }, (_, i) => `id${i}`) },
+    });
+    expect(tooMany.isError).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("record_acceptance_test POSTs an acceptance record and nothing else", async () => {
+    const { passports, calls } = tools();
+    await passports.handler({ action: "record_acceptance_test", args: { id: ID, result: "failed", errorCode: "E-42" } });
+    expect(calls[0]!.method).toBe("POST");
+    expect(calls[0]!.path).toBe(`/api/v1/passports/${ID}/registration`);
+    expect(calls[0]!.body).toEqual({ environment: "acceptance", result: "failed", errorCode: "E-42" });
+  });
+
+  it("record_acceptance_test without errorCode omits it, and refuses a result outside passed|failed", async () => {
+    const { passports, calls } = tools();
+    await passports.handler({ action: "record_acceptance_test", args: { id: ID, result: "passed" } });
+    expect(calls[0]!.body).toEqual({ environment: "acceptance", result: "passed" });
+    const bad = await passports.handler({ action: "record_acceptance_test", args: { id: ID, result: "ok" } });
+    expect(bad.isError).toBe(true);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("record_registration POSTs a production record with the optional date and registration id", async () => {
+    const { lifecycle, calls } = tools();
+    await lifecycle.handler({
+      action: "record_registration",
+      args: { id: ID, placedOnMarketAt: "2027-03-01", registrationId: "REG-1" },
+    });
+    expect(calls[0]!.method).toBe("POST");
+    expect(calls[0]!.path).toBe(`/api/v1/passports/${ID}/registration`);
+    expect(calls[0]!.body).toEqual({ environment: "production", placedOnMarketAt: "2027-03-01", registrationId: "REG-1" });
+  });
+
+  it("record_registration with only an id sends just the environment (the date defaults server-side)", async () => {
+    const { lifecycle, calls } = tools();
+    await lifecycle.handler({ action: "record_registration", args: { id: ID } });
+    expect(calls[0]!.body).toEqual({ environment: "production" });
+  });
+
+  it("record_registration refuses a malformed date and an over-long registration id before calling the API", async () => {
+    const { lifecycle, calls } = tools();
+    const date = await lifecycle.handler({ action: "record_registration", args: { id: ID, placedOnMarketAt: "01/03/2027" } });
+    expect(date.isError).toBe(true);
+    const long = await lifecycle.handler({ action: "record_registration", args: { id: ID, registrationId: "x".repeat(201) } });
+    expect(long.isError).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("undo_registration DELETEs with the environment as a query parameter", async () => {
+    const { lifecycle, calls } = tools();
+    await lifecycle.handler({ action: "undo_registration", args: { id: ID, environment: "acceptance" } });
+    expect(calls[0]!.method).toBe("DELETE");
+    expect(calls[0]!.path).toBe(`/api/v1/passports/${ID}/registration?environment=acceptance`);
+  });
+
+  it("undo_registration requires an environment", async () => {
+    const { lifecycle, calls } = tools();
+    const r = await lifecycle.handler({ action: "undo_registration", args: { id: ID } });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/environment/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("an action called on the wrong tool names the right one", async () => {
+    const { passports, lifecycle, calls } = tools();
+    const a = await passports.handler({ action: "record_registration", args: { id: ID } });
+    expect(a.isError).toBe(true);
+    expect(a.content[0]!.text).toMatch(/tracepass_passport_lifecycle/);
+    const b = await lifecycle.handler({ action: "prepare_registry_upi", args: { id: ID } });
+    expect(b.isError).toBe(true);
+    expect(b.content[0]!.text).toMatch(/tracepass_passports/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("descriptions say the operator submits on the Registry website and TracePass never submits or verifies", () => {
+    const { passports, lifecycle } = tools();
+    for (const d of [passports.description, lifecycle.description]) {
+      expect(d).toMatch(/Registry website/);
+      expect(d).toMatch(/never submits to the Registry and never verifies/);
+      expect(d).toMatch(/acceptance[^\n]*no legal effect/);
+    }
+  });
+
+  it("record_registration is flagged for confirmation and says it locks the operator identifiers", () => {
+    const { lifecycle } = tools();
+    expect(lifecycle.description).toMatch(/record_registration[^\n]*Confirm with the user first/);
+    expect(lifecycle.description).toMatch(/record_registration[^\n]*locked/);
+  });
+
+  it("place_on_market is not presented as the way into the EU DPP Registry", () => {
+    const { lifecycle } = tools();
+    const line = lifecycle.description.split("\n").find((l) => l.startsWith("- place_on_market"))!;
+    expect(line).toMatch(/NOT the way into the EU DPP Registry/);
+    expect(line).not.toMatch(/registers it in the EU DPP registry/i);
   });
 });

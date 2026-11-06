@@ -55,7 +55,7 @@ export function registerPrompts(server: McpServer): void {
           `3. Report the verdict (compliant | compliant_with_warnings | incomplete), the prioritised critical gaps, then the warnings.\n` +
           `4. Note where a filled value's backing is weak. A field may carry \`sourceProvider\` naming the source that vouches for it (for example a public register), with \`sourceUrl\` linking the record. A value a named register vouches for is the strongest and cheapest to confirm. \`sourceProvider: "research"\` means the value was sourced from the web and deserves a closer look. No \`sourceProvider\` means no single source vouches for the stored value: it was entered by a person or read from an uploaded document. That is not a defect; verify the low-confidence values without a source first.\n` +
           `5. State plainly whether the passport is ready to publish, and if not, the exact gaps to close.\n` +
-          `6. For a battery passport, also run tracepass_passports (action: registry_readiness) and report \`placeOnMarketStatus\` from the get: placing, placed (with the registration ID) or rejected (with the reason). Placing on the market — tracepass_passport_lifecycle (action: place_on_market) — is a separate step after publishing, a legal act for the economic operator: name it as the next step when the passport is published and not placed, but never run it without the user's explicit confirmation.\n` +
+          `6. For a battery passport, also run tracepass_passports (action: registry_readiness) and report \`placeOnMarketStatus\` from the get: placing, placed (with the registration ID) or rejected (with the reason). Registration in the EU DPP Registry is a separate step after publishing, and the economic operator does it itself on the Registry website: TracePass prepares the address to paste (tracepass_passports, action: prepare_registry_upi) and records the registration once the operator reports it (tracepass_passport_lifecycle, action: record_registration). When the passport is published and not placed, name that as the next step (the register_battery_passport prompt walks it through), but never run either write without the user's explicit confirmation.\n` +
           `Do not change anything — this is a read-only audit.`,
       ),
   );
@@ -138,8 +138,35 @@ export function registerPrompts(server: McpServer): void {
           `2. Present the findings as a prioritised list: every \`critical\` finding first (these block compliant publishing — show its target field/party, why, the cited regulation/article, and the fix), then the \`warnings\` (format issues, recommended-not-mandatory gaps, use data a battery in service is expected to carry, and any "unverifiable_conditional" where data was missing to evaluate a rule).\n` +
           `3. If you want optional-but-recommended fields beyond what the verdict flags, fetch the category schema with tracepass_templates (action: get) and note high-value optional fields — clearly separated from the mandatory gaps above.\n` +
           `4. If a finding targets a field that IS filled (a format issue, or a value the reviewer should re-check), fetch tracepass_passports (action: get, format: full) and say where that value came from: \`sourceProvider\` names the source that vouches for it, with \`sourceUrl\` linking the record. A value a named register vouches for is cheap to confirm; one with \`sourceProvider: "research"\` or none at all is where a reviewer's time is best spent. An absent \`sourceProvider\` is not itself a gap.\n` +
-          `5. End with the one-line verdict and the single most important thing to fix first. If \`conditionalCoverage\` is "static-only", say so — it means no binding conditional rules exist for this category yet, not that the passport is fully future-proof. For a published battery passport, say whether it is placed on the market (\`placeOnMarketStatus\`); if not, placing it via tracepass_passport_lifecycle (action: place_on_market) is the next step, done only on the user's confirmation.\n` +
+          `5. End with the one-line verdict and the single most important thing to fix first. If \`conditionalCoverage\` is "static-only", say so — it means no binding conditional rules exist for this category yet, not that the passport is fully future-proof. For a published battery passport, say whether it is placed on the market (\`placeOnMarketStatus\`); if not, the next step is the operator's own registration on the EU DPP Registry website, which TracePass prepares (tracepass_passports, action: prepare_registry_upi) and then records (tracepass_passport_lifecycle, action: record_registration), each only on the user's confirmation.\n` +
           `Read-only — do not change field values or publish. The reviewer decides.`,
+      ),
+  );
+
+  // ── Register a battery passport in the EU DPP Registry ────────
+  server.registerPrompt(
+    "register_battery_passport",
+    {
+      title: "Register a battery passport in the EU DPP Registry",
+      description:
+        "Walk the economic operator through registering a published battery passport in the EU DPP Registry: check readiness, prepare the address (or an upload file) the operator submits on the Registry website, then record the result the operator reports. TracePass never submits and never verifies.",
+      argsSchema: {
+        passportId: z
+          .string()
+          .describe("The TracePass id of the published battery passport to register."),
+      },
+    },
+    ({ passportId }) =>
+      userPrompt(
+        `Help me register the TracePass battery passport "${passportId}" in the EU DPP Registry.\n\n` +
+          `How it works: I, the economic operator, register the passport myself on the EU DPP Registry website under my own EU Login. TracePass prepares what I submit and records what I report back; it never submits to the Registry and never verifies the result. The Registry has two environments: acceptance (for testing, no legal effect) and production (the registration that counts).\n\n` +
+          `1. Read the passport with tracepass_passports (action: get). It must be a published battery passport. If \`placeOnMarketStatus\` is already "placed", tell me and stop.\n` +
+          `2. Run tracepass_passports (action: registry_readiness, args: { id: "${passportId}" }). If \`ready\` is false, list the blocking findings with their fixes and stop until they are fixed.\n` +
+          `3. Ask me before preparing, then run tracepass_passports (action: prepare_registry_upi, args: { id: "${passportId}" }). Give me the \`upi\` exactly as returned, to paste into the Registry's online form. If it is refused with registry_not_ready, show \`findingDetails\` (blockers first). For several passports at once, use action: prepare_registry_upload_file with { passportIds } instead: give me \`xml\` to save unchanged under \`filename\` and upload on the Registry website, and list every \`excluded\` passport with its reason.\n` +
+          `4. Suggest I try it in the acceptance environment first. When I report the outcome, ask before recording it with tracepass_passports (action: record_acceptance_test, args: { id, result: "passed" | "failed", errorCode? }). Remind me this has no legal effect.\n` +
+          `5. Once I tell you I have registered it in the production Registry, confirm with me before recording it with tracepass_passport_lifecycle (action: record_registration, args: { id, placedOnMarketAt? (YYYY-MM-DD, defaults to today), registrationId? }). Say first that this marks the passport placed on the market and locks its operator and facility identifiers, and that TracePass records my statement without checking it with the Registry.\n` +
+          `6. If I recorded something by mistake, tracepass_passport_lifecycle (action: undo_registration, args: { id, environment }) removes the record, after my confirmation. It changes nothing in the Registry.\n` +
+          `Never record a registration I have not told you I made. Do not use place_on_market for this: the EU DPP Registry does not accept it.`,
       ),
   );
 

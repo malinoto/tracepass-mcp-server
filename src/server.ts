@@ -55,9 +55,17 @@ export function createMcpServer(config: CreateMcpServerConfig): McpServer {
       "is published in TracePass. Writes count against the daily API " +
       "budget, so never create passports in bulk without the user's " +
       "explicit consent. " +
-      "Irreversible actions (archive, suspend, place_on_market) are in " +
-      "tracepass_passport_lifecycle — always confirm with the user before " +
-      "calling them; prefer suspend when a change might need undoing.",
+      "Irreversible actions (archive, suspend, record_registration, " +
+      "place_on_market) are in tracepass_passport_lifecycle — always confirm " +
+      "with the user before calling them; prefer suspend when a change might " +
+      "need undoing. " +
+      "EU DPP Registry: the economic operator registers a battery passport " +
+      "itself, on the Registry website. TracePass prepares what it submits " +
+      "(tracepass_passports prepare_registry_upi / prepare_registry_upload_file) " +
+      "and records what it reports (record_registration for production; " +
+      "record_acceptance_test for the acceptance environment, which has no " +
+      "legal effect). TracePass never submits to the Registry and never " +
+      "verifies the outcome.",
   });
 
   const client = new TracePassClient({

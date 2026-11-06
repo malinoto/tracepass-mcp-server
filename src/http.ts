@@ -211,6 +211,7 @@ export const SERVER_CARD = {
       "onboard_product",
       "explain_dpp_requirements",
       "compliance_gap_check",
+      "register_battery_passport",
       "review_epcis_events",
     ],
   },
