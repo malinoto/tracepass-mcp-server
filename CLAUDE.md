@@ -168,6 +168,9 @@ which holds the full steps.
 ## Before changing anything
 
 - `npm run lint && npm run typecheck && npm test` (vitest) green.
+- The ESLint rules and the TypeScript base settings come from the
+  `@tracepass/code-standard` package (`eslint.config.mjs`, `tsconfig.json` `extends`).
+  Add rules or stricter settings on top; never switch one of its rules off.
 - The v1 API contract is owned by `tracepass-platform` — if a tool needs a field
   the API doesn't return, the change starts there, not here.
 - Listed on Glama + Smithery (`glama.json`, `smithery-config-schema.json`); keep
