@@ -42,9 +42,7 @@ export function registerPrompts(server: McpServer): void {
       description:
         "Review one Digital Product Passport for completeness and compliance readiness — which required fields are missing, which economic-operator parties are unset, whether it's publishable.",
       argsSchema: {
-        passportId: z
-          .string()
-          .describe("The TracePass id of the passport to audit."),
+        passportId: z.string().describe("The TracePass id of the passport to audit."),
       },
     },
     ({ passportId }) =>
@@ -126,9 +124,7 @@ export function registerPrompts(server: McpServer): void {
       description:
         "Cross-check a draft passport against its category's regulatory schema and produce an exact, prioritised list of what's missing before it can be published compliantly.",
       argsSchema: {
-        passportId: z
-          .string()
-          .describe("The TracePass id of the passport to gap-check."),
+        passportId: z.string().describe("The TracePass id of the passport to gap-check."),
       },
     },
     ({ passportId }) =>
@@ -178,9 +174,7 @@ export function registerPrompts(server: McpServer): void {
       description:
         "Inspect the EPCIS 2.0 supply-chain event history of a passport and summarise the product's traceability story.",
       argsSchema: {
-        passportId: z
-          .string()
-          .describe("The TracePass id of the passport whose events to review."),
+        passportId: z.string().describe("The TracePass id of the passport whose events to review."),
       },
     },
     ({ passportId }) =>

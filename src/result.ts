@@ -78,11 +78,7 @@ export function inactiveAccountMessage(errorCode: string | undefined): string | 
   return null;
 }
 
-export function apiResult(res: {
-  status: number;
-  ok: boolean;
-  body: unknown;
-}): ToolResult {
+export function apiResult(res: { status: number; ok: boolean; body: unknown }): ToolResult {
   if (res.ok) return jsonResult(res.body);
 
   const body = (res.body ?? {}) as Record<string, unknown>;
@@ -107,13 +103,11 @@ export function apiResult(res: {
     case 403:
       return errorResult(
         inactiveAccountMessage(errorCode) ??
-        `Not permitted on this account's plan${errorCode ? ` (${errorCode})` : ""}. ${message ?? "This feature may require a higher plan or a paid add-on."}`.trim() +
-          " Do not retry — tell the user this needs a plan change.",
+          `Not permitted on this account's plan${errorCode ? ` (${errorCode})` : ""}. ${message ?? "This feature may require a higher plan or a paid add-on."}`.trim() +
+            " Do not retry — tell the user this needs a plan change.",
       );
     case 404:
-      return errorResult(
-        `Not found — ${message ?? "no resource matches that id or serial."}`,
-      );
+      return errorResult(`Not found — ${message ?? "no resource matches that id or serial."}`);
     case 409: {
       // Refusal codes (e.g. place-on-market's registry_not_ready) often carry no
       // `message`; the code and any `findings[]` are what the agent must act on.
@@ -122,7 +116,9 @@ export function apiResult(res: {
         : [];
       const detail =
         message ??
-        (errorCode ? undefined : "this would collide with existing data (e.g. a duplicate GTIN or serial).");
+        (errorCode
+          ? undefined
+          : "this would collide with existing data (e.g. a duplicate GTIN or serial).");
       return errorResult(
         [
           `Conflict${errorCode ? ` (${errorCode})` : ""}${detail ? ` — ${detail}` : "."}`,

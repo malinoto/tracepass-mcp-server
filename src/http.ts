@@ -62,8 +62,7 @@ const BASE_URL = process.env.TRACEPASS_BASE_URL?.trim() || DEFAULT_BASE_URL;
 // OAuth discovery metadata (RFC 9728 `authorization_servers`). MUST be a URL the
 // client's browser can reach — distinct from BASE_URL, which in prod is the
 // internal loopback. Defaults to the public app origin.
-const PUBLIC_AUTH_SERVER_URL =
-  process.env.TRACEPASS_AUTH_SERVER_URL?.trim() || DEFAULT_BASE_URL;
+const PUBLIC_AUTH_SERVER_URL = process.env.TRACEPASS_AUTH_SERVER_URL?.trim() || DEFAULT_BASE_URL;
 
 /** Maximum allowed request body size (bytes). Requests over this limit are
  *  rejected with 413 before the body reaches the SDK or is parsed as JSON. */
@@ -110,7 +109,8 @@ const PROTECTED_RESOURCE_METADATA_PATH = "/.well-known/oauth-protected-resource"
  * per-path path (`/compliance/mcp` appended) is the conventional RFC 9728 layout
  * for multi-resource servers.
  */
-const COMPLIANCE_PROTECTED_RESOURCE_METADATA_PATH = "/.well-known/oauth-protected-resource/compliance/mcp";
+const COMPLIANCE_PROTECTED_RESOURCE_METADATA_PATH =
+  "/.well-known/oauth-protected-resource/compliance/mcp";
 
 /**
  * Glama connector ownership-claim path. Glama probes the CONNECTOR's
@@ -254,12 +254,7 @@ const PROTECTED_RESOURCE_METADATA = {
 const COMPLIANCE_PROTECTED_RESOURCE_METADATA = {
   resource: `https://ai.tracepass.eu${COMPLIANCE_MCP_PATH}`,
   authorization_servers: [PUBLIC_AUTH_SERVER_URL],
-  scopes_supported: [
-    "regulatory:read",
-    "passports:read",
-    "passports:write",
-    "offline_access",
-  ],
+  scopes_supported: ["regulatory:read", "passports:read", "passports:write", "offline_access"],
   bearer_methods_supported: ["header"],
 } as const;
 
@@ -503,7 +498,11 @@ export async function credentialAccepted(bearerToken: string): Promise<boolean> 
   try {
     const res = await fetch(`${BASE_URL}/api/v1/products?limit=1`, {
       method: "GET",
-      headers: { Authorization: `Bearer ${bearerToken}`, Accept: "application/json", "X-Source": "mcp" },
+      headers: {
+        Authorization: `Bearer ${bearerToken}`,
+        Accept: "application/json",
+        "X-Source": "mcp",
+      },
     });
     return res.status !== 401;
   } catch {
@@ -532,7 +531,9 @@ async function writeWebResponse(
   }
 
   const reader = webRes.body.getReader();
-  const onClose = (): void => { void reader.cancel().catch(() => {}); };
+  const onClose = (): void => {
+    void reader.cancel().catch(() => {});
+  };
   req.once("close", onClose);
 
   try {
@@ -621,7 +622,10 @@ async function handleRequestAsync(req: IncomingMessage, res: ServerResponse): Pr
       // open an infinite SSE stream that writeWebResponse streams indefinitely.
       if (method !== "POST") {
         res.setHeader("Allow", "POST");
-        sendJson(res, 405, { error: "method_not_allowed", message: "This endpoint accepts POST only." });
+        sendJson(res, 405, {
+          error: "method_not_allowed",
+          message: "This endpoint accepts POST only.",
+        });
         return;
       }
       const sBodyStr = await readBody(req);
@@ -635,7 +639,9 @@ async function handleRequestAsync(req: IncomingMessage, res: ServerResponse): Pr
           });
           return;
         }
-      } catch { /* unparseable — let the transport produce the JSON-RPC error */ }
+      } catch {
+        /* unparseable — let the transport produce the JSON-RPC error */
+      }
       const token = supplier.pathToken || extractBearerToken(req) || "";
       logUsageOnFinish(req, res, "supplier", {
         ...summarizeRpc(sBodyStr, null),
@@ -647,10 +653,14 @@ async function handleRequestAsync(req: IncomingMessage, res: ServerResponse): Pr
         publicBaseUrl: PUBLIC_AUTH_SERVER_URL,
         forwardedFor: clientIpFromForwardedFor(req.headers["x-forwarded-for"]),
       });
-      const sTransport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+      const sTransport = new WebStandardStreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+      });
       await sServer.connect(sTransport);
       // Release the per-request server if the client disconnects before the response completes.
-      req.once("close", () => { void sServer.close().catch(() => {}); });
+      req.once("close", () => {
+        void sServer.close().catch(() => {});
+      });
       const sWebRes = await sTransport.handleRequest(toWebRequest(req, sBodyStr));
       await writeWebResponse(sWebRes, res, req);
       await sServer.close().catch(() => {});
@@ -680,7 +690,10 @@ async function handleRequestAsync(req: IncomingMessage, res: ServerResponse): Pr
       // Only POST: same reason as the supplier and main /mcp paths.
       if (method !== "POST") {
         res.setHeader("Allow", "POST");
-        sendJson(res, 405, { error: "method_not_allowed", message: "This endpoint accepts POST only." });
+        sendJson(res, 405, {
+          error: "method_not_allowed",
+          message: "This endpoint accepts POST only.",
+        });
         return;
       }
       const cBodyStr = await readBody(req);
@@ -693,7 +706,9 @@ async function handleRequestAsync(req: IncomingMessage, res: ServerResponse): Pr
           });
           return;
         }
-      } catch { /* unparseable */ }
+      } catch {
+        /* unparseable */
+      }
       const cBearerToken = extractBearerToken(req);
       const cNeedsAuth = requestRequiresAuth(cBodyStr);
       logUsageOnFinish(req, res, "compliance", summarizeRpc(cBodyStr, cBearerToken));
@@ -712,9 +727,13 @@ async function handleRequestAsync(req: IncomingMessage, res: ServerResponse): Pr
         baseUrl: BASE_URL,
         forwardedFor: clientIpFromForwardedFor(req.headers["x-forwarded-for"]),
       });
-      const cTransport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+      const cTransport = new WebStandardStreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+      });
       await cServer.connect(cTransport);
-      req.once("close", () => { void cServer.close().catch(() => {}); });
+      req.once("close", () => {
+        void cServer.close().catch(() => {});
+      });
       const cWebRes = await cTransport.handleRequest(toWebRequest(req, cBodyStr));
       await writeWebResponse(cWebRes, res, req);
       await cServer.close().catch(() => {});
@@ -734,7 +753,10 @@ async function handleRequestAsync(req: IncomingMessage, res: ServerResponse): Pr
     // open an infinite SSE stream that writeWebResponse streams indefinitely.
     if (method !== "POST") {
       res.setHeader("Allow", "POST");
-      sendJson(res, 405, { error: "method_not_allowed", message: "This endpoint accepts POST only." });
+      sendJson(res, 405, {
+        error: "method_not_allowed",
+        message: "This endpoint accepts POST only.",
+      });
       return;
     }
 
@@ -753,7 +775,9 @@ async function handleRequestAsync(req: IncomingMessage, res: ServerResponse): Pr
         });
         return;
       }
-    } catch { /* unparseable — let the transport produce the JSON-RPC error */ }
+    } catch {
+      /* unparseable — let the transport produce the JSON-RPC error */
+    }
 
     // Method-aware auth. The MCP HANDSHAKE + DISCOVERY (initialize,
     // tools/list, prompts/list, resources/list, ping, …) are PUBLIC — no
@@ -802,7 +826,9 @@ async function handleRequestAsync(req: IncomingMessage, res: ServerResponse): Pr
 
     // Release the per-request server if the client disconnects before the
     // response completes.
-    req.once("close", () => { void server.close().catch(() => {}); });
+    req.once("close", () => {
+      void server.close().catch(() => {});
+    });
 
     const webReq = toWebRequest(req, bodyStr);
     const webRes = await transport.handleRequest(webReq);
@@ -810,13 +836,15 @@ async function handleRequestAsync(req: IncomingMessage, res: ServerResponse): Pr
 
     // Stateless — release the per-request server once answered.
     await server.close().catch(() => {});
-
   } catch (err) {
     // Body too large: client sent more than BODY_LIMIT_BYTES. Send 413 and
     // don't log (the client is responsible for the oversized payload).
     if (err instanceof BodyTooLargeError) {
       if (!res.headersSent) {
-        sendJson(res, 413, { error: "request_too_large", message: "Request body exceeds the maximum allowed size." });
+        sendJson(res, 413, {
+          error: "request_too_large",
+          message: "Request body exceeds the maximum allowed size.",
+        });
       } else {
         res.destroy();
       }
@@ -878,8 +906,7 @@ const httpServer = createServer(
 if (!process.env.VITEST) {
   httpServer.listen(PORT, () => {
     process.stdout.write(
-      `tracepass-mcp-server listening on :${PORT}${MCP_PATH} ` +
-        `(TracePass API: ${BASE_URL})\n`,
+      `tracepass-mcp-server listening on :${PORT}${MCP_PATH} ` + `(TracePass API: ${BASE_URL})\n`,
     );
   });
 

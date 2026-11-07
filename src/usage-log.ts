@@ -27,7 +27,10 @@ export function authKind(bearerToken: string | null | undefined): AuthKind {
   return bearerToken.startsWith("tp_") ? "api_key" : "oauth";
 }
 
-export function summarizeRpc(body: string | undefined, bearerToken: string | null | undefined): RpcSummary {
+export function summarizeRpc(
+  body: string | undefined,
+  bearerToken: string | null | undefined,
+): RpcSummary {
   const summary: RpcSummary = { methods: [], tools: [], auth: authKind(bearerToken) };
   if (!body) return summary;
   let parsed: unknown;
@@ -49,8 +52,10 @@ export function summarizeRpc(body: string | undefined, bearerToken: string | nul
       const { name, arguments: args } = params as { name?: unknown; arguments?: unknown };
       if (typeof name === "string") {
         const action =
-          args && typeof args === "object" && typeof (args as { action?: unknown }).action === "string"
-            ? ((args as { action: string }).action)
+          args &&
+          typeof args === "object" &&
+          typeof (args as { action?: unknown }).action === "string"
+            ? (args as { action: string }).action
             : undefined;
         summary.tools.push(action ? { name, action } : { name });
       }

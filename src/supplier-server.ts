@@ -65,7 +65,8 @@ const SUPPLIER_TOKEN_SEGMENT = /^[A-Za-z0-9_-]{16,256}$/;
  * come from the header), or null when the path is not a supplier path.
  */
 export function matchSupplierPath(pathname: string): { pathToken: string } | null {
-  if (pathname === SUPPLIER_MCP_PATH || pathname === `${SUPPLIER_MCP_PATH}/`) return { pathToken: "" };
+  if (pathname === SUPPLIER_MCP_PATH || pathname === `${SUPPLIER_MCP_PATH}/`)
+    return { pathToken: "" };
   if (!pathname.startsWith(`${SUPPLIER_MCP_PATH}/`)) return null;
   const segment = pathname.slice(SUPPLIER_MCP_PATH.length + 1).replace(/\/$/, "");
   return SUPPLIER_TOKEN_SEGMENT.test(segment) ? { pathToken: segment } : null;
@@ -101,7 +102,9 @@ export function supplierResult(res: { status: number; ok: boolean; body: unknown
     case 413:
       return errorResult(`The file is too large: ${detail ?? "the limit is 10 MB."}`);
     case 429:
-      return errorResult("Too many calls for this request in the last minute. Wait a minute, then retry.");
+      return errorResult(
+        "Too many calls for this request in the last minute. Wait a minute, then retry.",
+      );
     default:
       return errorResult(`TracePass returned ${res.status}. ${detail ?? JSON.stringify(res.body)}`);
   }
@@ -109,9 +112,20 @@ export function supplierResult(res: { status: number; ok: boolean; body: unknown
 
 const evidenceSchema = z
   .object({
-    documentId: z.string().optional().describe("An id returned by upload_evidence for this request."),
-    url: z.string().optional().describe("A public http(s) page that states the value, e.g. a datasheet or a register entry."),
-    note: z.string().optional().describe("Where in the source the value is, e.g. 'datasheet p.3, table 2'."),
+    documentId: z
+      .string()
+      .optional()
+      .describe("An id returned by upload_evidence for this request."),
+    url: z
+      .string()
+      .optional()
+      .describe(
+        "A public http(s) page that states the value, e.g. a datasheet or a register entry.",
+      ),
+    note: z
+      .string()
+      .optional()
+      .describe("Where in the source the value is, e.g. 'datasheet p.3, table 2'."),
   })
   .describe("Where one value comes from.");
 
@@ -164,10 +178,18 @@ export function buildSupplierTools(
           .optional()
           .describe("Language for labels and descriptions, e.g. 'de'. Defaults to English."),
       },
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       handler: guard(async (args) => {
-        const lang = typeof args.lang === "string" && /^[a-z]{2}$/i.test(args.lang) ? args.lang : "";
-        return supplierResult(await client.get(`/api/supplier/v1/request${lang ? `?lang=${lang}` : ""}`));
+        const lang =
+          typeof args.lang === "string" && /^[a-z]{2}$/i.test(args.lang) ? args.lang : "";
+        return supplierResult(
+          await client.get(`/api/supplier/v1/request${lang ? `?lang=${lang}` : ""}`),
+        );
       }),
     },
     {
@@ -180,9 +202,16 @@ export function buildSupplierTools(
           .record(z.string(), z.unknown())
           .describe("Field key → value, using the keys from get_request."),
       },
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       handler: guard(async (args) =>
-        supplierResult(await client.post("/api/supplier/v1/validate", { fieldValues: args.fieldValues ?? {} })),
+        supplierResult(
+          await client.post("/api/supplier/v1/validate", { fieldValues: args.fieldValues ?? {} }),
+        ),
       ),
     },
     {
@@ -191,9 +220,17 @@ export function buildSupplierTools(
       description:
         "The best way to attach a supporting document if you can run shell commands: returns a curl command that uploads the file straight from disk, and prints a documentId to cite in submit_answers. Accepts PDF, Office files, CSV and images (PNG, JPEG, WebP). If you cannot run commands, cite a public URL or a note as evidence instead, or use upload_evidence for a very small file.",
       inputSchema: {
-        path: z.string().min(1).describe("Path of the file on the supplier's machine, e.g. ./datasheet.pdf"),
+        path: z
+          .string()
+          .min(1)
+          .describe("Path of the file on the supplier's machine, e.g. ./datasheet.pdf"),
       },
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       handler: guard(async (args) => {
         const path = String(args.path ?? "");
         const ext = path.split(".").pop()?.toLowerCase() ?? "";
@@ -203,7 +240,10 @@ export function buildSupplierTools(
             `Files of type .${ext || "?"} are not accepted. Use PDF, Word, Excel, CSV, PNG, JPEG or WebP, or cite the source as a URL or note.`,
           );
         }
-        if (!upload) return errorResult("Uploading by command is not available on this connection. Use upload_evidence or cite a URL or note.");
+        if (!upload)
+          return errorResult(
+            "Uploading by command is not available on this connection. Use upload_evidence or cite a URL or note.",
+          );
         const command =
           `curl -sS -H ${shellQuote(`Authorization: Bearer ${upload.token}`)} ` +
           `-F ${shellQuote(`file=@${path};type=${mime}`)} ` +
@@ -225,7 +265,12 @@ export function buildSupplierTools(
         mimeType: z.string().describe("e.g. application/pdf, image/png"),
         contentBase64: z.string().min(1).describe("The file's bytes, base64-encoded."),
       },
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
       handler: guard(async (args) =>
         supplierResult(
           await client.post("/api/supplier/v1/documents", {
@@ -246,14 +291,21 @@ export function buildSupplierTools(
         evidence: z
           .record(z.string(), evidenceSchema)
           .optional()
-          .describe("Field key → where the value comes from. Strongly recommended for every value."),
+          .describe(
+            "Field key → where the value comes from. Strongly recommended for every value.",
+          ),
         notes: z.string().max(2000).optional().describe("A message to the requester."),
         documentIds: z
           .array(z.string())
           .optional()
           .describe("Uploaded documents to attach to the answer as a whole."),
       },
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       handler: guard(async (args) =>
         supplierResult(
           await client.post("/api/supplier/v1/submit", {
@@ -271,7 +323,12 @@ export function buildSupplierTools(
       description:
         "Whether the requester has reviewed the answers yet, the outcome, which fields they accepted and their note. Review has no deadline; linkExpiresAt is when this connection stops working. Read-only.",
       inputSchema: {},
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       handler: guard(async () => {
         const res = await client.get("/api/supplier/v1/request");
         if (!res.ok) return supplierResult(res);
@@ -310,18 +367,27 @@ export function createSupplierMcpServer(config: CreateSupplierMcpServerConfig): 
     apiKey: config.token,
     forwardedFor: config.forwardedFor,
   });
-  const upload = hasToken ? { token: config.token, publicBaseUrl: config.publicBaseUrl ?? config.baseUrl } : undefined;
+  const upload = hasToken
+    ? { token: config.token, publicBaseUrl: config.publicBaseUrl ?? config.baseUrl }
+    : undefined;
   for (const tool of buildSupplierTools(client, hasToken, upload)) {
     const cb = async (args: Record<string, unknown>) => {
       try {
         return await tool.handler(args ?? {});
       } catch (err) {
-        return errorResult(`Tool "${tool.name}" failed: ${err instanceof Error ? err.message : String(err)}`);
+        return errorResult(
+          `Tool "${tool.name}" failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     };
     server.registerTool(
       tool.name,
-      { title: tool.title, description: tool.description, inputSchema: tool.inputSchema, annotations: tool.annotations },
+      {
+        title: tool.title,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+        annotations: tool.annotations,
+      },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       cb as any,
     );

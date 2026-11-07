@@ -53,7 +53,11 @@ describe("buildTools — tool surface", () => {
     const block = /capabilities:\s*\{\s*tools:\s*\[([^\]]*)\]/.exec(src)?.[1] ?? "";
     const card = [...block.matchAll(/"(tracepass_[a-z_]+)"/g)].map((m) => m[1]).sort();
     const { client } = stubClient();
-    expect(card).toEqual(buildTools(client).map((t) => t.name).sort());
+    expect(card).toEqual(
+      buildTools(client)
+        .map((t) => t.name)
+        .sort(),
+    );
   });
 
   it("every tool has an action enum + an args field in its schema", () => {
@@ -152,7 +156,9 @@ describe("tracepass_passports — create + lifecycle actions", () => {
   });
 
   it("no tool description calls passport create billable", () => {
-    const passports = buildTools(stubClient().client).find((t) => t.name === "tracepass_passports")!;
+    const passports = buildTools(stubClient().client).find(
+      (t) => t.name === "tracepass_passports",
+    )!;
     expect(passports.description).not.toMatch(/BILLABLE|confirmOverage/);
     expect(passports.description).toMatch(/DRAFT passport/);
   });
@@ -160,30 +166,55 @@ describe("tracepass_passports — create + lifecycle actions", () => {
   // ── battery measurements (living record) ──
   it("capture_measurements posts the measurements to the passport", async () => {
     const { tool, calls } = passportsTool();
-    const measurements = [{ fieldKey: "stateOfHealth", value: 96.4, measuredAt: "2027-03-01T06:00:00Z", externalId: "m1" }];
+    const measurements = [
+      {
+        fieldKey: "stateOfHealth",
+        value: 96.4,
+        measuredAt: "2027-03-01T06:00:00Z",
+        externalId: "m1",
+      },
+    ];
     await tool.handler({ action: "capture_measurements", args: { id: "p1", measurements } });
-    expect(calls[0]).toMatchObject({ method: "POST", path: "/api/v1/passports/p1/measurements", body: { measurements } });
+    expect(calls[0]).toMatchObject({
+      method: "POST",
+      path: "/api/v1/passports/p1/measurements",
+      body: { measurements },
+    });
   });
 
   it("capture_measurements_by_serial carries the gtin disambiguator", async () => {
     const { tool, calls } = passportsTool();
     await tool.handler({
       action: "capture_measurements_by_serial",
-      args: { serial: "SN 1", gtin: "09506000134369", measurements: [{ fieldKey: "stateOfHealth", value: 90, measuredAt: "2027-03-01T06:00:00Z" }] },
+      args: {
+        serial: "SN 1",
+        gtin: "09506000134369",
+        measurements: [
+          { fieldKey: "stateOfHealth", value: 90, measuredAt: "2027-03-01T06:00:00Z" },
+        ],
+      },
     });
-    expect(calls[0]!.path).toBe("/api/v1/passports/by-serial/SN%201/measurements?gtin=09506000134369");
+    expect(calls[0]!.path).toBe(
+      "/api/v1/passports/by-serial/SN%201/measurements?gtin=09506000134369",
+    );
   });
 
   it("capture_measurements refuses an empty or oversized batch before calling the API", async () => {
     const { tool, calls } = passportsTool();
-    const r = await tool.handler({ action: "capture_measurements", args: { id: "p1", measurements: [] } });
+    const r = await tool.handler({
+      action: "capture_measurements",
+      args: { id: "p1", measurements: [] },
+    });
     expect(r.isError).toBe(true);
     expect(calls).toHaveLength(0);
   });
 
   it("list_measurements passes filters as query parameters", async () => {
     const { tool, calls } = passportsTool();
-    await tool.handler({ action: "list_measurements", args: { id: "p1", fieldKey: "stateOfHealth", limit: 10 } });
+    await tool.handler({
+      action: "list_measurements",
+      args: { id: "p1", fieldKey: "stateOfHealth", limit: 10 },
+    });
     expect(calls[0]!.path).toMatch(/^\/api\/v1\/passports\/p1\/measurements\?/);
     expect(calls[0]!.path).toContain("fieldKey=stateOfHealth");
     expect(calls[0]!.path).toContain("limit=10");
@@ -192,13 +223,18 @@ describe("tracepass_passports — create + lifecycle actions", () => {
   it("latest_measurements reads the latest endpoint", async () => {
     const { tool, calls } = passportsTool();
     await tool.handler({ action: "latest_measurements", args: { id: "p1" } });
-    expect(calls[0]).toMatchObject({ method: "GET", path: "/api/v1/passports/p1/measurements/latest" });
+    expect(calls[0]).toMatchObject({
+      method: "GET",
+      path: "/api/v1/passports/p1/measurements/latest",
+    });
   });
 
   // ── battery lineage (Art. 77(7)) ──
   it("create forwards a lineage block", async () => {
     const { tool, calls } = passportsTool();
-    const lineage = { predecessors: [{ internalPassportId: "6650a1b2c3d4e5f6a7b8c9d0", trigger: "repurposing" }] };
+    const lineage = {
+      predecessors: [{ internalPassportId: "6650a1b2c3d4e5f6a7b8c9d0", trigger: "repurposing" }],
+    };
     await tool.handler({
       action: "create",
       args: { productId: "p1", gtin: "09506000134369", serialNumber: "SN-2", lineage },
@@ -210,7 +246,12 @@ describe("tracepass_passports — create + lifecycle actions", () => {
     const { tool, calls } = passportsTool();
     const r = await tool.handler({
       action: "create",
-      args: { productId: "p1", gtin: "1", serialNumber: "s", lineage: { predecessors: [{ trigger: "repurposing" }] } },
+      args: {
+        productId: "p1",
+        gtin: "1",
+        serialNumber: "s",
+        lineage: { predecessors: [{ trigger: "repurposing" }] },
+      },
     });
     expect(r.isError).toBe(true);
     expect(calls).toHaveLength(0);
@@ -218,7 +259,10 @@ describe("tracepass_passports — create + lifecycle actions", () => {
 
   it("create sends no lineage key when none is given", async () => {
     const { tool, calls } = passportsTool();
-    await tool.handler({ action: "create", args: { productId: "p1", gtin: "1", serialNumber: "s" } });
+    await tool.handler({
+      action: "create",
+      args: { productId: "p1", gtin: "1", serialNumber: "s" },
+    });
     expect((calls[0]!.body as Record<string, unknown>).lineage).toBeUndefined();
   });
 
@@ -333,7 +377,11 @@ describe("tracepass_passports — create + lifecycle actions", () => {
 
   it("create with identifier doi passes a prefixed DOI through for the platform to strip", async () => {
     const { tool, calls } = passportsTool();
-    for (const doi of ["https://doi.org/10.1234/example", "doi:10.1234/example", "https://dx.doi.org/10.1234/example"]) {
+    for (const doi of [
+      "https://doi.org/10.1234/example",
+      "doi:10.1234/example",
+      "https://dx.doi.org/10.1234/example",
+    ]) {
       calls.length = 0;
       const r = await tool.handler({
         action: "create",
@@ -344,7 +392,10 @@ describe("tracepass_passports — create + lifecycle actions", () => {
     }
     const bad = await tool.handler({
       action: "create",
-      args: { productId: "p5", identifier: { scheme: "doi", doi: "https://example.com/10.1234/x", granularity: "model" } },
+      args: {
+        productId: "p5",
+        identifier: { scheme: "doi", doi: "https://example.com/10.1234/x", granularity: "model" },
+      },
     });
     expect(bad.isError).toBe(true);
   });
@@ -369,15 +420,29 @@ describe("tracepass_passports — create + lifecycle actions", () => {
 
   it("the passports action enum no longer contains lifecycle actions", () => {
     const { tool } = passportsTool();
-    const action = tool.inputSchema.action as unknown as { safeParse: (v: unknown) => { success: boolean } };
-    for (const moved of ["archive", "archive_by_serial", "suspend", "suspend_by_serial", "place_on_market"]) {
+    const action = tool.inputSchema.action as unknown as {
+      safeParse: (v: unknown) => { success: boolean };
+    };
+    for (const moved of [
+      "archive",
+      "archive_by_serial",
+      "suspend",
+      "suspend_by_serial",
+      "place_on_market",
+    ]) {
       expect(action.safeParse(moved).success, `${moved} should not be in passports`).toBe(false);
     }
   });
 
   it("each moved action name on passports returns the moved-to error", async () => {
     const { tool, calls } = passportsTool();
-    for (const moved of ["archive", "archive_by_serial", "suspend", "suspend_by_serial", "place_on_market"]) {
+    for (const moved of [
+      "archive",
+      "archive_by_serial",
+      "suspend",
+      "suspend_by_serial",
+      "place_on_market",
+    ]) {
       calls.length = 0;
       const r = await tool.handler({ action: moved, args: { id: "x1", serial: "SN-1" } });
       expect(r.isError, moved).toBe(true);
@@ -410,7 +475,10 @@ describe("tracepass_passports — create + lifecycle actions", () => {
 
   it("suspend_by_serial on passports returns the moved-to error (not a routing test)", async () => {
     const { tool, calls } = passportsTool();
-    const r = await tool.handler({ action: "suspend_by_serial", args: { serial: "SN-1", gtin: "09506000134369" } });
+    const r = await tool.handler({
+      action: "suspend_by_serial",
+      args: { serial: "SN-1", gtin: "09506000134369" },
+    });
     expect(r.isError).toBe(true);
     expect(r.content[0]!.text).toMatch(/tracepass_passport_lifecycle/);
     expect(calls).toHaveLength(0);
@@ -422,7 +490,9 @@ describe("tracepass_passports — create + lifecycle actions", () => {
       action: "get_qr_by_serial",
       args: { serial: "SN-1", format: "png", gtin: "09506000134369" },
     });
-    expect(calls[0]!.path).toBe("/api/v1/passports/by-serial/SN-1/qr?format=png&gtin=09506000134369");
+    expect(calls[0]!.path).toBe(
+      "/api/v1/passports/by-serial/SN-1/qr?format=png&gtin=09506000134369",
+    );
     expect(calls[0]!.method).toBe("GET");
   });
 
@@ -435,7 +505,10 @@ describe("tracepass_passports — create + lifecycle actions", () => {
 
   it("get_qr passes symbology=datamatrix through (EN 18220)", async () => {
     const { tool, calls } = passportsTool();
-    await tool.handler({ action: "get_qr", args: { id: "abc123", format: "png", symbology: "datamatrix" } });
+    await tool.handler({
+      action: "get_qr",
+      args: { id: "abc123", format: "png", symbology: "datamatrix" },
+    });
     expect(calls[0]!.path).toBe("/api/v1/passports/abc123/qr?format=png&symbology=datamatrix");
   });
 
@@ -448,8 +521,13 @@ describe("tracepass_passports — create + lifecycle actions", () => {
 
   it("list_snapshots passes `at` for a point-in-time read (EN 18221)", async () => {
     const { tool, calls } = passportsTool();
-    await tool.handler({ action: "list_snapshots", args: { id: "abc123", at: "2026-09-29T12:00:00Z" } });
-    expect(decodeURIComponent(calls[0]!.path)).toBe("/api/v1/passports/abc123/snapshots?at=2026-09-29T12:00:00Z");
+    await tool.handler({
+      action: "list_snapshots",
+      args: { id: "abc123", at: "2026-09-29T12:00:00Z" },
+    });
+    expect(decodeURIComponent(calls[0]!.path)).toBe(
+      "/api/v1/passports/abc123/snapshots?at=2026-09-29T12:00:00Z",
+    );
   });
 
   it("list_snapshots without pagination omits query params", async () => {
@@ -593,8 +671,13 @@ describe("tracepass_passport_lifecycle — tool surface and routing", () => {
     const { tool } = lifecycleTool();
     const action = tool.inputSchema.action as unknown as { options: string[] };
     expect([...action.options].sort()).toEqual([
-      "archive", "archive_by_serial", "archive_product",
-      "place_on_market", "record_registration", "suspend", "suspend_by_serial",
+      "archive",
+      "archive_by_serial",
+      "archive_product",
+      "place_on_market",
+      "record_registration",
+      "suspend",
+      "suspend_by_serial",
       "undo_registration",
     ]);
   });
@@ -618,7 +701,13 @@ describe("tracepass_passport_lifecycle — tool surface and routing", () => {
     const stub = stubClient();
     const passports = buildTools(stub.client).find((t) => t.name === "tracepass_passports")!;
     const opts = (passports.inputSchema.action as unknown as { options: string[] }).options;
-    for (const moved of ["archive", "archive_by_serial", "suspend", "suspend_by_serial", "place_on_market"]) {
+    for (const moved of [
+      "archive",
+      "archive_by_serial",
+      "suspend",
+      "suspend_by_serial",
+      "place_on_market",
+    ]) {
       expect(opts, `passports.${moved}`).not.toContain(moved);
     }
   });
@@ -634,7 +723,13 @@ describe("tracepass_passport_lifecycle — tool surface and routing", () => {
   it("each moved name on tracepass_passports returns the moved-to error", async () => {
     const stub = stubClient();
     const passports = buildTools(stub.client).find((t) => t.name === "tracepass_passports")!;
-    for (const moved of ["archive", "archive_by_serial", "suspend", "suspend_by_serial", "place_on_market"]) {
+    for (const moved of [
+      "archive",
+      "archive_by_serial",
+      "suspend",
+      "suspend_by_serial",
+      "place_on_market",
+    ]) {
       const r = await passports.handler({ action: moved, args: { id: "x1", serial: "SN-1" } });
       expect(r.isError, moved).toBe(true);
       expect(r.content[0]!.text, moved).toMatch(/tracepass_passport_lifecycle/);
@@ -683,7 +778,10 @@ describe("tracepass_passport_lifecycle — tool surface and routing", () => {
 
   it("suspend_by_serial passes the gtin disambiguator as a query param", async () => {
     const { tool, calls } = lifecycleTool();
-    await tool.handler({ action: "suspend_by_serial", args: { serial: "SN-1", gtin: "09506000134369" } });
+    await tool.handler({
+      action: "suspend_by_serial",
+      args: { serial: "SN-1", gtin: "09506000134369" },
+    });
     expect(calls[0]!.path).toBe("/api/v1/passports/by-serial/SN-1/suspend?gtin=09506000134369");
     expect(calls[0]!.method).toBe("POST");
   });
@@ -721,7 +819,10 @@ describe("tracepass_passport_lifecycle — tool surface and routing", () => {
 
   it("archive rejects a reason outside the closed set before calling the API", async () => {
     const { tool, calls } = lifecycleTool();
-    const r = await tool.handler({ action: "archive_by_serial", args: { serial: "SN-1", reason: "sold" } });
+    const r = await tool.handler({
+      action: "archive_by_serial",
+      args: { serial: "SN-1", reason: "sold" },
+    });
     expect(r.isError).toBe(true);
     expect(r.content[0]!.text).toMatch(/reason/);
     expect(calls).toHaveLength(0);
@@ -729,8 +830,11 @@ describe("tracepass_passport_lifecycle — tool surface and routing", () => {
 
   it("the lifecycle inputSchema advertises the archive reason enum", () => {
     const { tool } = lifecycleTool();
-    const args = tool.inputSchema.args as unknown as { unwrap: () => { shape: Record<string, unknown> } };
-    const reason = args.unwrap().shape.reason as { safeParse: (v: unknown) => { success: boolean } } | undefined;
+    const args = tool.inputSchema.args as unknown as {
+      unwrap: () => { shape: Record<string, unknown> };
+    };
+    const reason = args.unwrap().shape.reason as
+      { safeParse: (v: unknown) => { success: boolean } } | undefined;
     expect(reason).toBeDefined();
     expect(reason!.safeParse("duplicate_or_error").success).toBe(true);
     expect(reason!.safeParse("sold").success).toBe(false);
@@ -783,8 +887,13 @@ describe("tracepass_passport_fields — actions", () => {
 
   it("update_by_serial PATCHes the by-serial field endpoint with gtin", async () => {
     const { tool, calls } = fieldsTool();
-    await tool.handler({ action: "update_by_serial", args: { serial: "SN-1", fieldKey: "weight", value: 12, gtin: "09506000134369" } });
-    expect(calls[0]!.path).toBe("/api/v1/passports/by-serial/SN-1/fields/weight?gtin=09506000134369");
+    await tool.handler({
+      action: "update_by_serial",
+      args: { serial: "SN-1", fieldKey: "weight", value: 12, gtin: "09506000134369" },
+    });
+    expect(calls[0]!.path).toBe(
+      "/api/v1/passports/by-serial/SN-1/fields/weight?gtin=09506000134369",
+    );
     expect(calls[0]!.method).toBe("PATCH");
     expect(calls[0]!.body).toEqual({ value: 12 });
   });
@@ -792,10 +901,15 @@ describe("tracepass_passport_fields — actions", () => {
   it("refuses a field update with no value on both actions, without calling the API", async () => {
     const { tool, calls } = fieldsTool();
     const byId = await tool.handler({ action: "update", args: { id: "p1", fieldKey: "weight" } });
-    const bySerial = await tool.handler({ action: "update_by_serial", args: { serial: "SN-1", fieldKey: "weight" } });
+    const bySerial = await tool.handler({
+      action: "update_by_serial",
+      args: { serial: "SN-1", fieldKey: "weight" },
+    });
     for (const r of [byId, bySerial]) {
       expect(r.isError).toBe(true);
-      expect(JSON.stringify(r.content)).toContain("value is required (pass null to clear the field)");
+      expect(JSON.stringify(r.content)).toContain(
+        "value is required (pass null to clear the field)",
+      );
     }
     expect(calls).toHaveLength(0);
   });
@@ -808,8 +922,14 @@ describe("tracepass_passport_fields — actions", () => {
 
   it("passes a declared source through on both actions", async () => {
     const { tool, calls } = fieldsTool();
-    await tool.handler({ action: "update", args: { id: "p1", fieldKey: "weight", value: 12, source: "ai_suggested" } });
-    await tool.handler({ action: "update_by_serial", args: { serial: "SN-1", fieldKey: "weight", value: 12, source: "manual" } });
+    await tool.handler({
+      action: "update",
+      args: { id: "p1", fieldKey: "weight", value: 12, source: "ai_suggested" },
+    });
+    await tool.handler({
+      action: "update_by_serial",
+      args: { serial: "SN-1", fieldKey: "weight", value: 12, source: "manual" },
+    });
     expect(calls[0]!.body).toEqual({ value: 12, source: "ai_suggested" });
     expect(calls[1]!.body).toEqual({ value: 12, source: "manual" });
   });
@@ -817,7 +937,10 @@ describe("tracepass_passport_fields — actions", () => {
   it("rejects an origin the platform reserves, without calling the API", async () => {
     for (const source of ["ai_approved", "system", "company", "supplier"]) {
       const { tool, calls } = fieldsTool();
-      const res = await tool.handler({ action: "update", args: { id: "p1", fieldKey: "weight", value: 12, source } });
+      const res = await tool.handler({
+        action: "update",
+        args: { id: "p1", fieldKey: "weight", value: 12, source },
+      });
       expect(res.isError, source).toBe(true);
       expect(calls).toHaveLength(0);
     }
@@ -839,7 +962,10 @@ describe("tracepass_epcis — actions", () => {
 
   it("export_by_serial routes to the by-serial epcis endpoint (with optional gtin)", async () => {
     const { tool, calls } = epcisTool();
-    await tool.handler({ action: "export_by_serial", args: { serial: "SN-1", gtin: "09506000134369" } });
+    await tool.handler({
+      action: "export_by_serial",
+      args: { serial: "SN-1", gtin: "09506000134369" },
+    });
     expect(calls[0]!.path).toBe("/api/v1/passports/by-serial/SN-1/epcis?gtin=09506000134369");
     expect(calls[0]!.method).toBe("GET");
   });
@@ -1323,7 +1449,11 @@ describe("tracepass_scope — scope-services actions", () => {
       get: async () => ({
         status: 403,
         ok: false,
-        body: { error: "plan_upgrade_required", feature: "scopeCatalogueEnabled", message: "The catalogue scope check is available from the Growth plan." },
+        body: {
+          error: "plan_upgrade_required",
+          feature: "scopeCatalogueEnabled",
+          message: "The catalogue scope check is available from the Growth plan.",
+        },
       }),
     } as unknown as typeof client;
     const tool = buildTools(stubbedClient).find((t) => t.name === "tracepass_scope")!;
@@ -1359,7 +1489,10 @@ describe("tracepass_scope — scope-services actions", () => {
   // ── catalogue_run_status ──
   it("catalogue_run_status GETs /api/v1/scope/catalogue/runs/{id}", async () => {
     const { tool, calls } = scopeTool();
-    await tool.handler({ action: "catalogue_run_status", args: { runId: "6650a1b2c3d4e5f6a7b8c9d0" } });
+    await tool.handler({
+      action: "catalogue_run_status",
+      args: { runId: "6650a1b2c3d4e5f6a7b8c9d0" },
+    });
     expect(calls[0]!.method).toBe("GET");
     expect(calls[0]!.path).toBe("/api/v1/scope/catalogue/runs/6650a1b2c3d4e5f6a7b8c9d0");
   });
@@ -1404,9 +1537,9 @@ describe("seg() — path-traversal guard", () => {
     const { client, calls } = stubClient();
     const tools = buildTools(client);
     const tool = tools.find((t) => t.name === "tracepass_products")!;
-    await expect(
-      tool.handler({ action: "get", args: { id: ".." } }),
-    ).rejects.toThrow(/Invalid path segment/);
+    await expect(tool.handler({ action: "get", args: { id: ".." } })).rejects.toThrow(
+      /Invalid path segment/,
+    );
     expect(calls).toHaveLength(0);
   });
 
@@ -1414,9 +1547,9 @@ describe("seg() — path-traversal guard", () => {
     const { client, calls } = stubClient();
     const tools = buildTools(client);
     const tool = tools.find((t) => t.name === "tracepass_products")!;
-    await expect(
-      tool.handler({ action: "get", args: { id: "." } }),
-    ).rejects.toThrow(/Invalid path segment/);
+    await expect(tool.handler({ action: "get", args: { id: "." } })).rejects.toThrow(
+      /Invalid path segment/,
+    );
     expect(calls).toHaveLength(0);
   });
 
@@ -1424,9 +1557,9 @@ describe("seg() — path-traversal guard", () => {
     const { client, calls } = stubClient();
     const tools = buildTools(client);
     const tool = tools.find((t) => t.name === "tracepass_passports")!;
-    await expect(
-      tool.handler({ action: "get", args: { id: ".." } }),
-    ).rejects.toThrow(/Invalid path segment/);
+    await expect(tool.handler({ action: "get", args: { id: ".." } })).rejects.toThrow(
+      /Invalid path segment/,
+    );
     expect(calls).toHaveLength(0);
   });
 
@@ -1444,9 +1577,9 @@ describe("seg() — path-traversal guard", () => {
     const { client, calls } = stubClient();
     const tools = buildTools(client);
     const tool = tools.find((t) => t.name === "tracepass_templates")!;
-    await expect(
-      tool.handler({ action: "get", args: { category: ".." } }),
-    ).rejects.toThrow(/Invalid path segment/);
+    await expect(tool.handler({ action: "get", args: { category: ".." } })).rejects.toThrow(
+      /Invalid path segment/,
+    );
     expect(calls).toHaveLength(0);
   });
 
@@ -1476,7 +1609,11 @@ describe("EU DPP Registry (mode C) — prepare, record, undo", () => {
     const { passports, lifecycle } = tools();
     const p = (passports.inputSchema.action as unknown as { options: string[] }).options;
     const l = (lifecycle.inputSchema.action as unknown as { options: string[] }).options;
-    for (const a of ["prepare_registry_upi", "prepare_registry_upload_file", "record_acceptance_test"]) {
+    for (const a of [
+      "prepare_registry_upi",
+      "prepare_registry_upload_file",
+      "record_acceptance_test",
+    ]) {
       expect(p, a).toContain(a);
       expect(l, a).not.toContain(a);
     }
@@ -1504,7 +1641,10 @@ describe("EU DPP Registry (mode C) — prepare, record, undo", () => {
 
   it("prepare_registry_upload_file POSTs the passport ids", async () => {
     const { passports, calls } = tools();
-    await passports.handler({ action: "prepare_registry_upload_file", args: { passportIds: [ID, "6650b2c3d4e5f6a7b8c9d0e2"] } });
+    await passports.handler({
+      action: "prepare_registry_upload_file",
+      args: { passportIds: [ID, "6650b2c3d4e5f6a7b8c9d0e2"] },
+    });
     expect(calls[0]!.method).toBe("POST");
     expect(calls[0]!.path).toBe("/api/v1/registry/upload-file");
     expect(calls[0]!.body).toEqual({ passportIds: [ID, "6650b2c3d4e5f6a7b8c9d0e2"] });
@@ -1512,7 +1652,10 @@ describe("EU DPP Registry (mode C) — prepare, record, undo", () => {
 
   it("prepare_registry_upload_file refuses an empty list and more than 100 ids before calling the API", async () => {
     const { passports, calls } = tools();
-    const empty = await passports.handler({ action: "prepare_registry_upload_file", args: { passportIds: [] } });
+    const empty = await passports.handler({
+      action: "prepare_registry_upload_file",
+      args: { passportIds: [] },
+    });
     expect(empty.isError).toBe(true);
     const tooMany = await passports.handler({
       action: "prepare_registry_upload_file",
@@ -1524,17 +1667,30 @@ describe("EU DPP Registry (mode C) — prepare, record, undo", () => {
 
   it("record_acceptance_test POSTs an acceptance record and nothing else", async () => {
     const { passports, calls } = tools();
-    await passports.handler({ action: "record_acceptance_test", args: { id: ID, result: "failed", errorCode: "E-42" } });
+    await passports.handler({
+      action: "record_acceptance_test",
+      args: { id: ID, result: "failed", errorCode: "E-42" },
+    });
     expect(calls[0]!.method).toBe("POST");
     expect(calls[0]!.path).toBe(`/api/v1/passports/${ID}/registration`);
-    expect(calls[0]!.body).toEqual({ environment: "acceptance", result: "failed", errorCode: "E-42" });
+    expect(calls[0]!.body).toEqual({
+      environment: "acceptance",
+      result: "failed",
+      errorCode: "E-42",
+    });
   });
 
   it("record_acceptance_test without errorCode omits it, and refuses a result outside passed|failed", async () => {
     const { passports, calls } = tools();
-    await passports.handler({ action: "record_acceptance_test", args: { id: ID, result: "passed" } });
+    await passports.handler({
+      action: "record_acceptance_test",
+      args: { id: ID, result: "passed" },
+    });
     expect(calls[0]!.body).toEqual({ environment: "acceptance", result: "passed" });
-    const bad = await passports.handler({ action: "record_acceptance_test", args: { id: ID, result: "ok" } });
+    const bad = await passports.handler({
+      action: "record_acceptance_test",
+      args: { id: ID, result: "ok" },
+    });
     expect(bad.isError).toBe(true);
     expect(calls).toHaveLength(1);
   });
@@ -1547,7 +1703,11 @@ describe("EU DPP Registry (mode C) — prepare, record, undo", () => {
     });
     expect(calls[0]!.method).toBe("POST");
     expect(calls[0]!.path).toBe(`/api/v1/passports/${ID}/registration`);
-    expect(calls[0]!.body).toEqual({ environment: "production", placedOnMarketAt: "2027-03-01", registrationId: "REG-1" });
+    expect(calls[0]!.body).toEqual({
+      environment: "production",
+      placedOnMarketAt: "2027-03-01",
+      registrationId: "REG-1",
+    });
   });
 
   it("record_registration with only an id sends just the environment (the date defaults server-side)", async () => {
@@ -1558,16 +1718,25 @@ describe("EU DPP Registry (mode C) — prepare, record, undo", () => {
 
   it("record_registration refuses a malformed date and an over-long registration id before calling the API", async () => {
     const { lifecycle, calls } = tools();
-    const date = await lifecycle.handler({ action: "record_registration", args: { id: ID, placedOnMarketAt: "01/03/2027" } });
+    const date = await lifecycle.handler({
+      action: "record_registration",
+      args: { id: ID, placedOnMarketAt: "01/03/2027" },
+    });
     expect(date.isError).toBe(true);
-    const long = await lifecycle.handler({ action: "record_registration", args: { id: ID, registrationId: "x".repeat(201) } });
+    const long = await lifecycle.handler({
+      action: "record_registration",
+      args: { id: ID, registrationId: "x".repeat(201) },
+    });
     expect(long.isError).toBe(true);
     expect(calls).toHaveLength(0);
   });
 
   it("undo_registration DELETEs with the environment as a query parameter", async () => {
     const { lifecycle, calls } = tools();
-    await lifecycle.handler({ action: "undo_registration", args: { id: ID, environment: "acceptance" } });
+    await lifecycle.handler({
+      action: "undo_registration",
+      args: { id: ID, environment: "acceptance" },
+    });
     expect(calls[0]!.method).toBe("DELETE");
     expect(calls[0]!.path).toBe(`/api/v1/passports/${ID}/registration?environment=acceptance`);
   });

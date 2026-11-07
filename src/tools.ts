@@ -102,18 +102,30 @@ function seg(s: string): string {
 const apiOutputShape = {
   // Single-entity reads/writes (product, passport) return the entity object;
   // these are the fields most responses carry.
-  id: z.string().optional().describe("The resource's TracePass id, when the response is a single entity."),
+  id: z
+    .string()
+    .optional()
+    .describe("The resource's TracePass id, when the response is a single entity."),
   // List reads return a paginated envelope.
-  items: z.array(z.unknown()).optional().describe("The page of results, when the action is a list."),
+  items: z
+    .array(z.unknown())
+    .optional()
+    .describe("The page of results, when the action is a list."),
   total: z.number().optional().describe("Total matching records across all pages (list actions)."),
   page: z.number().optional().describe("Current page number (list actions)."),
   limit: z.number().optional().describe("Page size (list actions)."),
   totalPages: z.number().optional().describe("Total number of pages (list actions)."),
   // Non-object bodies (e.g. a QR SVG/PNG string) are wrapped as { result: … }.
-  result: z.unknown().optional().describe("Wraps a non-object response body (e.g. a QR code string)."),
+  result: z
+    .unknown()
+    .optional()
+    .describe("Wraps a non-object response body (e.g. a QR code string)."),
   // Error envelope (also returned as isError text, but a structured copy may ride along).
   // Some API responses include `"error": null` (e.g. scope/catalogue/runs/{id}) — nullish accepts null | undefined | string.
-  error: z.string().nullish().describe("Machine-readable error code, when the API rejected the request."),
+  error: z
+    .string()
+    .nullish()
+    .describe("Machine-readable error code, when the API rejected the request."),
   message: z.string().nullish().describe("Human-readable error or status detail, when present."),
 } as const;
 
@@ -243,14 +255,23 @@ const operatorIdentifierSchema = z.discriminatedUnion("scheme", [
     scheme: z.literal("did"),
     // EN 18219 §6.4.2(b): syntax check only; verification requires an authorised-register VC.
     // W3C DID Core: method MUST be lowercase alphanumerics only.
-    did: z.string().regex(/^did:[a-z0-9]+:.+/, "DID must match did:<method>:<id> with lowercase alphanumeric method").max(512),
+    did: z
+      .string()
+      .regex(
+        /^did:[a-z0-9]+:.+/,
+        "DID must match did:<method>:<id> with lowercase alphanumeric method",
+      )
+      .max(512),
   }),
   z.object({
     scheme: z.literal("doi"),
-    doi: z.string().regex(
-      /^(?:doi:|https?:\/\/(?:dx\.)?doi\.org\/)?10\.\d{4,9}\/\S+$/i,
-      "DOI must be a valid 10.<4-9 digits>/<suffix> (bare or with doi:/URL prefix)",
-    ).max(512),
+    doi: z
+      .string()
+      .regex(
+        /^(?:doi:|https?:\/\/(?:dx\.)?doi\.org\/)?10\.\d{4,9}\/\S+$/i,
+        "DOI must be a valid 10.<4-9 digits>/<suffix> (bare or with doi:/URL prefix)",
+      )
+      .max(512),
   }),
 ]);
 
@@ -274,14 +295,23 @@ const facilityIdentifierSchema = z.discriminatedUnion("scheme", [
   }),
   z.object({
     scheme: z.literal("did"),
-    did: z.string().regex(/^did:[a-z0-9]+:.+/, "DID must match did:<method>:<id> with lowercase alphanumeric method").max(512),
+    did: z
+      .string()
+      .regex(
+        /^did:[a-z0-9]+:.+/,
+        "DID must match did:<method>:<id> with lowercase alphanumeric method",
+      )
+      .max(512),
   }),
   z.object({
     scheme: z.literal("doi"),
-    doi: z.string().regex(
-      /^(?:doi:|https?:\/\/(?:dx\.)?doi\.org\/)?10\.\d{4,9}\/\S+$/i,
-      "DOI must be a valid 10.<4-9 digits>/<suffix> (bare or with doi:/URL prefix)",
-    ).max(512),
+    doi: z
+      .string()
+      .regex(
+        /^(?:doi:|https?:\/\/(?:dx\.)?doi\.org\/)?10\.\d{4,9}\/\S+$/i,
+        "DOI must be a valid 10.<4-9 digits>/<suffix> (bare or with doi:/URL prefix)",
+      )
+      .max(512),
   }),
 ]);
 
@@ -294,7 +324,12 @@ const lineageSchema = z.object({
         .object({
           identifier: z.string().max(2000).optional(),
           internalPassportId: z.string().optional(),
-          trigger: z.enum(["preparation_for_reuse", "preparation_for_repurposing", "repurposing", "remanufacturing"]),
+          trigger: z.enum([
+            "preparation_for_reuse",
+            "preparation_for_repurposing",
+            "repurposing",
+            "remanufacturing",
+          ]),
         })
         .refine((p) => p.identifier !== undefined || p.internalPassportId !== undefined, {
           message: "each predecessor needs identifier or internalPassportId",
@@ -401,12 +436,9 @@ const SCHEMAS = {
       lineage: lineageSchema.optional(),
     })
     .refine(
-      (v) =>
-        v.identifier !== undefined ||
-        (v.gtin !== undefined && v.serialNumber !== undefined),
+      (v) => v.identifier !== undefined || (v.gtin !== undefined && v.serialNumber !== undefined),
       {
-        message:
-          "provide either identifier (with scheme) or the legacy gtin + serialNumber",
+        message: "provide either identifier (with scheme) or the legacy gtin + serialNumber",
       },
     ),
   passportId: z.object({ id: z.string().min(1) }),
@@ -515,7 +547,9 @@ const SCHEMAS = {
     id: z.string().min(1),
     flags: z
       .record(z.string(), z.union([z.boolean(), z.null()]))
-      .describe("Record<flagKey, boolean|null>. Valid keys are category-specific (battery: hasBMS, rechargeable, externalStorageOnly, isStationaryBess). null clears the flag."),
+      .describe(
+        "Record<flagKey, boolean|null>. Valid keys are category-specific (battery: hasBMS, rechargeable, externalStorageOnly, isStationaryBess). null clears the flag.",
+      ),
   }),
   conditionFlagsSetBySerial: z.object({
     serial: z.string().min(1),
@@ -566,15 +600,27 @@ const SCHEMAS = {
 
   // ── scope services ───────────────────────────────────────────
   scopeCheck: z.object({
-    category: z.string().min(1).optional().describe(
-      "Product category: battery | detergents | toys | construction | textile | steel | tyres | furniture | electronics | packaging | paints-coatings | jewelry | fmcg | vehicles | other.",
-    ),
-    facts: z.record(z.string(), z.unknown()).optional().describe(
-      "Namespace-prefixed fact keys declared by the loaded rules (e.g. battery.use, battery.capacityKWh). Unknown keys or wrong values return 400.",
-    ),
-    role: z.string().min(1).max(120).optional().describe(
-      "Role hint (e.g. manufacturer, importer, distributor, ownBrand). The platform resolves the act-specific term.",
-    ),
+    category: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "Product category: battery | detergents | toys | construction | textile | steel | tyres | furniture | electronics | packaging | paints-coatings | jewelry | fmcg | vehicles | other.",
+      ),
+    facts: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe(
+        "Namespace-prefixed fact keys declared by the loaded rules (e.g. battery.use, battery.capacityKWh). Unknown keys or wrong values return 400.",
+      ),
+    role: z
+      .string()
+      .min(1)
+      .max(120)
+      .optional()
+      .describe(
+        "Role hint (e.g. manufacturer, importer, distributor, ownBrand). The platform resolves the act-specific term.",
+      ),
     placedOnMarket: z
       .object({
         date: z.string().min(1).describe("YYYY-MM-DD, YYYY-MM or YYYY"),
@@ -582,26 +628,51 @@ const SCHEMAS = {
       })
       .nullable()
       .optional(),
-    lifecycleEvent: z.string().nullable().optional().describe("Lifecycle event (end-of-life, second-life, etc.)."),
+    lifecycleEvent: z
+      .string()
+      .nullable()
+      .optional()
+      .describe("Lifecycle event (end-of-life, second-life, etc.)."),
     contains: z
-      .array(z.object({ label: z.string().max(60).optional(), facts: z.record(z.string(), z.unknown()).optional() }))
+      .array(
+        z.object({
+          label: z.string().max(60).optional(),
+          facts: z.record(z.string(), z.unknown()).optional(),
+        }),
+      )
       .max(5)
       .optional()
       .describe("Component queries (max 5) — e.g. 'Does this toy contain a battery?'"),
-    productId: z.string().nullable().optional().describe("Add saved product facts and passport data (ObjectId)."),
+    productId: z
+      .string()
+      .nullable()
+      .optional()
+      .describe("Add saved product facts and passport data (ObjectId)."),
     passportId: z.string().nullable().optional().describe("Add saved passport facts (ObjectId)."),
     locale: z.enum(["en", "bg", "de", "it"]).optional().describe("Answer language (default: en)."),
   }),
   catalogueReport: z.object({
-    classification: z.string().optional().describe(
-      "Filter by passport status: missing | draft_only | published_incomplete | published | not_required | open_questions | not_covered.",
-    ),
+    classification: z
+      .string()
+      .optional()
+      .describe(
+        "Filter by passport status: missing | draft_only | published_incomplete | published | not_required | open_questions | not_covered.",
+      ),
     category: z.string().optional().describe("Filter by DPP category (e.g. battery)."),
     act: z.string().optional().describe("Filter by governing act (CELEX, e.g. 32023R1542)."),
     changed: z.boolean().optional().describe("true = return only rows changed since the last run."),
     q: z.string().optional().describe("Search by product name or GTIN."),
-    cursor: z.string().optional().describe("Pagination cursor from the previous response's nextCursor."),
-    limit: z.number().int().positive().max(500).optional().describe("Page size (default 50, max 500)."),
+    cursor: z
+      .string()
+      .optional()
+      .describe("Pagination cursor from the previous response's nextCursor."),
+    limit: z
+      .number()
+      .int()
+      .positive()
+      .max(500)
+      .optional()
+      .describe("Page size (default 50, max 500)."),
   }),
   catalogueRun: z.object({}),
   catalogueRunStatus: z.object({ runId: z.string().min(1).describe("Run id from catalogue_run.") }),
@@ -632,10 +703,24 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       args: z
         .object({
           id: z.string().optional().describe("Product id. Required for get and update."),
-          name: z.string().optional().describe("Product name. Required for create; optional on update."),
-          model: z.string().optional().describe("Manufacturer model / SKU. Required for create; optional on update."),
-          category: z.string().optional().describe("DPP category for create: battery | textile | electronics | construction | steel | detergents | paints-coatings | packaging | furniture | tyres | jewelry | toys | fmcg."),
-          description: z.string().optional().describe("Free-text product description (create/update)."),
+          name: z
+            .string()
+            .optional()
+            .describe("Product name. Required for create; optional on update."),
+          model: z
+            .string()
+            .optional()
+            .describe("Manufacturer model / SKU. Required for create; optional on update."),
+          category: z
+            .string()
+            .optional()
+            .describe(
+              "DPP category for create: battery | textile | electronics | construction | steel | detergents | paints-coatings | packaging | furniture | tyres | jewelry | toys | fmcg.",
+            ),
+          description: z
+            .string()
+            .optional()
+            .describe("Free-text product description (create/update)."),
           page: z.number().optional().describe("Page number for list (1-based)."),
           limit: z.number().optional().describe("Page size for list, max 100."),
           status: z.string().optional().describe("Filter list by product status."),
@@ -649,10 +734,17 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
         })
         .partial()
         .optional()
-        .describe("Arguments for the chosen action; required fields depend on `action` (see each action above)."),
+        .describe(
+          "Arguments for the chosen action; required fields depend on `action` (see each action above).",
+        ),
     },
     outputSchema: API_OUTPUT_SCHEMA,
-    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
     handler: async (a) => {
       const action = String(a.action);
       switch (action) {
@@ -703,12 +795,12 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "Archive, suspend and place on market are in tracepass_passport_lifecycle.\n\n" +
       "EU DPP REGISTRY (battery passports): the economic operator registers a passport itself, on the EU DPP Registry website under its own EU Login. TracePass prepares what the operator submits (prepare_registry_upi, prepare_registry_upload_file) and records what the operator reports back; it never submits to the Registry and never verifies the outcome. The Registry has two environments: acceptance (for testing, no legal effect) and production (the registration that counts). An acceptance result is recorded here (record_acceptance_test); a production registration is recorded with record_registration in tracepass_passport_lifecycle. These actions need a paid plan, and a connected app (OAuth) must act for an admin or owner.\n\n" +
       "IDENTIFIER SCHEMES (EN 18219): passports are identified by one of five schemes. Battery passports (Battery Regulation Art. 77(3)) accept ONLY gs1 and iso15459.\n" +
-      "  • gs1 — { scheme:\"gs1\", gtin, serialNumber } — GS1 GTIN + serial; gtin is 8/12/13/14 digits, stored as GTIN-14.\n" +
-      "  • iso15459 — { scheme:\"iso15459\", issuingAgencyCode, primaryId, serial? } — ISO/IEC 15459; the server derives raw (IAC + primaryId + serial).\n" +
-      "  • iec61406 — { scheme:\"iec61406\", uri } — IEC 61406 Identification Link (https URI). Not valid for batteries.\n" +
-      "  • did — { scheme:\"did\", did, method } — W3C DID Core. Not valid for batteries.\n" +
-      "  • doi — { scheme:\"doi\", doi, granularity:\"model\"|\"batch\"|\"item\" } — ISO 26324 DOI, stored as bare 10.<registrant>/<suffix> (any https://doi.org/ or doi: prefix stripped on input; resolves as https://doi.org/<doi>); granularity REQUIRED per EN 18219 §5.6.2(b). Not valid for batteries.\n" +
-      "The legacy top-level gtin + serialNumber pair is still accepted as a deprecated alias for scheme:\"gs1\".\n\n" +
+      '  • gs1 — { scheme:"gs1", gtin, serialNumber } — GS1 GTIN + serial; gtin is 8/12/13/14 digits, stored as GTIN-14.\n' +
+      '  • iso15459 — { scheme:"iso15459", issuingAgencyCode, primaryId, serial? } — ISO/IEC 15459; the server derives raw (IAC + primaryId + serial).\n' +
+      '  • iec61406 — { scheme:"iec61406", uri } — IEC 61406 Identification Link (https URI). Not valid for batteries.\n' +
+      '  • did — { scheme:"did", did, method } — W3C DID Core. Not valid for batteries.\n' +
+      '  • doi — { scheme:"doi", doi, granularity:"model"|"batch"|"item" } — ISO 26324 DOI, stored as bare 10.<registrant>/<suffix> (any https://doi.org/ or doi: prefix stripped on input; resolves as https://doi.org/<doi>); granularity REQUIRED per EN 18219 §5.6.2(b). Not valid for batteries.\n' +
+      'The legacy top-level gtin + serialNumber pair is still accepted as a deprecated alias for scheme:"gs1".\n\n' +
       "Actions (pass via `action`, with `args`):\n" +
       "- list — args: { page?, limit? (≤100), productId?, status?, search? }. status ∈ draft|in_review|approved|published|suspended|expired|archived. Read-only.\n" +
       "- get — args: { id, format? (summary|full), lang? }. Read-only. Response includes `identifier`, `identifierKey`, and (for GS1 passports) `gs1`.\n" +
@@ -722,7 +814,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "  lineage (battery only) — a repurposed, remanufactured or reused battery needs a NEW passport linked to the original(s) (Battery Regulation Art. 77(7)): { predecessors: [ { internalPassportId? | identifier?, trigger: preparation_for_reuse|preparation_for_repurposing|repurposing|remanufacturing } ] (≤10), noPredecessorReason? (only with an empty list, e.g. placed on the market before 18 Feb 2027) }. The server derives batteryStatus from the triggers and links your own predecessor passports back. Immutable after create. Rule violations return 422 with the rule code (duplicate_predecessor, predecessor_not_found, status_trigger_mismatch, …).\n" +
       "- get_qr — args: { id, format? (svg|png), symbology? (qr|datamatrix) }. Read-only. symbology=datamatrix renders an ISO/IEC 16022 Data Matrix instead of a QR (EN 18220 permits both; same passport URL).\n" +
       "- get_qr_by_serial — args: { serial, format? (svg|png), symbology? (qr|datamatrix), gtin? }. Read-only. Same as get_qr, addressed by your own serial. A serial is unique only WITHIN a GTIN — if the same serial exists under two GTINs in your account the call returns 409 ambiguous_serial; pass `gtin` (or use get_qr by id) to resolve exactly.\n" +
-      "- list_snapshots — args: { id, page?, limit? (≤100), at? (ISO 8601) }. Read-only. Returns a paginated list of snapshots for the passport (newest first). A snapshot is written on publish and after every change to a non-draft passport (EN 18221 change archive); each carries id, version, reason (e.g. published|field_edit|status_change|baseline), actor (who caused it, when known), snapshotAt, contentHash, hashValid (re-verified on every read), restorable, fieldCount. With `at`, returns instead the single snapshot valid at that instant (full record plus validFrom/validUntil) — answers \"what did this passport say on date D\"; 404 before the first snapshot. Counts 1 against the daily read budget.\n" +
+      '- list_snapshots — args: { id, page?, limit? (≤100), at? (ISO 8601) }. Read-only. Returns a paginated list of snapshots for the passport (newest first). A snapshot is written on publish and after every change to a non-draft passport (EN 18221 change archive); each carries id, version, reason (e.g. published|field_edit|status_change|baseline), actor (who caused it, when known), snapshotAt, contentHash, hashValid (re-verified on every read), restorable, fieldCount. With `at`, returns instead the single snapshot valid at that instant (full record plus validFrom/validUntil) — answers "what did this passport say on date D"; 404 before the first snapshot. Counts 1 against the daily read budget.\n' +
       "- get_snapshot — args: { id, snapshotId }. Read-only. Returns the full archival record of one snapshot: the complete JSON-LD the passport asserted at that time, plus hash and hashValid. Counts 1 against the daily read budget.\n" +
       "- get_condition_flags — args: { id }. Read-only. Returns the resolved condition profile Record<flagKey,{value,status,source}>. Condition flags are reviewer-approved yes/no facts gating conditional legal duties. Battery flags: hasBMS, rechargeable, externalStorageOnly, isStationaryBess. An approved flag makes specific fields required — a missing gated field is a hard publish block (conditional_missing). Counts 1 against the daily read budget.\n" +
       "- get_condition_flags_by_serial — args: { serial, gtin? }. Read-only. Same as get_condition_flags, addressed by your own serial. 409 ambiguous_serial if serial not unique — pass gtin.\n" +
@@ -766,20 +858,34 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
         ),
       args: z
         .object({
-          id: z.string().optional().describe("Passport id. Required for get/compliance/registry_readiness/prepare_registry_upi/record_acceptance_test/get_qr (the by-id actions)."),
+          id: z
+            .string()
+            .optional()
+            .describe(
+              "Passport id. Required for get/compliance/registry_readiness/prepare_registry_upi/record_acceptance_test/get_qr (the by-id actions).",
+            ),
           passportIds: z
             .array(z.string())
             .optional()
-            .describe("prepare_registry_upload_file: the battery passport ids to put in the EU DPP Registry upload file (1–100)."),
+            .describe(
+              "prepare_registry_upload_file: the battery passport ids to put in the EU DPP Registry upload file (1–100).",
+            ),
           result: z
             .enum(["passed", "failed"])
             .optional()
-            .describe("record_acceptance_test: the outcome the operator saw in the Registry's acceptance environment."),
+            .describe(
+              "record_acceptance_test: the outcome the operator saw in the Registry's acceptance environment.",
+            ),
           errorCode: z
             .string()
             .optional()
-            .describe("record_acceptance_test: the error code the Registry showed for a failed test (≤100 chars)."),
-          serial: z.string().optional().describe("Your own serial number. Required for the *_by_serial actions."),
+            .describe(
+              "record_acceptance_test: the error code the Registry showed for a failed test (≤100 chars).",
+            ),
+          serial: z
+            .string()
+            .optional()
+            .describe("Your own serial number. Required for the *_by_serial actions."),
           gtin: z
             .string()
             .optional()
@@ -791,40 +897,89 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
             .record(z.string(), z.unknown())
             .optional()
             .describe(
-              "EN 18219 scheme-tagged identifier for create. Must have `scheme` plus scheme-specific fields. Schemes: gs1 {gtin, serialNumber} | iso15459 {issuingAgencyCode, primaryId, serial?} | iec61406 {uri} | did {did, method} | doi {doi, granularity} (granularity: \"model\"|\"batch\"|\"item\" REQUIRED per EN 18219 §5.6.2(b)). Battery passports: gs1 and iso15459 only.",
+              'EN 18219 scheme-tagged identifier for create. Must have `scheme` plus scheme-specific fields. Schemes: gs1 {gtin, serialNumber} | iso15459 {issuingAgencyCode, primaryId, serial?} | iec61406 {uri} | did {did, method} | doi {doi, granularity} (granularity: "model"|"batch"|"item" REQUIRED per EN 18219 §5.6.2(b)). Battery passports: gs1 and iso15459 only.',
             ),
-          serialNumber: z.string().optional().describe("Serial for the new passport (create, legacy gs1 path)."),
+          serialNumber: z
+            .string()
+            .optional()
+            .describe("Serial for the new passport (create, legacy gs1 path)."),
           lineage: lineageSchema
             .optional()
-            .describe("create, battery only: link a second-life battery's new passport to the original passport(s) (Art. 77(7)). See the create action."),
-          format: z.string().optional().describe("get/get_by_serial: summary|full. get_qr/get_qr_by_serial: svg|png."),
-          symbology: z.string().optional().describe("get_qr/get_qr_by_serial: qr (default) | datamatrix."),
-          at: z.string().optional().describe("list_snapshots: ISO 8601 instant — return the snapshot valid then instead of the list."),
-          lang: z.string().optional().describe("Resolve field values to one of the 24 EU locales server-side (get/get_by_serial)."),
+            .describe(
+              "create, battery only: link a second-life battery's new passport to the original passport(s) (Art. 77(7)). See the create action.",
+            ),
+          format: z
+            .string()
+            .optional()
+            .describe("get/get_by_serial: summary|full. get_qr/get_qr_by_serial: svg|png."),
+          symbology: z
+            .string()
+            .optional()
+            .describe("get_qr/get_qr_by_serial: qr (default) | datamatrix."),
+          at: z
+            .string()
+            .optional()
+            .describe(
+              "list_snapshots: ISO 8601 instant — return the snapshot valid then instead of the list.",
+            ),
+          lang: z
+            .string()
+            .optional()
+            .describe(
+              "Resolve field values to one of the 24 EU locales server-side (get/get_by_serial).",
+            ),
           page: z.number().optional().describe("Page number for list (1-based)."),
           limit: z.number().optional().describe("Page size for list, max 100."),
-          status: z.string().optional().describe("Filter list by status: draft|in_review|approved|published|suspended|expired|archived."),
+          status: z
+            .string()
+            .optional()
+            .describe(
+              "Filter list by status: draft|in_review|approved|published|suspended|expired|archived.",
+            ),
           search: z.string().optional().describe("Filter list by a search term."),
           snapshotId: z.string().optional().describe("Snapshot id. Required for get_snapshot."),
           measurements: z
             .array(measurementSchema)
             .optional()
-            .describe("capture_measurements(_by_serial): [{ fieldKey, value, measuredAt, externalId?, unit? }], max 500."),
-          fieldKey: z.string().optional().describe("list_measurements(_by_serial): only this field key."),
-          from: z.string().optional().describe("list_measurements(_by_serial): measuredAt from (ISO 8601)."),
-          to: z.string().optional().describe("list_measurements(_by_serial): measuredAt to (ISO 8601)."),
-          cursor: z.string().optional().describe("list_measurements(_by_serial): nextCursor from the previous page."),
+            .describe(
+              "capture_measurements(_by_serial): [{ fieldKey, value, measuredAt, externalId?, unit? }], max 500.",
+            ),
+          fieldKey: z
+            .string()
+            .optional()
+            .describe("list_measurements(_by_serial): only this field key."),
+          from: z
+            .string()
+            .optional()
+            .describe("list_measurements(_by_serial): measuredAt from (ISO 8601)."),
+          to: z
+            .string()
+            .optional()
+            .describe("list_measurements(_by_serial): measuredAt to (ISO 8601)."),
+          cursor: z
+            .string()
+            .optional()
+            .describe("list_measurements(_by_serial): nextCursor from the previous page."),
           flags: z
             .record(z.string(), z.union([z.boolean(), z.null()]))
             .optional()
-            .describe("For set_condition_flags / set_condition_flags_by_serial: Record<flagKey, boolean|null>. null clears the flag."),
+            .describe(
+              "For set_condition_flags / set_condition_flags_by_serial: Record<flagKey, boolean|null>. null clears the flag.",
+            ),
         })
         .partial()
         .optional()
-        .describe("Arguments for the chosen action; required fields depend on `action` (see each action above)."),
+        .describe(
+          "Arguments for the chosen action; required fields depend on `action` (see each action above).",
+        ),
     },
     outputSchema: API_OUTPUT_SCHEMA,
-    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
     handler: async (a) => {
       const action = String(a.action);
       switch (action) {
@@ -837,7 +992,9 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           const p = parseArgs(SCHEMAS.passportGet, a.args, "tracepass_passports", action);
           if (isErr(p)) return p;
           return apiResult(
-            await client.get(`/api/v1/passports/${seg(p.id)}${qs({ format: p.format, lang: p.lang })}`),
+            await client.get(
+              `/api/v1/passports/${seg(p.id)}${qs({ format: p.format, lang: p.lang })}`,
+            ),
           );
         }
         case "get_by_serial": {
@@ -867,10 +1024,17 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
         case "prepare_registry_upload_file": {
           const p = parseArgs(SCHEMAS.registryUploadFile, a.args, "tracepass_passports", action);
           if (isErr(p)) return p;
-          return apiResult(await client.post("/api/v1/registry/upload-file", { passportIds: p.passportIds }));
+          return apiResult(
+            await client.post("/api/v1/registry/upload-file", { passportIds: p.passportIds }),
+          );
         }
         case "record_acceptance_test": {
-          const p = parseArgs(SCHEMAS.registryAcceptanceTest, a.args, "tracepass_passports", action);
+          const p = parseArgs(
+            SCHEMAS.registryAcceptanceTest,
+            a.args,
+            "tracepass_passports",
+            action,
+          );
           if (isErr(p)) return p;
           const body: Record<string, unknown> = { environment: "acceptance", result: p.result };
           if (p.errorCode !== undefined) body.errorCode = p.errorCode;
@@ -894,7 +1058,9 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           const p = parseArgs(SCHEMAS.passportQr, a.args, "tracepass_passports", action);
           if (isErr(p)) return p;
           return apiResult(
-            await client.get(`/api/v1/passports/${seg(p.id)}/qr${qs({ format: p.format, symbology: p.symbology })}`),
+            await client.get(
+              `/api/v1/passports/${seg(p.id)}/qr${qs({ format: p.format, symbology: p.symbology })}`,
+            ),
           );
         }
         case "get_qr_by_serial": {
@@ -910,7 +1076,9 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           const p = parseArgs(SCHEMAS.snapshotList, a.args, "tracepass_passports", action);
           if (isErr(p)) return p;
           return apiResult(
-            await client.get(`/api/v1/passports/${seg(p.id)}/snapshots${qs({ page: p.page, limit: p.limit, at: p.at })}`),
+            await client.get(
+              `/api/v1/passports/${seg(p.id)}/snapshots${qs({ page: p.page, limit: p.limit, at: p.at })}`,
+            ),
           );
         }
         case "get_snapshot": {
@@ -926,7 +1094,12 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           return apiResult(await client.get(`/api/v1/passports/${seg(p.id)}/condition-flags`));
         }
         case "get_condition_flags_by_serial": {
-          const p = parseArgs(SCHEMAS.conditionFlagsGetBySerial, a.args, "tracepass_passports", action);
+          const p = parseArgs(
+            SCHEMAS.conditionFlagsGetBySerial,
+            a.args,
+            "tracepass_passports",
+            action,
+          );
           if (isErr(p)) return p;
           return apiResult(
             await client.get(
@@ -942,7 +1115,12 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           );
         }
         case "set_condition_flags_by_serial": {
-          const p = parseArgs(SCHEMAS.conditionFlagsSetBySerial, a.args, "tracepass_passports", action);
+          const p = parseArgs(
+            SCHEMAS.conditionFlagsSetBySerial,
+            a.args,
+            "tracepass_passports",
+            action,
+          );
           if (isErr(p)) return p;
           return apiResult(
             await client.patch(
@@ -955,11 +1133,18 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           const p = parseArgs(SCHEMAS.measurementsCapture, a.args, "tracepass_passports", action);
           if (isErr(p)) return p;
           return apiResult(
-            await client.post(`/api/v1/passports/${seg(p.id)}/measurements`, { measurements: p.measurements }),
+            await client.post(`/api/v1/passports/${seg(p.id)}/measurements`, {
+              measurements: p.measurements,
+            }),
           );
         }
         case "capture_measurements_by_serial": {
-          const p = parseArgs(SCHEMAS.measurementsCaptureBySerial, a.args, "tracepass_passports", action);
+          const p = parseArgs(
+            SCHEMAS.measurementsCaptureBySerial,
+            a.args,
+            "tracepass_passports",
+            action,
+          );
           if (isErr(p)) return p;
           return apiResult(
             await client.post(
@@ -975,10 +1160,17 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           return apiResult(await client.get(`/api/v1/passports/${seg(id)}/measurements${qs(q)}`));
         }
         case "list_measurements_by_serial": {
-          const p = parseArgs(SCHEMAS.measurementsListBySerial, a.args, "tracepass_passports", action);
+          const p = parseArgs(
+            SCHEMAS.measurementsListBySerial,
+            a.args,
+            "tracepass_passports",
+            action,
+          );
           if (isErr(p)) return p;
           const { serial, ...q } = p;
-          return apiResult(await client.get(`/api/v1/passports/by-serial/${seg(serial)}/measurements${qs(q)}`));
+          return apiResult(
+            await client.get(`/api/v1/passports/by-serial/${seg(serial)}/measurements${qs(q)}`),
+          );
         }
         case "latest_measurements": {
           const p = parseArgs(SCHEMAS.passportId, a.args, "tracepass_passports", action);
@@ -989,12 +1181,18 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           const p = parseArgs(SCHEMAS.passportSerial, a.args, "tracepass_passports", action);
           if (isErr(p)) return p;
           return apiResult(
-            await client.get(`/api/v1/passports/by-serial/${seg(p.serial)}/measurements/latest${qs({ gtin: p.gtin })}`),
+            await client.get(
+              `/api/v1/passports/by-serial/${seg(p.serial)}/measurements/latest${qs({ gtin: p.gtin })}`,
+            ),
           );
         }
         default: {
           const MOVED: ReadonlySet<string> = new Set([
-            "archive", "archive_by_serial", "suspend", "suspend_by_serial", "place_on_market",
+            "archive",
+            "archive_by_serial",
+            "suspend",
+            "suspend_by_serial",
+            "place_on_market",
           ]);
           if (MOVED.has(action)) {
             return errorResult(
@@ -1018,29 +1216,48 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     title: "TracePass passport fields",
     description:
       "Update field values on a Digital Product Passport. Every change is recorded in the passport's audit trail with the credential that made it (API key or connected app) and this MCP channel.\n\n" +
-      "`source` (optional) says where the value came from. Omit it, or pass \"manual\", when the user gave you the value or it comes from their own records: it is written with the user's rights (approved for an API key or an admin; sent to review for a connected app acting for an editor). Pass \"ai_suggested\" when you found or inferred the value yourself (web research, reading a document): it lands in the dashboard review queue for a human to approve, and it is refused on fields only the economic operator may state or that must be measured (e.g. battery stateOfHealth).\n\n" +
+      '`source` (optional) says where the value came from. Omit it, or pass "manual", when the user gave you the value or it comes from their own records: it is written with the user\'s rights (approved for an API key or an admin; sent to review for a connected app acting for an editor). Pass "ai_suggested" when you found or inferred the value yourself (web research, reading a document): it lands in the dashboard review queue for a human to approve, and it is refused on fields only the economic operator may state or that must be measured (e.g. battery stateOfHealth).\n\n' +
       "Actions (pass via `action`, with `args`):\n" +
       "- update — args: { id, fieldKey, value, source? }. `value` type matches the field's dataType (string, number, boolean, array, object).\n" +
       "- update_by_serial — args: { serial, fieldKey, value, gtin?, source? }. Same as update, addressed by your own serial. A serial is unique only WITHIN a GTIN — if it isn't unique in your account the call returns 409 ambiguous_serial; pass `gtin` (or use update by id) to resolve exactly.",
     inputSchema: {
       action: z
         .enum(["update", "update_by_serial"])
-        .describe("Update one passport field, addressed by passport id (update) or by your serial (update_by_serial)."),
+        .describe(
+          "Update one passport field, addressed by passport id (update) or by your serial (update_by_serial).",
+        ),
       args: z
         .object({
           id: z.string().optional().describe("Passport id. Required for update."),
           serial: z.string().optional().describe("Your serial. Required for update_by_serial."),
-          gtin: z.string().optional().describe("GTIN disambiguator for update_by_serial when the serial isn't unique (else 409)."),
+          gtin: z
+            .string()
+            .optional()
+            .describe(
+              "GTIN disambiguator for update_by_serial when the serial isn't unique (else 409).",
+            ),
           fieldKey: z.string().optional().describe("The field key to set (required)."),
-          value: z.unknown().optional().describe("The new value for the field (required). Type depends on the field's dataType."),
-          source: FIELD_SOURCE.optional().describe("Where the value came from: \"manual\" (default — the user's statement) or \"ai_suggested\" (you found it; it goes to human review)."),
+          value: z
+            .unknown()
+            .optional()
+            .describe(
+              "The new value for the field (required). Type depends on the field's dataType.",
+            ),
+          source: FIELD_SOURCE.optional().describe(
+            'Where the value came from: "manual" (default — the user\'s statement) or "ai_suggested" (you found it; it goes to human review).',
+          ),
         })
         .partial()
         .optional()
         .describe("Arguments for the chosen action; required fields depend on `action`."),
     },
     outputSchema: API_OUTPUT_SCHEMA,
-    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
     handler: async (a) => {
       const action = String(a.action);
       switch (action) {
@@ -1055,7 +1272,12 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           );
         }
         case "update_by_serial": {
-          const p = parseArgs(SCHEMAS.fieldUpdateBySerial, a.args, "tracepass_passport_fields", action);
+          const p = parseArgs(
+            SCHEMAS.fieldUpdateBySerial,
+            a.args,
+            "tracepass_passport_fields",
+            action,
+          );
           if (isErr(p)) return p;
           return apiResult(
             await client.patch(
@@ -1081,10 +1303,10 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "An operatorIdentifier of scheme gln also fills the top-level `gln` field; facilityIdentifier never does. " +
       "Typed identifiers (operatorIdentifier / facilityIdentifier) are not set by AI extraction or CSV import.\n\n" +
       "operatorIdentifier schemes:\n" +
-      "  • iso6523 — { scheme:\"iso6523\", icd:\"<4 digits>\", value } — ICD 0199 = LEI (ISO 17442), 0088 = GLN, 0060 = DUNS.\n" +
-      "  • gln — { scheme:\"gln\", gln:\"<13 digits>\" } — also fills top-level `gln`.\n" +
-      "  • did — { scheme:\"did\", did:\"did:<method>:<id>\" } — syntax-checked only (EN 18219 §6.4.2(b)).\n" +
-      "  • doi — { scheme:\"doi\", doi:\"10.<registrant>/<suffix>\" } — doi:/https://doi.org/ prefix accepted and stripped.\n\n" +
+      '  • iso6523 — { scheme:"iso6523", icd:"<4 digits>", value } — ICD 0199 = LEI (ISO 17442), 0088 = GLN, 0060 = DUNS.\n' +
+      '  • gln — { scheme:"gln", gln:"<13 digits>" } — also fills top-level `gln`.\n' +
+      '  • did — { scheme:"did", did:"did:<method>:<id>" } — syntax-checked only (EN 18219 §6.4.2(b)).\n' +
+      '  • doi — { scheme:"doi", doi:"10.<registrant>/<suffix>" } — doi:/https://doi.org/ prefix accepted and stripped.\n\n' +
       "facilityIdentifier schemes: same four; the gln variant also accepts optional `extension` (GS1 SGLN sub-location).\n\n" +
       "Actions (pass via `action`, with `args`):\n" +
       "- set — args: { id, role, legalName, gln?, country?, url?, tradeName?, postalAddress?, email?, legacyOperatorId?, operatorIdentifier?, facilityIdentifier? }. Sets or updates one role. tradeName, postalAddress and email are shown on the public passport; for a battery importer they are its Battery Regulation Art. 41(3) details.\n" +
@@ -1093,35 +1315,79 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     inputSchema: {
       action: z
         .enum(["set", "remove"])
-        .describe("Set (add/replace) or remove an economic-operator party on a passport by its role."),
+        .describe(
+          "Set (add/replace) or remove an economic-operator party on a passport by its role.",
+        ),
       args: z
         .object({
           id: z.string().optional().describe("Passport id (required)."),
-          role: z.string().optional().describe("Economic-operator role: manufacturer | importer | authorisedRepresentative | distributor | recycler | producerResponsibilityOrg (required)."),
+          role: z
+            .string()
+            .optional()
+            .describe(
+              "Economic-operator role: manufacturer | importer | authorisedRepresentative | distributor | recycler | producerResponsibilityOrg (required).",
+            ),
           legalName: z.string().optional().describe("Party legal name. Required for set."),
-          gln: z.string().optional().describe("GS1 Global Location Number (13 digits). Strongly recommended for multi-role disambiguation."),
-          country: z.string().optional().describe("ISO 3166-1 alpha-2 country code (set, optional)."),
+          gln: z
+            .string()
+            .optional()
+            .describe(
+              "GS1 Global Location Number (13 digits). Strongly recommended for multi-role disambiguation.",
+            ),
+          country: z
+            .string()
+            .optional()
+            .describe("ISO 3166-1 alpha-2 country code (set, optional)."),
           url: z.string().optional().describe("Organisation web address (set, optional)."),
-          tradeName: z.string().optional().describe("Registered trade name or registered trade mark, max 200 chars (set, optional). Public."),
-          postalAddress: z.string().optional().describe("Postal address with a single contact point, one line, max 500 chars (set, optional). Public."),
-          email: z.string().optional().describe("Company contact e-mail, not a person's (set, optional). Public."),
-          legacyOperatorId: z.string().optional().describe("Free-text fallback identifier (VAT, EORI, supplier code). Required when gln and operatorIdentifier are both absent."),
-          operatorIdentifier: z.record(z.string(), z.unknown()).optional().describe(
-            "Structured operator identifier per EN 18219 §6.2–6.5. Must have `scheme` plus scheme fields. " +
-            "Schemes: iso6523 {icd:\"<4 digits>\", value} | gln {gln:\"<13 digits>\"} | did {did:\"did:<method>:<id>\"} | doi {doi:\"10.<registrant>/<suffix>\"}. " +
-            "scheme gln also fills the top-level gln field; they must match if both are set (400 otherwise). Not set by AI extraction.",
-          ),
-          facilityIdentifier: z.record(z.string(), z.unknown()).optional().describe(
-            "Structured facility identifier per EN 18219 §6.2–6.5. Same four schemes as operatorIdentifier; " +
-            "the gln variant also accepts optional `extension` (GS1 SGLN sub-location). Never fills the top-level gln field. Not set by AI extraction.",
-          ),
+          tradeName: z
+            .string()
+            .optional()
+            .describe(
+              "Registered trade name or registered trade mark, max 200 chars (set, optional). Public.",
+            ),
+          postalAddress: z
+            .string()
+            .optional()
+            .describe(
+              "Postal address with a single contact point, one line, max 500 chars (set, optional). Public.",
+            ),
+          email: z
+            .string()
+            .optional()
+            .describe("Company contact e-mail, not a person's (set, optional). Public."),
+          legacyOperatorId: z
+            .string()
+            .optional()
+            .describe(
+              "Free-text fallback identifier (VAT, EORI, supplier code). Required when gln and operatorIdentifier are both absent.",
+            ),
+          operatorIdentifier: z
+            .record(z.string(), z.unknown())
+            .optional()
+            .describe(
+              "Structured operator identifier per EN 18219 §6.2–6.5. Must have `scheme` plus scheme fields. " +
+                'Schemes: iso6523 {icd:"<4 digits>", value} | gln {gln:"<13 digits>"} | did {did:"did:<method>:<id>"} | doi {doi:"10.<registrant>/<suffix>"}. ' +
+                "scheme gln also fills the top-level gln field; they must match if both are set (400 otherwise). Not set by AI extraction.",
+            ),
+          facilityIdentifier: z
+            .record(z.string(), z.unknown())
+            .optional()
+            .describe(
+              "Structured facility identifier per EN 18219 §6.2–6.5. Same four schemes as operatorIdentifier; " +
+                "the gln variant also accepts optional `extension` (GS1 SGLN sub-location). Never fills the top-level gln field. Not set by AI extraction.",
+            ),
         })
         .partial()
         .optional()
         .describe("Arguments for the chosen action; required fields depend on `action`."),
     },
     outputSchema: API_OUTPUT_SCHEMA,
-    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
     handler: async (a) => {
       const action = String(a.action);
       switch (action) {
@@ -1161,22 +1427,45 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     inputSchema: {
       action: z
         .enum(["export", "export_by_serial", "capture", "capture_job", "query"])
-        .describe("EPCIS 2.0: export a passport's events (export | export_by_serial), capture new events, poll a capture job, or query events."),
+        .describe(
+          "EPCIS 2.0: export a passport's events (export | export_by_serial), capture new events, poll a capture job, or query events.",
+        ),
       args: z
         .object({
           id: z.string().optional().describe("Passport id. Required for export."),
           serial: z.string().optional().describe("Your serial. Required for export_by_serial."),
-          gtin: z.string().optional().describe("GTIN disambiguator for export_by_serial when the serial isn't unique (else 409)."),
-          events: z.unknown().optional().describe("EPCIS 2.0 event payload (an EPCISDocument or event list). Required for capture."),
-          jobId: z.string().optional().describe("Capture job id to poll. Required for capture_job."),
-          params: z.record(z.string(), z.string()).optional().describe("EPCIS query parameters as key→value strings (query, optional)."),
+          gtin: z
+            .string()
+            .optional()
+            .describe(
+              "GTIN disambiguator for export_by_serial when the serial isn't unique (else 409).",
+            ),
+          events: z
+            .unknown()
+            .optional()
+            .describe(
+              "EPCIS 2.0 event payload (an EPCISDocument or event list). Required for capture.",
+            ),
+          jobId: z
+            .string()
+            .optional()
+            .describe("Capture job id to poll. Required for capture_job."),
+          params: z
+            .record(z.string(), z.string())
+            .optional()
+            .describe("EPCIS query parameters as key→value strings (query, optional)."),
         })
         .partial()
         .optional()
         .describe("Arguments for the chosen action; required fields depend on `action`."),
     },
     outputSchema: API_OUTPUT_SCHEMA,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
     handler: async (a) => {
       const action = String(a.action);
       switch (action) {
@@ -1189,7 +1478,9 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           const p = parseArgs(SCHEMAS.epcisExportBySerial, a.args, "tracepass_epcis", action);
           if (isErr(p)) return p;
           return apiResult(
-            await client.get(`/api/v1/passports/by-serial/${seg(p.serial)}/epcis${qs({ gtin: p.gtin })}`),
+            await client.get(
+              `/api/v1/passports/by-serial/${seg(p.serial)}/epcis${qs({ gtin: p.gtin })}`,
+            ),
           );
         }
         case "capture": {
@@ -1205,9 +1496,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
         case "query": {
           const p = parseArgs(SCHEMAS.epcisQuery, a.args, "tracepass_epcis", action);
           if (isErr(p)) return p;
-          return apiResult(
-            await client.get(`/api/v1/epcis/events${qs(p.params ?? {})}`),
-          );
+          return apiResult(await client.get(`/api/v1/epcis/events${qs(p.params ?? {})}`));
         }
         default:
           return errorResult(`Unknown action "${action}" for tracepass_epcis.`);
@@ -1239,14 +1528,26 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
         .describe("List all DPP category templates, or get one template by category."),
       args: z
         .object({
-          category: z.string().optional().describe("DPP category to fetch (required for get): battery | textile | electronics | construction | steel | detergents | paints-coatings | packaging | furniture | tyres | jewelry | toys | fmcg."),
+          category: z
+            .string()
+            .optional()
+            .describe(
+              "DPP category to fetch (required for get): battery | textile | electronics | construction | steel | detergents | paints-coatings | packaging | furniture | tyres | jewelry | toys | fmcg.",
+            ),
         })
         .partial()
         .optional()
-        .describe("Arguments for the chosen action; `category` is required for get, ignored for list."),
+        .describe(
+          "Arguments for the chosen action; `category` is required for get, ignored for list.",
+        ),
     },
     outputSchema: API_OUTPUT_SCHEMA,
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
     handler: async (a) => {
       const action = String(a.action);
       switch (action) {
@@ -1306,26 +1607,65 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       args: z
         .object({
           // check
-          category: z.string().optional().describe("Product category for check (battery, textile, vehicles, other, …)."),
-          facts: z.record(z.string(), z.unknown()).optional().describe("Fact key→value map for check (e.g. { 'battery.use': 'ev' })."),
-          role: z.string().optional().describe("Role hint for check (e.g. manufacturer, importer, ownBrand)."),
+          category: z
+            .string()
+            .optional()
+            .describe("Product category for check (battery, textile, vehicles, other, …)."),
+          facts: z
+            .record(z.string(), z.unknown())
+            .optional()
+            .describe("Fact key→value map for check (e.g. { 'battery.use': 'ev' })."),
+          role: z
+            .string()
+            .optional()
+            .describe("Role hint for check (e.g. manufacturer, importer, ownBrand)."),
           placedOnMarket: z
             .object({ date: z.string(), precision: z.string().optional() })
             .nullable()
             .optional()
-            .describe("Placing date for check: { date: YYYY[-MM[-DD]], precision?: day|month|year } or null."),
-          lifecycleEvent: z.string().nullable().optional().describe("Lifecycle event for check (e.g. end_of_life)."),
+            .describe(
+              "Placing date for check: { date: YYYY[-MM[-DD]], precision?: day|month|year } or null.",
+            ),
+          lifecycleEvent: z
+            .string()
+            .nullable()
+            .optional()
+            .describe("Lifecycle event for check (e.g. end_of_life)."),
           contains: z
-            .array(z.object({ label: z.string().optional(), facts: z.record(z.string(), z.unknown()).optional() }))
+            .array(
+              z.object({
+                label: z.string().optional(),
+                facts: z.record(z.string(), z.unknown()).optional(),
+              }),
+            )
             .optional()
             .describe("Component queries for check (max 5), e.g. a toy containing a battery."),
-          productId: z.string().nullable().optional().describe("Product id — adds saved product facts and passport data to check."),
-          passportId: z.string().nullable().optional().describe("Passport id — adds saved passport facts to check."),
+          productId: z
+            .string()
+            .nullable()
+            .optional()
+            .describe("Product id — adds saved product facts and passport data to check."),
+          passportId: z
+            .string()
+            .nullable()
+            .optional()
+            .describe("Passport id — adds saved passport facts to check."),
           locale: z.string().optional().describe("Answer locale for check: en | bg | de | it."),
           // catalogue_report
-          classification: z.string().optional().describe("Filter catalogue_report by classification: missing | draft_only | published_incomplete | published | not_required | open_questions | not_covered."),
-          act: z.string().optional().describe("Filter catalogue_report by governing act (CELEX, e.g. 32023R1542)."),
-          changed: z.boolean().optional().describe("catalogue_report: true to return only rows changed since the last run."),
+          classification: z
+            .string()
+            .optional()
+            .describe(
+              "Filter catalogue_report by classification: missing | draft_only | published_incomplete | published | not_required | open_questions | not_covered.",
+            ),
+          act: z
+            .string()
+            .optional()
+            .describe("Filter catalogue_report by governing act (CELEX, e.g. 32023R1542)."),
+          changed: z
+            .boolean()
+            .optional()
+            .describe("catalogue_report: true to return only rows changed since the last run."),
           q: z.string().optional().describe("catalogue_report: search by product name or GTIN."),
           cursor: z.string().optional().describe("Pagination cursor (catalogue_report)."),
           limit: z.number().optional().describe("Page size for catalogue_report, max 500."),
@@ -1334,10 +1674,17 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
         })
         .partial()
         .optional()
-        .describe("Arguments for the chosen action; required fields depend on `action` (see above)."),
+        .describe(
+          "Arguments for the chosen action; required fields depend on `action` (see above).",
+        ),
     },
     outputSchema: API_OUTPUT_SCHEMA,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
     handler: async (a) => {
       const action = String(a.action);
       switch (action) {
@@ -1413,7 +1760,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "WARNING: Every action here changes what the public sees or is a legal act, some irreversible. `archive` permanently removes the public QR code (it 404s forever). `record_registration` records the economic operator's registration in the production EU DPP Registry and locks the passport's operator and facility identifiers. `place_on_market` submits a registration to an EN 18222 registry API. The assistant MUST confirm with the user before each call. Use `suspend` (reversible — public QR shows 'suspended') as the safe alternative to archive when a change might need to be undone.\n\n" +
       "EU DPP REGISTRY: the economic operator registers a battery passport itself, on the EU DPP Registry website under its own EU Login. TracePass prepares what the operator submits (prepare_registry_upi / prepare_registry_upload_file in tracepass_passports) and records what the operator reports; it never submits to the Registry and never verifies the registration. The Registry's acceptance environment is for testing and has no legal effect (record_acceptance_test in tracepass_passports); only a registration in the production environment counts, and that is what record_registration records. The EU DPP Registry does not accept registrations through place_on_market. record_registration and undo_registration need a paid plan, and a connected app (OAuth) must act for an admin or owner.\n\n" +
       "Actions (pass via `action`, with `args`):\n" +
-      "- record_registration — args: { id, placedOnMarketAt? (YYYY-MM-DD), registrationId? (≤200 chars) }. WRITE, battery passports only, published only. Records that the operator has registered this passport in the PRODUCTION EU DPP Registry, as the operator states it: TracePass does not check it with the Registry. Confirm with the user first, and only after the operator has registered on the Registry website. Effects: the passport is marked placed on the market (placeOnMarketStatus \"placed\", registrationMode \"website\"), the operator and facility party identifiers are locked (409 operator_locked on a later change), the backup copy is queued and the passport.placed_on_market webhook fires. placedOnMarketAt defaults to today; it may not be in the future or before the passport was first published. registrationId: the identifier the Registry gave, if any. Returns { passport }. Refusals: 400 Validation failed | invalid_date | date_in_future | date_before_publication | registration_id_too_long; 404; 409 not_a_battery | not_published | already_registered. A mistaken record can be undone with undo_registration. Counts 1 write.\n" +
+      '- record_registration — args: { id, placedOnMarketAt? (YYYY-MM-DD), registrationId? (≤200 chars) }. WRITE, battery passports only, published only. Records that the operator has registered this passport in the PRODUCTION EU DPP Registry, as the operator states it: TracePass does not check it with the Registry. Confirm with the user first, and only after the operator has registered on the Registry website. Effects: the passport is marked placed on the market (placeOnMarketStatus "placed", registrationMode "website"), the operator and facility party identifiers are locked (409 operator_locked on a later change), the backup copy is queued and the passport.placed_on_market webhook fires. placedOnMarketAt defaults to today; it may not be in the future or before the passport was first published. registrationId: the identifier the Registry gave, if any. Returns { passport }. Refusals: 400 Validation failed | invalid_date | date_in_future | date_before_publication | registration_id_too_long; 404; 409 not_a_battery | not_published | already_registered. A mistaken record can be undone with undo_registration. Counts 1 write.\n' +
       "- undo_registration — args: { id, environment: production|acceptance }. WRITE. Undoes a mistaken record. production: removes a registration recorded with record_registration (one made through place_on_market is not undone here), so the passport is no longer marked placed and its operator identifiers unlock; a webhook already delivered is not recalled. acceptance: removes the recorded acceptance test. It changes nothing in the Registry itself. Confirm with the user first. Returns { passport }. 404; 409 nothing_to_undo. Counts 1 write.\n" +
       "- place_on_market — args: { id }. WRITE, battery passports only, published only. Submits a registration to the EN 18222 registry API configured in the account's registry access settings. This is NOT the way into the EU DPP Registry, which does not accept it: for the EU DPP Registry use prepare_registry_upi / prepare_registry_upload_file and then record_registration. A legal act for the economic operator — confirm with the user first. ASYNCHRONOUS: answers 202 { passport, passportId, status: \"placing\", dppId } and the registry call follows in the background; read the passport (get) to follow placeOnMarketStatus: placing → placed (placedOnMarketAt, registrationId) or rejected (registrationRejectionReason). To retry a rejected passport, fix the cause and call place_on_market again. Refusals are 409 with a code: not_a_battery | not_published | already_placed (placing or placed) | operator_id_missing (no economic-operator identifier on the account) | registry_not_configured (an admin sets registry access in the dashboard) | registry_host_not_allowed (TracePass does not send registrations to the configured registry address; check the registry URL), registry_not_ready (findings[] lists what stands in the way — run registry_readiness for the structured findings). After placement the passport's party operatorIdentifier / facilityIdentifier are locked (409 operator_locked on a change). Counts 1 write.\n" +
       "- suspend — args: { id }. Reversible — public QR shows 'suspended'.\n" +
@@ -1438,34 +1785,69 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
         ),
       args: z
         .object({
-          id: z.string().optional().describe("Passport or product id. Required for record_registration, undo_registration, place_on_market, suspend, archive, archive_product."),
+          id: z
+            .string()
+            .optional()
+            .describe(
+              "Passport or product id. Required for record_registration, undo_registration, place_on_market, suspend, archive, archive_product.",
+            ),
           placedOnMarketAt: z
             .string()
             .optional()
-            .describe("record_registration: the date the battery was placed on the market, YYYY-MM-DD. Defaults to today; not in the future, not before the passport was first published."),
+            .describe(
+              "record_registration: the date the battery was placed on the market, YYYY-MM-DD. Defaults to today; not in the future, not before the passport was first published.",
+            ),
           registrationId: z
             .string()
             .optional()
-            .describe("record_registration: the identifier the EU DPP Registry gave the registration, if any (≤200 chars)."),
+            .describe(
+              "record_registration: the identifier the EU DPP Registry gave the registration, if any (≤200 chars).",
+            ),
           environment: z
             .enum(["production", "acceptance"])
             .optional()
-            .describe("undo_registration: which record to undo — production (a registration recorded with record_registration) or acceptance (a recorded acceptance test)."),
-          serial: z.string().optional().describe("Your own serial number. Required for suspend_by_serial and archive_by_serial."),
-          gtin: z.string().optional().describe("GTIN disambiguator for *_by_serial actions when the serial isn't unique (else 409 ambiguous_serial)."),
-          reason: ARCHIVE_REASON.optional().describe(`archive / archive_by_serial: ${ARCHIVE_REASON_DESCRIPTION}`),
+            .describe(
+              "undo_registration: which record to undo — production (a registration recorded with record_registration) or acceptance (a recorded acceptance test).",
+            ),
+          serial: z
+            .string()
+            .optional()
+            .describe(
+              "Your own serial number. Required for suspend_by_serial and archive_by_serial.",
+            ),
+          gtin: z
+            .string()
+            .optional()
+            .describe(
+              "GTIN disambiguator for *_by_serial actions when the serial isn't unique (else 409 ambiguous_serial).",
+            ),
+          reason: ARCHIVE_REASON.optional().describe(
+            `archive / archive_by_serial: ${ARCHIVE_REASON_DESCRIPTION}`,
+          ),
         })
         .partial()
         .optional()
-        .describe("Arguments for the chosen action; required fields depend on `action` (see each action above)."),
+        .describe(
+          "Arguments for the chosen action; required fields depend on `action` (see each action above).",
+        ),
     },
     outputSchema: API_OUTPUT_SCHEMA,
-    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
     handler: async (a) => {
       const action = String(a.action);
       switch (action) {
         case "record_registration": {
-          const p = parseArgs(SCHEMAS.registryRegistration, a.args, "tracepass_passport_lifecycle", action);
+          const p = parseArgs(
+            SCHEMAS.registryRegistration,
+            a.args,
+            "tracepass_passport_lifecycle",
+            action,
+          );
           if (isErr(p)) return p;
           const body: Record<string, unknown> = { environment: "production" };
           if (p.placedOnMarketAt !== undefined) body.placedOnMarketAt = p.placedOnMarketAt;
@@ -1473,10 +1855,17 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           return apiResult(await client.post(`/api/v1/passports/${seg(p.id)}/registration`, body));
         }
         case "undo_registration": {
-          const p = parseArgs(SCHEMAS.registryRegistrationUndo, a.args, "tracepass_passport_lifecycle", action);
+          const p = parseArgs(
+            SCHEMAS.registryRegistrationUndo,
+            a.args,
+            "tracepass_passport_lifecycle",
+            action,
+          );
           if (isErr(p)) return p;
           return apiResult(
-            await client.delete(`/api/v1/passports/${seg(p.id)}/registration${qs({ environment: p.environment })}`),
+            await client.delete(
+              `/api/v1/passports/${seg(p.id)}/registration${qs({ environment: p.environment })}`,
+            ),
           );
         }
         case "place_on_market": {
@@ -1490,21 +1879,38 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           return apiResult(await client.post(`/api/v1/passports/${seg(p.id)}/suspend`));
         }
         case "suspend_by_serial": {
-          const p = parseArgs(SCHEMAS.passportSerial, a.args, "tracepass_passport_lifecycle", action);
+          const p = parseArgs(
+            SCHEMAS.passportSerial,
+            a.args,
+            "tracepass_passport_lifecycle",
+            action,
+          );
           if (isErr(p)) return p;
           return apiResult(
-            await client.post(`/api/v1/passports/by-serial/${seg(p.serial)}/suspend${qs({ gtin: p.gtin })}`),
+            await client.post(
+              `/api/v1/passports/by-serial/${seg(p.serial)}/suspend${qs({ gtin: p.gtin })}`,
+            ),
           );
         }
         case "archive": {
-          const p = parseArgs(SCHEMAS.passportArchive, a.args, "tracepass_passport_lifecycle", action);
+          const p = parseArgs(
+            SCHEMAS.passportArchive,
+            a.args,
+            "tracepass_passport_lifecycle",
+            action,
+          );
           if (isErr(p)) return p;
           return apiResult(
             await client.post(`/api/v1/passports/${seg(p.id)}/archive`, archiveBody(p.reason)),
           );
         }
         case "archive_by_serial": {
-          const p = parseArgs(SCHEMAS.passportArchiveBySerial, a.args, "tracepass_passport_lifecycle", action);
+          const p = parseArgs(
+            SCHEMAS.passportArchiveBySerial,
+            a.args,
+            "tracepass_passport_lifecycle",
+            action,
+          );
           if (isErr(p)) return p;
           return apiResult(
             await client.post(
@@ -1514,7 +1920,12 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           );
         }
         case "archive_product": {
-          const p = parseArgs(SCHEMAS.productArchive, a.args, "tracepass_passport_lifecycle", action);
+          const p = parseArgs(
+            SCHEMAS.productArchive,
+            a.args,
+            "tracepass_passport_lifecycle",
+            action,
+          );
           if (isErr(p)) return p;
           return apiResult(await client.post(`/api/v1/products/${seg(p.id)}/archive`));
         }
@@ -1533,5 +1944,14 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     },
   };
 
-  return [productsTool, passportsTool, fieldsTool, partiesTool, epcisTool, templatesTool, scopeTool, lifecycleTool];
+  return [
+    productsTool,
+    passportsTool,
+    fieldsTool,
+    partiesTool,
+    epcisTool,
+    templatesTool,
+    scopeTool,
+    lifecycleTool,
+  ];
 }

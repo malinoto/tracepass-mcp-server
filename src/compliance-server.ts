@@ -106,7 +106,9 @@ export function complianceResult(res: { status: number; ok: boolean; body: unkno
         "This service is not available with a disposable email address. Please log in with your work or permanent email.",
       );
     }
-    return errorResult(`Account not eligible: ${reason || message || "contact support@tracepass.eu."}`);
+    return errorResult(
+      `Account not eligible: ${reason || message || "contact support@tracepass.eu."}`,
+    );
   }
 
   // 429 scope_answer_cap: the per-company daily answer cap is exhausted.
@@ -225,7 +227,7 @@ const TEMPLATE_CATEGORY_HINT =
 // ---------------------------------------------------------------------------
 
 const HARD_RULES =
-  " Use only what this tool returns: add no facts, dates or articles of your own, not even today's date. Keep every citation and the disclaimer line, and any \"Planned, not law yet\" or \"being re-checked\" label. Phrase answers about the product type, never as personal duties (\"you must\"). Never rank or recommend vendors. Never call this advice or yourself a consultant. If the result is not_covered, say so and point to the article given.";
+  ' Use only what this tool returns: add no facts, dates or articles of your own, not even today\'s date. Keep every citation and the disclaimer line, and any "Planned, not law yet" or "being re-checked" label. Phrase answers about the product type, never as personal duties ("you must"). Never rank or recommend vendors. Never call this advice or yourself a consultant. If the result is not_covered, say so and point to the article given.';
 
 // ---------------------------------------------------------------------------
 // Tool interface (same pattern as supplier-server.ts)
@@ -255,7 +257,7 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
       name: "scope_check",
       title: "Check if a product needs a passport",
       description:
-        "Checks whether EU law requires a Digital Product Passport for a type of product, from when, and what the law requires of each role. Use it for \"do I need a passport\", \"from when\", \"who is responsible\", whether that responsibility can be handed to another company, who keeps and stores the passport and whether it must stay available after the company ceases, whether there is one passport per item, batch or model, and for repurposing, remanufacturing, waste or a battery inside another product. Pass whatever facts the user gave; if the result is needs_input, ask the user its questions in plain words and call again. The result's data.inScope is one of: yes, no, pending, depends." +
+        'Checks whether EU law requires a Digital Product Passport for a type of product, from when, and what the law requires of each role. Use it for "do I need a passport", "from when", "who is responsible", whether that responsibility can be handed to another company, who keeps and stores the passport and whether it must stay available after the company ceases, whether there is one passport per item, batch or model, and for repurposing, remanufacturing, waste or a battery inside another product. Pass whatever facts the user gave; if the result is needs_input, ask the user its questions in plain words and call again. The result\'s data.inScope is one of: yes, no, pending, depends.' +
         HARD_RULES,
       inputSchema: {
         category: z
@@ -269,11 +271,11 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
           .max(120)
           .optional()
           .describe(
-            "The user's role in plain words, e.g. \"maker\", \"importer\", \"reseller\". The platform maps this to the act's term.",
+            'The user\'s role in plain words, e.g. "maker", "importer", "reseller". The platform maps this to the act\'s term.',
           ),
         placedOnMarket: z
           .object({
-            date: z.string().describe("ISO date or partial date, e.g. \"2027-02\" or \"2027\"."),
+            date: z.string().describe('ISO date or partial date, e.g. "2027-02" or "2027".'),
             precision: z.enum(["day", "month", "year"]).optional(),
           })
           .optional()
@@ -282,14 +284,19 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
           .record(z.string(), z.unknown())
           .optional()
           .describe(
-            "Product facts the scope rules declare, e.g. {\"battery.capacityKWh\": 10}. Any other key is rejected, so pass only a fact you know the rules use (such as one a needs_input result asked for), and never the user's question or free text.",
+            'Product facts the scope rules declare, e.g. {"battery.capacityKWh": 10}. Any other key is rejected, so pass only a fact you know the rules use (such as one a needs_input result asked for), and never the user\'s question or free text.',
           ),
         locale: z
           .enum(["en", "bg", "de", "it"])
           .optional()
           .describe("Language for the answer text. Defaults to en."),
       },
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       handler: async (args) =>
         complianceResult(
           await client.post("/api/v1/scope/check", {
@@ -317,7 +324,9 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
           .string()
           .max(100)
           .optional()
-          .describe("Battery only: EV, LMT or industrial_gt_2kwh (an industrial battery over 2 kWh). Narrows the required fields to that battery type; an unknown value is refused with the allowed list."),
+          .describe(
+            "Battery only: EV, LMT or industrial_gt_2kwh (an industrial battery over 2 kWh). Narrows the required fields to that battery type; an unknown value is refused with the allowed list.",
+          ),
         group: z
           .string()
           .max(100)
@@ -328,14 +337,21 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
           .optional()
           .describe("Language for field labels and descriptions. Defaults to en."),
       },
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       handler: async (args) => {
         const qs = new URLSearchParams();
         if (typeof args.category === "string") qs.set("category", args.category);
         if (typeof args.subType === "string") qs.set("subType", args.subType);
         if (typeof args.group === "string") qs.set("group", args.group);
         if (typeof args.locale === "string") qs.set("locale", args.locale);
-        return complianceResult(await client.get(`/api/v1/regulatory/required-fields?${qs.toString()}`));
+        return complianceResult(
+          await client.get(`/api/v1/regulatory/required-fields?${qs.toString()}`),
+        );
       },
     },
 
@@ -350,7 +366,7 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
       name: "what_changed",
       title: "What changed in EU passport law",
       description:
-        "Reports changes in EU passport law and standards for the user's categories since a date (default: since they last asked). Use it for \"what's new\" or \"has X been adopted\". Items marked \"Planned, not law yet\" are upcoming obligations, not yet in force." +
+        'Reports changes in EU passport law and standards for the user\'s categories since a date (default: since they last asked). Use it for "what\'s new" or "has X been adopted". Items marked "Planned, not law yet" are upcoming obligations, not yet in force.' +
         HARD_RULES,
       inputSchema: {
         categories: z
@@ -368,10 +384,16 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
           .optional()
           .describe("Language for summaries. Defaults to en."),
       },
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       handler: async (args) => {
         const qs = new URLSearchParams();
-        if (Array.isArray(args.categories)) qs.set("categories", (args.categories as string[]).join(","));
+        if (Array.isArray(args.categories))
+          qs.set("categories", (args.categories as string[]).join(","));
         if (typeof args.since === "string") qs.set("since", args.since);
         if (typeof args.locale === "string") qs.set("locale", args.locale);
         return complianceResult(await client.get(`/api/v1/regulatory/changes?${qs.toString()}`));
@@ -389,7 +411,15 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
         HARD_RULES,
       inputSchema: {
         topic: z
-          .enum(["registration", "identifiers", "data_carrier", "data_format", "standards", "where_created", "access"])
+          .enum([
+            "registration",
+            "identifiers",
+            "data_carrier",
+            "data_format",
+            "standards",
+            "where_created",
+            "access",
+          ])
           .describe("The topic to answer."),
         category: z
           .string()
@@ -401,13 +431,20 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
           .optional()
           .describe("Language for the answer. Defaults to en."),
       },
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       handler: async (args) => {
         const qs = new URLSearchParams();
         if (typeof args.topic === "string") qs.set("topic", args.topic);
         if (typeof args.category === "string") qs.set("category", args.category);
         if (typeof args.locale === "string") qs.set("locale", args.locale);
-        return complianceResult(await client.get(`/api/v1/regulatory/registry-guidance?${qs.toString()}`));
+        return complianceResult(
+          await client.get(`/api/v1/regulatory/registry-guidance?${qs.toString()}`),
+        );
       },
     },
 
@@ -422,7 +459,7 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
       name: "create_draft_passport",
       title: "Create a draft passport",
       description:
-        "Creates a **draft** passport in the user's own TracePass account from facts they stated. Use it whenever the user asks to create a passport, including \"create and publish\": create the draft, then say that publishing is done by the user in TracePass. It never publishes. If the result asks for an identifier, ask the user; never invent one." +
+        'Creates a **draft** passport in the user\'s own TracePass account from facts they stated. Use it whenever the user asks to create a passport, including "create and publish": create the draft, then say that publishing is done by the user in TracePass. It never publishes. If the result asks for an identifier, ask the user; never invent one.' +
         HARD_RULES,
       inputSchema: {
         category: z.enum(TEMPLATE_CATEGORIES).describe(TEMPLATE_CATEGORY_HINT),
@@ -443,9 +480,16 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
           .string()
           .max(100)
           .optional()
-          .describe("Battery only: EV, LMT or industrial_gt_2kwh. Used to count the required fields for that battery type; ask the user rather than guess."),
+          .describe(
+            "Battery only: EV, LMT or industrial_gt_2kwh. Used to count the required fields for that battery type; ask the user rather than guess.",
+          ),
       },
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
       handler: async (args) => {
         // Never invent a GTIN or a serial number — ask the user for both if missing.
         const hasGtin = args.gtin && String(args.gtin).trim() !== "";
@@ -477,7 +521,11 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
         // Step 1: create the product.
         // `model` is a required unique key per company; reuse productName as the model
         // value (unique within the company's catalogue).
-        const productBody: Record<string, unknown> = { name: productName, model: productName, category };
+        const productBody: Record<string, unknown> = {
+          name: productName,
+          model: productName,
+          category,
+        };
         const productRes = await client.post("/api/v1/products", productBody);
         if (!productRes.ok) return complianceResult(productRes);
         const productData = (productRes.body ?? {}) as Record<string, unknown>;
@@ -505,7 +553,9 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
         let stillRequired: number | null = null;
         let missingParties: number | null = null;
         let missingTargets: Set<string> | null = null;
-        const complianceRes = await client.get(`/api/v1/passports/${encodeURIComponent(passportId)}/compliance`);
+        const complianceRes = await client.get(
+          `/api/v1/passports/${encodeURIComponent(passportId)}/compliance`,
+        );
         if (complianceRes.ok) {
           const compData = (complianceRes.body ?? {}) as Record<string, unknown>;
           const critical = Array.isArray(compData.critical)
@@ -534,13 +584,14 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
           );
           if (rfRes.ok) {
             const rfData = (rfRes.body ?? {}) as Record<string, unknown>;
-            const summary = (
-              (rfData.data as Record<string, unknown> | undefined)?.summary as Record<string, unknown> | undefined
-            );
+            const summary = (rfData.data as Record<string, unknown> | undefined)?.summary as
+              Record<string, unknown> | undefined;
             const byHolder = summary?.requiredByHolder as Record<string, unknown> | undefined;
             if (byHolder && missingTargets) {
               const maker = Array.isArray(byHolder.maker) ? (byHolder.maker as string[]) : [];
-              const supplier = Array.isArray(byHolder.supplier) ? (byHolder.supplier as string[]) : [];
+              const supplier = Array.isArray(byHolder.supplier)
+                ? (byHolder.supplier as string[])
+                : [];
               const either = Array.isArray(byHolder.either) ? (byHolder.either as string[]) : [];
               const holderKeys = new Set([...maker, ...supplier, ...either]);
               makerOrSupplierCount = [...missingTargets].filter((t) => holderKeys.has(t)).length;
@@ -558,7 +609,9 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
           ...(makerOrSupplierCount !== null ? { makerOrSupplierCount } : {}),
           answer:
             `Draft passport created. Open it in TracePass to complete the required fields: ${dashboardUrl}` +
-            (stillRequired !== null ? ` (${stillRequired} required field${stillRequired === 1 ? "" : "s"} still to fill)` : "") +
+            (stillRequired !== null
+              ? ` (${stillRequired} required field${stillRequired === 1 ? "" : "s"} still to fill)`
+              : "") +
             ". Publishing is done by you in TracePass; I never publish.",
         });
       },
@@ -586,9 +639,16 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
         ruleIds: z
           .array(z.string())
           .optional()
-          .describe("The ruleIds from the answer that was reported. Pass them from the result unchanged."),
+          .describe(
+            "The ruleIds from the answer that was reported. Pass them from the result unchanged.",
+          ),
       },
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
       handler: async (args) =>
         complianceResult(
           await client.post("/api/v1/scope/reports", {
@@ -609,7 +669,12 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
         "Shows the company facts the assistant has stored (categories, markets, role, own-brand flag, etc.) and when they were last updated." +
         HARD_RULES,
       inputSchema: {},
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       handler: async () => complianceResult(await client.get("/api/v1/company/compliance-profile")),
     },
 
@@ -626,7 +691,13 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
         HARD_RULES,
       inputSchema: {
         role: z
-          .enum(["manufacturer", "importer", "distributor", "authorised_representative", "fulfilment_service_provider"])
+          .enum([
+            "manufacturer",
+            "importer",
+            "distributor",
+            "authorised_representative",
+            "fulfilment_service_provider",
+          ])
           .optional()
           .describe("The company's role in the supply chain per EU DPP regulations."),
         ownBrand: z
@@ -636,11 +707,11 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
         categories: z
           .array(z.string().max(100))
           .optional()
-          .describe("Product categories the company handles, e.g. [\"battery\", \"textile\"]."),
+          .describe('Product categories the company handles, e.g. ["battery", "textile"].'),
         markets: z
           .array(z.string().max(10))
           .optional()
-          .describe("ISO country codes where the company sells, or [\"EU\"]."),
+          .describe('ISO country codes where the company sells, or ["EU"].'),
         sizeBand: z
           .enum(["sme", "large"])
           .optional()
@@ -653,7 +724,9 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
           .string()
           .max(200)
           .optional()
-          .describe("Short description of the data systems the company uses (e.g. SAP, custom ERP)."),
+          .describe(
+            "Short description of the data systems the company uses (e.g. SAP, custom ERP).",
+          ),
         products: z
           .array(
             z.object({
@@ -666,7 +739,12 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
           .optional()
           .describe("Up to 50 representative products, used as defaults for passport creation."),
       },
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       handler: async (args) => {
         const patch: Record<string, unknown> = {};
         if (args.role !== undefined) patch.role = args.role;
@@ -693,8 +771,14 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
         "Deletes every stored company fact. Use it only when the user explicitly asks to delete their profile. This is a separate tool so the assistant asks for confirmation before running it." +
         HARD_RULES,
       inputSchema: {},
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-      handler: async () => complianceResult(await client.delete("/api/v1/company/compliance-profile")),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+      handler: async () =>
+        complianceResult(await client.delete("/api/v1/company/compliance-profile")),
     },
   ];
 }
@@ -711,7 +795,7 @@ export function createComplianceMcpServer(config: CreateComplianceMcpServerConfi
       "When the user asks to create a passport, call create_draft_passport — it never publishes. " +
       "Offer to save any lasting company facts the user states (role, categories, markets) with update_profile. " +
       "If an answer is flagged as wrong, call report_answer with the user's words and the ruleIds. " +
-      "Say answers are \"Planned, not law yet\" for planned items. " +
+      'Say answers are "Planned, not law yet" for planned items. ' +
       "Where ruleStatus is needs_recheck, say the law behind the act changed and the rules are being re-checked. " +
       "End every answer with the disclaimer line from the result.",
   });
@@ -728,7 +812,9 @@ export function createComplianceMcpServer(config: CreateComplianceMcpServerConfi
       try {
         return await tool.handler(args ?? {});
       } catch (err) {
-        return errorResult(`Tool "${tool.name}" failed: ${err instanceof Error ? err.message : String(err)}`);
+        return errorResult(
+          `Tool "${tool.name}" failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     };
     server.registerTool(

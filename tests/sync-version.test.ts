@@ -15,14 +15,24 @@ function withCopy(fn: (dir: string) => void) {
   const dir = mkdtempSync(join(tmpdir(), "mcp-version-"));
   try {
     mkdirSync(join(dir, "src"));
-    for (const f of ["package.json", "server.json", "server.compliance.json", join("src", "server.ts")]) copyFileSync(join(repo, f), join(dir, f));
+    for (const f of [
+      "package.json",
+      "server.json",
+      "server.compliance.json",
+      join("src", "server.ts"),
+    ])
+      copyFileSync(join(repo, f), join(dir, f));
     fn(dir);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 }
 const run = (dir: string) =>
-  execFileSync(process.execPath, [join(repo, "scripts", "sync-version.mjs"), "--root", dir, "--no-card"], { encoding: "utf8" });
+  execFileSync(
+    process.execPath,
+    [join(repo, "scripts", "sync-version.mjs"), "--root", dir, "--no-card"],
+    { encoding: "utf8" },
+  );
 
 describe("sync-version", () => {
   it("writes the package.json version into server.json (both spots) and MCP_SERVER_INFO", () => {
@@ -33,8 +43,12 @@ describe("sync-version", () => {
       run(dir);
       const server = JSON.parse(readFileSync(join(dir, "server.json"), "utf8"));
       expect(server.version).toBe("9.8.7");
-      expect(server.packages.map((p: { version: string }) => p.version)).toEqual(server.packages.map(() => "9.8.7"));
-      expect(readFileSync(join(dir, "src", "server.ts"), "utf8")).toMatch(/MCP_SERVER_INFO = \{[^}]*version: "9\.8\.7"/);
+      expect(server.packages.map((p: { version: string }) => p.version)).toEqual(
+        server.packages.map(() => "9.8.7"),
+      );
+      expect(readFileSync(join(dir, "src", "server.ts"), "utf8")).toMatch(
+        /MCP_SERVER_INFO = \{[^}]*version: "9\.8\.7"/,
+      );
     });
   });
 

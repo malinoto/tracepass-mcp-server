@@ -86,7 +86,10 @@ describe("apiResult — status mapping", () => {
     const r = apiResult({
       status: 409,
       ok: false,
-      body: { error: "registry_not_ready", findings: ['Required field "carbonFootprintTotal" has no value.'] },
+      body: {
+        error: "registry_not_ready",
+        findings: ['Required field "carbonFootprintTotal" has no value.'],
+      },
     });
     expect(r.content[0]!.text).toContain("registry_not_ready");
     expect(r.content[0]!.text).toContain('Required field "carbonFootprintTotal" has no value.');
@@ -96,7 +99,10 @@ describe("apiResult — status mapping", () => {
     const r = apiResult({
       status: 409,
       ok: false,
-      body: { error: "operator_locked", message: "Operator and facility identifiers are locked after Place on market." },
+      body: {
+        error: "operator_locked",
+        message: "Operator and facility identifiers are locked after Place on market.",
+      },
     });
     expect(r.content[0]!.text).toContain("operator_locked");
     expect(r.content[0]!.text).toContain("locked after Place on market");
@@ -136,7 +142,10 @@ describe("credential probe", () => {
   // to re-authorise, which can never help.
   afterEach(() => vi.unstubAllGlobals());
   const probeWith = (status: number) => {
-    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("{}", { status })),
+    );
     return credentialAccepted("tp_test");
   };
 

@@ -65,15 +65,7 @@ describe("server version is in lockstep across every copy", () => {
 
   it("the published server card matches — including the NESTED serverInfo.version", () => {
     // Cross-repo: only checkable when the marketing repo is a sibling checkout.
-    const card = join(
-      ROOT,
-      "..",
-      "tracepass",
-      "public",
-      ".well-known",
-      "mcp",
-      "server-card.json",
-    );
+    const card = join(ROOT, "..", "tracepass", "public", ".well-known", "mcp", "server-card.json");
     if (!existsSync(card)) {
       // Not a failure: CI clones this repo alone. The check is a local/dev
       // guard, and the publish flow is where both repos are present.

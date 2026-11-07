@@ -51,8 +51,12 @@ function startTestServer(): Promise<{ port: number; close: () => Promise<void> }
 describe("SEC-08 — non-POST methods on MCP endpoints return 405", () => {
   let srv: { port: number; close: () => Promise<void> };
 
-  beforeEach(async () => { srv = await startTestServer(); });
-  afterEach(async () => { await srv.close(); });
+  beforeEach(async () => {
+    srv = await startTestServer();
+  });
+  afterEach(async () => {
+    await srv.close();
+  });
 
   it("GET /mcp returns 405 with Allow: POST (not a hanging SSE stream)", async () => {
     const res = await fetch(`http://127.0.0.1:${srv.port}/mcp`, {
@@ -100,8 +104,12 @@ describe("SEC-08 — non-POST methods on MCP endpoints return 405", () => {
 describe("SEC-08 — oversized request body returns 413", () => {
   let srv: { port: number; close: () => Promise<void> };
 
-  beforeEach(async () => { srv = await startTestServer(); });
-  afterEach(async () => { await srv.close(); });
+  beforeEach(async () => {
+    srv = await startTestServer();
+  });
+  afterEach(async () => {
+    await srv.close();
+  });
 
   it("POST /mcp body > 1 MB returns 413 request_too_large", async () => {
     // Default limit is 1 048 576 bytes; send 1 byte over.
@@ -113,7 +121,7 @@ describe("SEC-08 — oversized request body returns 413", () => {
       signal: AbortSignal.timeout(10_000),
     });
     expect(res.status).toBe(413);
-    const json = await res.json() as Record<string, string>;
+    const json = (await res.json()) as Record<string, string>;
     expect(json.error).toBe("request_too_large");
   });
 });
@@ -122,8 +130,12 @@ describe("SEC-08 — oversized request body returns 413", () => {
 describe("SEC-08 — oversized JSON-RPC batch returns 400", () => {
   let srv: { port: number; close: () => Promise<void> };
 
-  beforeEach(async () => { srv = await startTestServer(); });
-  afterEach(async () => { await srv.close(); });
+  beforeEach(async () => {
+    srv = await startTestServer();
+  });
+  afterEach(async () => {
+    await srv.close();
+  });
 
   it("batch of 11 tools/list messages returns 400 batch_too_large", async () => {
     const batch = Array.from({ length: 11 }, (_, i) => ({
@@ -139,7 +151,7 @@ describe("SEC-08 — oversized JSON-RPC batch returns 400", () => {
       signal: AbortSignal.timeout(5000),
     });
     expect(res.status).toBe(400);
-    const json = await res.json() as Record<string, string>;
+    const json = (await res.json()) as Record<string, string>;
     expect(json.error).toBe("batch_too_large");
   });
 

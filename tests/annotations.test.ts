@@ -30,7 +30,10 @@ async function listTools(server: McpServer) {
 describe.each([
   ["main /mcp", () => createMcpServer({ baseUrl: "https://app.example", apiKey: "tp_test" })],
   ["supplier", () => createSupplierMcpServer({ baseUrl: "https://app.example", token: "" })],
-  ["compliance", () => createComplianceMcpServer({ baseUrl: "https://app.example", apiKey: "tp_test" })],
+  [
+    "compliance",
+    () => createComplianceMcpServer({ baseUrl: "https://app.example", apiKey: "tp_test" }),
+  ],
 ])("%s server — tools/list annotations", (_, make) => {
   it("every tool has a title and all four hints as explicit booleans", async () => {
     const tools = await listTools(make());
@@ -51,7 +54,8 @@ describe.each([
 
   it("a read-only tool is never marked destructive", async () => {
     for (const tool of await listTools(make())) {
-      if (tool.annotations?.readOnlyHint) expect(tool.annotations.destructiveHint, tool.name).toBe(false);
+      if (tool.annotations?.readOnlyHint)
+        expect(tool.annotations.destructiveHint, tool.name).toBe(false);
     }
   });
 });
@@ -59,7 +63,8 @@ describe.each([
 // A hint describes the whole tool, so it must hold for its riskiest action.
 // Writes: anything that creates, changes or captures. Destructive: anything
 // that overwrites, removes, suspends or archives (not purely additive).
-const WRITE = /^(create|update|archive|suspend|set|remove|capture$|capture_by|capture_measurements|catalogue_run$)/;
+const WRITE =
+  /^(create|update|archive|suspend|set|remove|capture$|capture_by|capture_measurements|catalogue_run$)/;
 const DESTRUCTIVE = /^(update|archive|suspend|set|remove)/;
 
 describe("main /mcp server — hints match the action enums", () => {

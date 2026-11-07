@@ -112,13 +112,16 @@ describe("compliance tool surface", () => {
 describe("compliance tool annotations", () => {
   const tools = buildComplianceTools(stubClient().client);
 
-  it.each(tools.map((t) => [t.name, t] as const))("%s has a title and all four hints as booleans", (_, t) => {
-    expect(t.title).toBeTruthy();
-    expect(typeof t.annotations.readOnlyHint).toBe("boolean");
-    expect(typeof t.annotations.destructiveHint).toBe("boolean");
-    expect(typeof t.annotations.idempotentHint).toBe("boolean");
-    expect(typeof t.annotations.openWorldHint).toBe("boolean");
-  });
+  it.each(tools.map((t) => [t.name, t] as const))(
+    "%s has a title and all four hints as booleans",
+    (_, t) => {
+      expect(t.title).toBeTruthy();
+      expect(typeof t.annotations.readOnlyHint).toBe("boolean");
+      expect(typeof t.annotations.destructiveHint).toBe("boolean");
+      expect(typeof t.annotations.idempotentHint).toBe("boolean");
+      expect(typeof t.annotations.openWorldHint).toBe("boolean");
+    },
+  );
 
   it("no tool reaches outside the TracePass account", () => {
     for (const t of tools) {
@@ -168,7 +171,10 @@ describe("compliance tool annotations", () => {
 describe("compliance tool routing", () => {
   it("scope_check POSTs to /api/v1/scope/check", async () => {
     const { client, calls } = stubClient();
-    await tool(buildComplianceTools(client), "scope_check").handler({ category: "battery", role: "importer" });
+    await tool(buildComplianceTools(client), "scope_check").handler({
+      category: "battery",
+      role: "importer",
+    });
     expect(calls[0]).toMatchObject({ method: "POST", path: "/api/v1/scope/check" });
     expect(calls[0]!.body).toMatchObject({ category: "battery", role: "importer" });
   });
@@ -234,7 +240,11 @@ describe("compliance tool routing", () => {
       method: "PATCH",
       path: "/api/v1/company/compliance-profile",
     });
-    expect(calls[0]!.body).toMatchObject({ role: "manufacturer", categories: ["battery"], ownBrand: true });
+    expect(calls[0]!.body).toMatchObject({
+      role: "manufacturer",
+      categories: ["battery"],
+      ownBrand: true,
+    });
   });
 
   it("update_profile omits undefined fields from the PATCH body", async () => {
@@ -248,7 +258,10 @@ describe("compliance tool routing", () => {
   it("delete_profile DELETEs /api/v1/company/compliance-profile", async () => {
     const { client, calls } = stubClient();
     await tool(buildComplianceTools(client), "delete_profile").handler({});
-    expect(calls[0]).toMatchObject({ method: "DELETE", path: "/api/v1/company/compliance-profile" });
+    expect(calls[0]).toMatchObject({
+      method: "DELETE",
+      path: "/api/v1/company/compliance-profile",
+    });
   });
 
   it("report_answer POSTs to /api/v1/scope/reports with what + ruleIds + channel=assistant", async () => {
@@ -364,9 +377,16 @@ describe("create_draft_passport", () => {
     // missingParties = 1 (one missing_party in critical)
     expect(sc.missingParties).toBe(1);
     // Check product body includes model = productName (required by platform)
-    expect(bodies[0]).toMatchObject({ name: "Blue T-Shirt", model: "Blue T-Shirt", category: "textile" });
+    expect(bodies[0]).toMatchObject({
+      name: "Blue T-Shirt",
+      model: "Blue T-Shirt",
+      category: "textile",
+    });
     // Check passport body uses gs1: { gtin, serialNumber } nested format
-    expect(bodies[1]).toMatchObject({ productId: "prod-123", gs1: { gtin: "09506000134369", serialNumber: "SN-001" } });
+    expect(bodies[1]).toMatchObject({
+      productId: "prod-123",
+      gs1: { gtin: "09506000134369", serialNumber: "SN-001" },
+    });
   });
 
   it("for battery, fetches required-fields overlay and returns makerOrSupplierCount", async () => {
@@ -477,7 +497,11 @@ describe("create_draft_passport", () => {
       post: async () => {
         callNum++;
         if (callNum === 1) return { status: 201, ok: true, body: { _id: "p1" } };
-        return { status: 403, ok: false, body: { error: "plan_upgrade_required", message: "Needs Growth plan." } };
+        return {
+          status: 403,
+          ok: false,
+          body: { error: "plan_upgrade_required", message: "Needs Growth plan." },
+        };
       },
     } as unknown as TracePassClient;
     const r = await tool(buildComplianceTools(client), "create_draft_passport").handler({
@@ -501,7 +525,11 @@ describe("complianceResult — closing disclaimer", () => {
     "Regulatory information as of 2026-10-09, not legal advice. Check the cited articles before relying on it. — TracePass DPP Assistant";
 
   it("adds the envelope's disclaimer as a separate closing line", () => {
-    const r = complianceResult({ status: 200, ok: true, body: { status: "answered", answer: "x", disclaimer } });
+    const r = complianceResult({
+      status: 200,
+      ok: true,
+      body: { status: "answered", answer: "x", disclaimer },
+    });
     expect(r.content).toHaveLength(2);
     expect(r.content[1].text).toBe(`End your answer with this line, word for word:\n${disclaimer}`);
     expect(JSON.parse(r.content[0].text).disclaimer).toBe(disclaimer);
@@ -513,7 +541,11 @@ describe("complianceResult — closing disclaimer", () => {
   });
 
   it("adds nothing to an error", () => {
-    const r = complianceResult({ status: 400, ok: false, body: { error: "invalid_input", disclaimer } });
+    const r = complianceResult({
+      status: 400,
+      ok: false,
+      body: { error: "invalid_input", disclaimer },
+    });
     expect(r.content.some((c) => c.text.startsWith("End your answer"))).toBe(false);
   });
 });
@@ -588,7 +620,11 @@ describe("complianceResult — error mapping", () => {
   });
 
   it("402 surfaces a payment-required message", () => {
-    const r = complianceResult({ status: 402, ok: false, body: { message: "Subscription is past due." } });
+    const r = complianceResult({
+      status: 402,
+      ok: false,
+      body: { message: "Subscription is past due." },
+    });
     expect(r.isError).toBe(true);
     expect(r.content[0]!.text).toMatch(/payment required/i);
     expect(r.content[0]!.text).toMatch(/resolve billing/i);
@@ -596,7 +632,11 @@ describe("complianceResult — error mapping", () => {
 
   it("403 'Subscription is not active' points to billing, not a plan change or re-auth", () => {
     // v1 auth answers every call this way while the account is past due.
-    const r = complianceResult({ status: 403, ok: false, body: { error: "Subscription is not active" } });
+    const r = complianceResult({
+      status: 403,
+      ok: false,
+      body: { error: "Subscription is not active" },
+    });
     expect(r.isError).toBe(true);
     expect(r.content[0]!.text).toMatch(/resolve billing/i);
     expect(r.content[0]!.text).not.toMatch(/plan change/i);
@@ -672,7 +712,13 @@ describe("compliance client X-Source header", () => {
 
   it("read-only tools issue only GET or stateless POST calls", async () => {
     const { client, calls } = stubClient();
-    const readOnlyTools = ["scope_check", "required_fields", "what_changed", "registry_guidance", "get_profile"];
+    const readOnlyTools = [
+      "scope_check",
+      "required_fields",
+      "what_changed",
+      "registry_guidance",
+      "get_profile",
+    ];
     for (const name of readOnlyTools) {
       calls.length = 0;
       await tool(buildComplianceTools(client), name).handler({
@@ -712,7 +758,9 @@ describe("compliance per-path metadata", () => {
   });
 
   it("the compliance server card endpoint matches the compliance MCP path", () => {
-    expect(COMPLIANCE_SERVER_CARD.transport.endpoint).toBe("https://ai.tracepass.eu/compliance/mcp");
+    expect(COMPLIANCE_SERVER_CARD.transport.endpoint).toBe(
+      "https://ai.tracepass.eu/compliance/mcp",
+    );
   });
 });
 
@@ -723,12 +771,16 @@ describe("compliance per-path metadata", () => {
 describe("server.compliance.json version lockstep", () => {
   it("server.compliance.json version matches package.json", () => {
     const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as { version: string };
-    const compliance = JSON.parse(readFileSync(join(ROOT, "server.compliance.json"), "utf8")) as { version: string };
+    const compliance = JSON.parse(readFileSync(join(ROOT, "server.compliance.json"), "utf8")) as {
+      version: string;
+    };
     expect(compliance.version).toBe(pkg.version);
   });
 
   it("server.compliance.json name is eu.tracepass/compliance", () => {
-    const compliance = JSON.parse(readFileSync(join(ROOT, "server.compliance.json"), "utf8")) as { name: string };
+    const compliance = JSON.parse(readFileSync(join(ROOT, "server.compliance.json"), "utf8")) as {
+      name: string;
+    };
     expect(compliance.name).toBe("eu.tracepass/compliance");
   });
 });
@@ -746,7 +798,8 @@ describe("scope_check request contract", () => {
     if (!existsSync(specPath)) return; // CI clones this repo alone.
     const spec = JSON.parse(readFileSync(specPath, "utf-8"));
     const declared = Object.keys(
-      spec.paths["/api/v1/scope/check"].post.requestBody.content["application/json"].schema.properties,
+      spec.paths["/api/v1/scope/check"].post.requestBody.content["application/json"].schema
+        .properties,
     );
 
     // One sample per advertised argument; a new argument without a sample fails here.
@@ -760,7 +813,8 @@ describe("scope_check request contract", () => {
     const { client, calls } = stubClient();
     const scope = tool(buildComplianceTools(client), "scope_check");
     const advertised = Object.keys(scope.inputSchema as Record<string, unknown>);
-    for (const key of advertised) expect(samples, `a sample for argument "${key}"`).toHaveProperty(key);
+    for (const key of advertised)
+      expect(samples, `a sample for argument "${key}"`).toHaveProperty(key);
 
     await scope.handler(Object.fromEntries(advertised.map((k) => [k, samples[k]])) as never);
     const sent = Object.keys(calls[0]!.body as Record<string, unknown>);
@@ -772,7 +826,8 @@ describe("scope_check request contract", () => {
     if (!existsSync(specPath)) return; // CI clones this repo alone.
     const spec = JSON.parse(readFileSync(specPath, "utf-8"));
     const accepted: string[] =
-      spec.paths["/api/v1/scope/check"].post.requestBody.content["application/json"].schema.properties.category.enum;
+      spec.paths["/api/v1/scope/check"].post.requestBody.content["application/json"].schema
+        .properties.category.enum;
     expect([...SCOPE_CATEGORIES].sort()).toEqual([...accepted].sort());
   });
 
@@ -781,7 +836,8 @@ describe("scope_check request contract", () => {
     const scope = tool(buildComplianceTools(stubClient().client), "scope_check");
     const category = (scope.inputSchema as Record<string, z.ZodType>).category!;
     for (const k of SCOPE_CATEGORIES) expect(category.safeParse(k).success, k).toBe(true);
-    for (const words of ["lamps", "paint", "bicycle frame"]) expect(category.safeParse(words).success, words).toBe(false);
+    for (const words of ["lamps", "paint", "bicycle frame"])
+      expect(category.safeParse(words).success, words).toBe(false);
   });
 });
 
@@ -798,10 +854,14 @@ describe("template-category tools", () => {
     expect([...TEMPLATE_CATEGORIES].sort()).toEqual(categories.sort());
   });
 
-  it.each(["required_fields", "create_draft_passport"])("%s declares category as the template enum", (name) => {
-    const t = tool(buildComplianceTools(stubClient().client), name);
-    const category = (t.inputSchema as Record<string, z.ZodType>).category!;
-    for (const k of TEMPLATE_CATEGORIES) expect(category.safeParse(k).success, k).toBe(true);
-    for (const v of ["lamps", "paint", "other", "vehicles"]) expect(category.safeParse(v).success, v).toBe(false);
-  });
+  it.each(["required_fields", "create_draft_passport"])(
+    "%s declares category as the template enum",
+    (name) => {
+      const t = tool(buildComplianceTools(stubClient().client), name);
+      const category = (t.inputSchema as Record<string, z.ZodType>).category!;
+      for (const k of TEMPLATE_CATEGORIES) expect(category.safeParse(k).success, k).toBe(true);
+      for (const v of ["lamps", "paint", "other", "vehicles"])
+        expect(category.safeParse(v).success, v).toBe(false);
+    },
+  );
 });

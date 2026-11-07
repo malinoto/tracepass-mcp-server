@@ -48,10 +48,7 @@ function errorContents(uri: string, status: number, body: unknown) {
  * Register every TracePass resource + resource template on the
  * server, bound to a v1 API client.
  */
-export function registerResources(
-  server: McpServer,
-  client: TracePassClient,
-): void {
+export function registerResources(server: McpServer, client: TracePassClient): void {
   // ── Static resource: the product catalogue ────────────────────
   server.registerResource(
     "products",
@@ -76,8 +73,7 @@ export function registerResources(
     new ResourceTemplate("tracepass://product/{id}", { list: undefined }),
     {
       title: "Product",
-      description:
-        "One TracePass product by its id — tracepass://product/{id}.",
+      description: "One TracePass product by its id — tracepass://product/{id}.",
       mimeType: "application/json",
     },
     async (uri, variables) => {
@@ -101,9 +97,7 @@ export function registerResources(
     },
     async (uri, variables) => {
       const id = String(variables.id);
-      const res = await client.get(
-        `/api/v1/passports/${encodeURIComponent(id)}?format=full`,
-      );
+      const res = await client.get(`/api/v1/passports/${encodeURIComponent(id)}?format=full`);
       return res.ok
         ? jsonContents(uri.href, res.body)
         : errorContents(uri.href, res.status, res.body);
@@ -124,9 +118,7 @@ export function registerResources(
     },
     async (uri, variables) => {
       const id = String(variables.id);
-      const res = await client.get(
-        `/api/v1/passports/${encodeURIComponent(id)}/epcis`,
-      );
+      const res = await client.get(`/api/v1/passports/${encodeURIComponent(id)}/epcis`);
       return res.ok
         ? jsonContents(uri.href, res.body)
         : errorContents(uri.href, res.status, res.body);
@@ -147,9 +139,7 @@ export function registerResources(
     },
     async (uri, variables) => {
       const id = String(variables.id);
-      const res = await client.get(
-        `/api/v1/passports/${encodeURIComponent(id)}/compliance`,
-      );
+      const res = await client.get(`/api/v1/passports/${encodeURIComponent(id)}/compliance`);
       return res.ok
         ? jsonContents(uri.href, res.body)
         : errorContents(uri.href, res.status, res.body);
@@ -193,9 +183,7 @@ export function registerResources(
     },
     async (uri, variables) => {
       const id = String(variables.id);
-      const res = await client.get(
-        `/api/v1/passports/${encodeURIComponent(id)}/snapshots`,
-      );
+      const res = await client.get(`/api/v1/passports/${encodeURIComponent(id)}/snapshots`);
       return res.ok
         ? jsonContents(uri.href, res.body)
         : errorContents(uri.href, res.status, res.body);
@@ -232,9 +220,7 @@ export function registerResources(
     },
     async (uri, variables) => {
       const category = String(variables.category);
-      const res = await client.get(
-        `/api/v1/templates/${encodeURIComponent(category)}`,
-      );
+      const res = await client.get(`/api/v1/templates/${encodeURIComponent(category)}`);
       return res.ok
         ? jsonContents(uri.href, res.body)
         : errorContents(uri.href, res.status, res.body);

@@ -15,11 +15,14 @@ function stubClient(status = 200, body: unknown = { ok: true }) {
   return { client, calls };
 }
 
-const tool = (tools: ReturnType<typeof buildSupplierTools>, name: string) => tools.find((t) => t.name === name)!;
+const tool = (tools: ReturnType<typeof buildSupplierTools>, name: string) =>
+  tools.find((t) => t.name === name)!;
 
 describe("supplier tool surface", () => {
   it("exposes exactly the five supplier tools and none of the customer tools", () => {
-    const names = buildSupplierTools(stubClient().client, true).map((t) => t.name).sort();
+    const names = buildSupplierTools(stubClient().client, true)
+      .map((t) => t.name)
+      .sort();
     expect(names).toEqual([
       "get_request",
       "get_review_status",
@@ -35,8 +38,15 @@ describe("supplier tool surface", () => {
     const tools = buildSupplierTools(client, true);
     await tool(tools, "get_request").handler({ lang: "de" });
     await tool(tools, "validate_answers").handler({ fieldValues: { a: 1 } });
-    await tool(tools, "upload_evidence").handler({ filename: "d.pdf", mimeType: "application/pdf", contentBase64: "eA==" });
-    await tool(tools, "submit_answers").handler({ fieldValues: { a: 1 }, evidence: { a: { note: "p.2" } } });
+    await tool(tools, "upload_evidence").handler({
+      filename: "d.pdf",
+      mimeType: "application/pdf",
+      contentBase64: "eA==",
+    });
+    await tool(tools, "submit_answers").handler({
+      fieldValues: { a: 1 },
+      evidence: { a: { note: "p.2" } },
+    });
     expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([
       "GET /api/supplier/v1/request?lang=de",
       "POST /api/supplier/v1/validate",
@@ -89,15 +99,20 @@ describe("supplierResult — supplier wording, never API keys or plans", () => {
   });
 
   it("410 says the request expired or was cancelled", () => {
-    expect(supplierResult({ status: 410, ok: false, body: {} }).content[0]!.text).toMatch(/expired or was cancelled/);
+    expect(supplierResult({ status: 410, ok: false, body: {} }).content[0]!.text).toMatch(
+      /expired or was cancelled/,
+    );
   });
 });
 
 describe("matchSupplierPath", () => {
   const token = "c86594f355692145e0431a645b195d48920c3e91d74fd71e7e053bbafc93c670";
-  it("takes the token from the path", () => expect(matchSupplierPath(`/supplier/mcp/${token}`)).toEqual({ pathToken: token }));
-  it("accepts a trailing slash", () => expect(matchSupplierPath(`/supplier/mcp/${token}/`)).toEqual({ pathToken: token }));
-  it("leaves the token to the header on the bare path", () => expect(matchSupplierPath("/supplier/mcp")).toEqual({ pathToken: "" }));
+  it("takes the token from the path", () =>
+    expect(matchSupplierPath(`/supplier/mcp/${token}`)).toEqual({ pathToken: token }));
+  it("accepts a trailing slash", () =>
+    expect(matchSupplierPath(`/supplier/mcp/${token}/`)).toEqual({ pathToken: token }));
+  it("leaves the token to the header on the bare path", () =>
+    expect(matchSupplierPath("/supplier/mcp")).toEqual({ pathToken: "" }));
   it("rejects a segment that is not a token", () => {
     expect(matchSupplierPath("/supplier/mcp/short")).toBeNull();
     expect(matchSupplierPath(`/supplier/mcp/${token}/extra`)).toBeNull();
@@ -109,7 +124,9 @@ describe("matchSupplierPath", () => {
 describe("get_upload_command", () => {
   const upload = { token: "tok_abc123", publicBaseUrl: "https://app.tracepass.eu/" };
   const run = (path: string) =>
-    tool(buildSupplierTools(stubClient().client, true, upload), "get_upload_command").handler({ path });
+    tool(buildSupplierTools(stubClient().client, true, upload), "get_upload_command").handler({
+      path,
+    });
 
   it("builds a curl upload with the token, the MIME type and the public URL", async () => {
     const r = await run("./Data Sheet.pdf");

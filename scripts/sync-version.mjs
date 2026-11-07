@@ -49,7 +49,8 @@ if (!Array.isArray(serverJson.packages) || serverJson.packages.length === 0) {
   process.exit(1);
 }
 for (const p of serverJson.packages) p.version = version;
-const serverJsonOut = JSON.stringify(serverJson, null, 2) + (serverJsonRaw.endsWith("\n") ? "\n" : "");
+const serverJsonOut =
+  JSON.stringify(serverJson, null, 2) + (serverJsonRaw.endsWith("\n") ? "\n" : "");
 if (serverJsonOut !== serverJsonRaw) {
   writeFileSync(serverJsonPath, serverJsonOut);
   changed.push("server.json");
@@ -61,7 +62,8 @@ const serverComplianceJsonRaw = readFileSync(serverComplianceJsonPath, "utf8");
 const serverComplianceJson = JSON.parse(serverComplianceJsonRaw);
 serverComplianceJson.version = version;
 const serverComplianceJsonOut =
-  JSON.stringify(serverComplianceJson, null, 2) + (serverComplianceJsonRaw.endsWith("\n") ? "\n" : "");
+  JSON.stringify(serverComplianceJson, null, 2) +
+  (serverComplianceJsonRaw.endsWith("\n") ? "\n" : "");
 if (serverComplianceJsonOut !== serverComplianceJsonRaw) {
   writeFileSync(serverComplianceJsonPath, serverComplianceJsonOut);
   changed.push("server.compliance.json");
@@ -81,7 +83,9 @@ if (serverTsOut !== serverTs) {
   changed.push("src/server.ts");
 }
 
-console.log(`sync-version: ${version} → ${changed.length ? changed.join(", ") : "already in step"}`);
+console.log(
+  `sync-version: ${version} → ${changed.length ? changed.join(", ") : "already in step"}`,
+);
 
 // Stage what changed so `npm version` puts it in the release commit. Only inside a
 // real `npm version` run in this repo (npm sets npm_lifecycle_event), never for --root.
@@ -93,10 +97,14 @@ if (process.env.npm_lifecycle_event === "version" && rootArg < 0 && changed.leng
 if (withCard && rootArg < 0) {
   try {
     execSync("npm run --silent build:server-card", { cwd: root, stdio: "inherit" });
-    console.log("sync-version: regenerated the www server-card mirror — commit it in the marketing repo.");
+    console.log(
+      "sync-version: regenerated the www server-card mirror — commit it in the marketing repo.",
+    );
   } catch {
     // Not fatal: the mirror lives in another repo and must not block this release.
     // tests/version-lockstep.test.ts fails loudly while the mirror is stale.
-    console.error("sync-version: WARNING — server-card regeneration failed; run `npm run build:server-card` and commit the mirror in the marketing repo.");
+    console.error(
+      "sync-version: WARNING — server-card regeneration failed; run `npm run build:server-card` and commit the mirror in the marketing repo.",
+    );
   }
 }

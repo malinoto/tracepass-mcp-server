@@ -39,7 +39,11 @@ describe("TracePassClient forwards the end user's IP", () => {
 
   it("sends X-Forwarded-For when the hosted transport supplies one", async () => {
     const cap = captureHeaders();
-    const client = new TracePassClient({ baseUrl: "http://platform:3000", apiKey: "tp_x", forwardedFor: "203.0.113.7" });
+    const client = new TracePassClient({
+      baseUrl: "http://platform:3000",
+      apiKey: "tp_x",
+      forwardedFor: "203.0.113.7",
+    });
     await client.request("GET", "/api/v1/templates");
     expect(cap.headers()["X-Forwarded-For"]).toBe("203.0.113.7");
   });
