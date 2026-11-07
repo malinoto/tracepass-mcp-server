@@ -48,8 +48,12 @@
     "test": "vitest run",
     "build:server-card": "npm run build --silent && node scripts/build-server-card.mjs",
     "check:server-card": "npm run build --silent && node scripts/build-server-card.mjs --check",
-    "lint": "eslint src",
-    "version": "node scripts/sync-version.mjs"
+    "lint": "eslint .",
+    "version": "node scripts/sync-version.mjs",
+    "format": "prettier --write \"**/*.{ts,tsx,js,mjs,cjs}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,mjs,cjs}\"",
+    "check": "npm run lint && npm run format:check && npm run typecheck && npm test",
+    "prepare": "if [ -f node_modules/@tracepass/code-standard/git-hooks/install.mjs ]; then node node_modules/@tracepass/code-standard/git-hooks/install.mjs; fi"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
@@ -57,14 +61,16 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
-    "@tracepass/code-standard": "github:malinoto/tracepass-code-standard#748db3c6f959459b6ea2bb8b97e4a17c2bf1864e",
+    "@tracepass/code-standard": "file:../tracepass-code-standard",
     "@types/node": "^22.0.0",
     "eslint": "^9.0.0",
+    "prettier": "^3.9.10",
     "typescript": "^5.6.0",
     "typescript-eslint": "^8.0.0",
     "vitest": "^4.0.0"
   },
   "engines": {
     "node": ">=20"
-  }
+  },
+  "prettier": "@tracepass/code-standard/prettier"
 }
