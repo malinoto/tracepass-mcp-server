@@ -1,3 +1,4 @@
+import { named, asyncStub } from "./helpers.js";
 /**
  * Tests for the DPP Compliance Assistant MCP server.
  *
@@ -41,13 +42,16 @@ const ROOT = join(HERE, "..");
  * response. Also tracks which X-Source header was used (via a side-channel
  * since we can't observe headers on the stub directly — we use the source
  * recorded on the call instead).
+ * @param status HTTP status the stub answers with
+ * @param body response body the stub answers with
+ * @returns the stub client and the list of calls it received
  */
 function stubClient(status = 200, body: unknown = { status: "answered", answer: "ok" }) {
   const calls: Array<{ method: string; path: string; body?: unknown }> = [];
-  const respond = async (method: string, path: string, b?: unknown) => {
+  const respond = asyncStub((method: string, path: string, b?: unknown) => {
     calls.push({ method, path, body: b });
     return { status, ok: status < 300, body };
-  };
+  });
   const client = {
     get: (p: string) => respond("GET", p),
     post: (p: string, b?: unknown) => respond("POST", p, b),
@@ -57,8 +61,7 @@ function stubClient(status = 200, body: unknown = { status: "answered", answer: 
   return { client, calls };
 }
 
-const tool = (tools: ReturnType<typeof buildComplianceTools>, name: string) =>
-  tools.find((t) => t.name === name)!;
+const tool = (tools: ReturnType<typeof buildComplianceTools>, name: string) => named(tools, name);
 
 // ---------------------------------------------------------------------------
 // 1. Tool surface
@@ -150,7 +153,7 @@ describe("compliance tool annotations", () => {
   ] as const)(
     "%s: readOnly=%s, destructive=%s, idempotent=%s",
     (name, readOnly, destructive, idempotent) => {
-      const t = tools.find((x) => x.name === name)!;
+      const t = named(tools, name);
       expect(t, `tool ${name} not found`).toBeTruthy();
       expect(t.annotations.readOnlyHint, name).toBe(readOnly);
       expect(t.annotations.destructiveHint, name).toBe(destructive);
@@ -176,13 +179,19 @@ describe("compliance tool routing", () => {
       role: "importer",
     });
     expect(calls[0]).toMatchObject({ method: "POST", path: "/api/v1/scope/check" });
-    expect(calls[0]!.body).toMatchObject({ category: "battery", role: "importer" });
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).body).toMatchObject({
+      category: "battery",
+      role: "importer",
+    });
   });
 
   it("scope_check omits undefined optional fields and never sends subType (not a top-level scope field)", async () => {
     const { client, calls } = stubClient();
     await tool(buildComplianceTools(client), "scope_check").handler({ category: "battery" });
-    const body = calls[0]!.body as Record<string, unknown>;
+    const body = (calls[0] ?? expect.unreachable("calls[0] is missing")).body as Record<
+      string,
+      unknown
+    >;
     expect(body.role).toBeUndefined();
     expect(body.markets).toBeUndefined();
     // subType was removed from scope_check — platform uses strictObject and rejects unknown fields
@@ -196,11 +205,17 @@ describe("compliance tool routing", () => {
       group: "identification",
       locale: "de",
     });
-    expect(calls[0]!.method).toBe("GET");
-    expect(calls[0]!.path).toContain("/api/v1/regulatory/required-fields");
-    expect(calls[0]!.path).toContain("category=battery");
-    expect(calls[0]!.path).toContain("group=identification");
-    expect(calls[0]!.path).toContain("locale=de");
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).method).toBe("GET");
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).path).toContain(
+      "/api/v1/regulatory/required-fields",
+    );
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).path).toContain(
+      "category=battery",
+    );
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).path).toContain(
+      "group=identification",
+    );
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).path).toContain("locale=de");
   });
 
   it("what_changed GETs /api/v1/regulatory/changes with categories joined by comma", async () => {
@@ -209,18 +224,28 @@ describe("compliance tool routing", () => {
       categories: ["battery", "textile"],
       since: "2026-01-01",
     });
-    expect(calls[0]!.method).toBe("GET");
-    expect(calls[0]!.path).toContain("/api/v1/regulatory/changes");
-    expect(calls[0]!.path).toContain("categories=battery%2Ctextile");
-    expect(calls[0]!.path).toContain("since=2026-01-01");
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).method).toBe("GET");
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).path).toContain(
+      "/api/v1/regulatory/changes",
+    );
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).path).toContain(
+      "categories=battery%2Ctextile",
+    );
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).path).toContain(
+      "since=2026-01-01",
+    );
   });
 
   it("registry_guidance GETs /api/v1/regulatory/registry-guidance with topic", async () => {
     const { client, calls } = stubClient();
     await tool(buildComplianceTools(client), "registry_guidance").handler({ topic: "identifiers" });
-    expect(calls[0]!.method).toBe("GET");
-    expect(calls[0]!.path).toContain("/api/v1/regulatory/registry-guidance");
-    expect(calls[0]!.path).toContain("topic=identifiers");
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).method).toBe("GET");
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).path).toContain(
+      "/api/v1/regulatory/registry-guidance",
+    );
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).path).toContain(
+      "topic=identifiers",
+    );
   });
 
   it("get_profile GETs /api/v1/company/compliance-profile", async () => {
@@ -240,7 +265,7 @@ describe("compliance tool routing", () => {
       method: "PATCH",
       path: "/api/v1/company/compliance-profile",
     });
-    expect(calls[0]!.body).toMatchObject({
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).body).toMatchObject({
       role: "manufacturer",
       categories: ["battery"],
       ownBrand: true,
@@ -250,7 +275,10 @@ describe("compliance tool routing", () => {
   it("update_profile omits undefined fields from the PATCH body", async () => {
     const { client, calls } = stubClient();
     await tool(buildComplianceTools(client), "update_profile").handler({ role: "importer" });
-    const body = calls[0]!.body as Record<string, unknown>;
+    const body = (calls[0] ?? expect.unreachable("calls[0] is missing")).body as Record<
+      string,
+      unknown
+    >;
     expect(body.categories).toBeUndefined();
     expect(body.markets).toBeUndefined();
   });
@@ -271,13 +299,16 @@ describe("compliance tool routing", () => {
       ruleIds: ["32023R1542#passport.in_scope@3"],
     });
     expect(calls[0]).toMatchObject({ method: "POST", path: "/api/v1/scope/reports" });
-    expect(calls[0]!.body).toMatchObject({
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).body).toMatchObject({
       what: "The answer says batteries are in scope but we only make portable ones.",
       ruleIds: ["32023R1542#passport.in_scope@3"],
       channel: "assistant",
     });
     // toolName is NOT forwarded — platform uses strictObject and rejects unknown keys
-    expect((calls[0]!.body as Record<string, unknown>).toolName).toBeUndefined();
+    expect(
+      ((calls[0] ?? expect.unreachable("calls[0] is missing")).body as Record<string, unknown>)
+        .toolName,
+    ).toBeUndefined();
   });
 });
 
@@ -294,7 +325,7 @@ describe("create_draft_passport", () => {
     });
     // Must be a needs_input result (not an error), asking for the GTIN.
     expect(r.isError).toBeFalsy();
-    const sc = r.structuredContent as Record<string, unknown>;
+    const sc = r.structuredContent ?? expect.unreachable("no structuredContent");
     expect(sc.status).toBe("needs_input");
     expect(JSON.stringify(sc.ask)).toContain("gtin");
     // No platform calls made — never invents a GTIN.
@@ -309,7 +340,9 @@ describe("create_draft_passport", () => {
       gtin: "  ",
     });
     expect(r.isError).toBeFalsy();
-    expect((r.structuredContent as Record<string, unknown>).status).toBe("needs_input");
+    expect((r.structuredContent ?? expect.unreachable("no structuredContent")).status).toBe(
+      "needs_input",
+    );
     expect(calls).toHaveLength(0);
   });
 
@@ -322,7 +355,7 @@ describe("create_draft_passport", () => {
       // no serialNumber
     });
     expect(r.isError).toBeFalsy();
-    const sc = r.structuredContent as Record<string, unknown>;
+    const sc = r.structuredContent ?? expect.unreachable("no structuredContent");
     expect(sc.status).toBe("needs_input");
     expect(JSON.stringify(sc.ask)).toContain("serialNumber");
     // No platform calls made — never proceeds without serialNumber.
@@ -334,7 +367,7 @@ describe("create_draft_passport", () => {
     // third (GET compliance) → ComplianceResult with critical array; no battery-required-fields call for non-battery.
     const bodies: unknown[] = [];
     const client = {
-      get: async (p: string) => {
+      get: asyncStub((p: string) => {
         // ComplianceResult — NOT wrapped in envelope; uses _id on product/passport.
         if (p.includes("/compliance")) {
           return {
@@ -353,14 +386,14 @@ describe("create_draft_passport", () => {
           };
         }
         return { status: 200, ok: true, body: {} };
-      },
-      post: async (p: string, b: unknown) => {
+      }),
+      post: asyncStub((p: string, b: unknown) => {
         bodies.push(b);
         // Platform returns `_id`, not `id`.
         if (p === "/api/v1/products") return { status: 201, ok: true, body: { _id: "prod-123" } };
         if (p === "/api/v1/passports") return { status: 201, ok: true, body: { _id: "pass-456" } };
         return { status: 200, ok: true, body: {} };
-      },
+      }),
     } as unknown as TracePassClient;
     const r = await tool(buildComplianceTools(client), "create_draft_passport").handler({
       category: "textile",
@@ -369,7 +402,7 @@ describe("create_draft_passport", () => {
       serialNumber: "SN-001",
     });
     expect(r.isError).toBeFalsy();
-    const sc = r.structuredContent as Record<string, unknown>;
+    const sc = r.structuredContent ?? expect.unreachable("no structuredContent");
     expect(sc.passportId).toBe("pass-456");
     expect(String(sc.dashboardUrl)).toContain("pass-456");
     // stillRequired = 3 distinct targets: fieldA, fieldB, fieldC (missing_field + conditional_missing)
@@ -389,12 +422,31 @@ describe("create_draft_passport", () => {
     });
   });
 
+  it("sends an empty product id, never an object's default text, when the platform id is not text", async () => {
+    const bodies: unknown[] = [];
+    const client = {
+      get: asyncStub(() => ({ status: 200, ok: true, body: {} })),
+      post: asyncStub((p: string, b: unknown) => {
+        bodies.push(b);
+        if (p === "/api/v1/products") return { status: 201, ok: true, body: { _id: { oid: "x" } } };
+        return { status: 201, ok: true, body: { _id: "pass-1" } };
+      }),
+    } as unknown as TracePassClient;
+    await tool(buildComplianceTools(client), "create_draft_passport").handler({
+      category: "textile",
+      productName: "Tee",
+      gtin: "09506000134369",
+      serialNumber: "SN-001",
+    });
+    expect(bodies[1]).toMatchObject({ productId: "" });
+  });
+
   it("for battery, fetches required-fields overlay and returns makerOrSupplierCount", async () => {
     // Compliance: 3 missing targets — "mfrDate", "capacity", "chemistry"
     // requiredByHolder: maker has mfrDate+capacity, supplier has chemistry, either has none
     // → makerOrSupplierCount = 3 (all three appear in maker ∪ supplier ∪ either)
     const client = {
-      get: async (p: string) => {
+      get: asyncStub((p: string) => {
         if (p.includes("/compliance")) {
           return {
             status: 200,
@@ -430,13 +482,13 @@ describe("create_draft_passport", () => {
           };
         }
         return { status: 200, ok: true, body: {} };
-      },
-      post: async (p: string) => {
+      }),
+      post: asyncStub((p: string) => {
         // Platform returns `_id`, not `id`.
         if (p === "/api/v1/products") return { status: 201, ok: true, body: { _id: "prod-bat" } };
         if (p === "/api/v1/passports") return { status: 201, ok: true, body: { _id: "pass-bat" } };
         return { status: 200, ok: true, body: {} };
-      },
+      }),
     } as unknown as TracePassClient;
     const r = await tool(buildComplianceTools(client), "create_draft_passport").handler({
       category: "battery",
@@ -445,7 +497,7 @@ describe("create_draft_passport", () => {
       serialNumber: "SN-EV-001",
       subType: "ev",
     });
-    const sc = r.structuredContent as Record<string, unknown>;
+    const sc = r.structuredContent ?? expect.unreachable("no structuredContent");
     expect(sc.stillRequired).toBe(3);
     // mfrDate + capacity (maker) + chemistry (supplier) = 3 in maker ∪ supplier ∪ either
     expect(sc.makerOrSupplierCount).toBe(3);
@@ -454,11 +506,15 @@ describe("create_draft_passport", () => {
 
   it("says publishing is done by the user, not by the tool", async () => {
     const client = {
-      get: async () => ({ status: 200, ok: true, body: { verdict: "incomplete", critical: [] } }),
-      post: async (p: string) => {
+      get: asyncStub(() => ({
+        status: 200,
+        ok: true,
+        body: { verdict: "incomplete", critical: [] },
+      })),
+      post: asyncStub((p: string) => {
         if (p === "/api/v1/products") return { status: 201, ok: true, body: { _id: "p1" } };
         return { status: 201, ok: true, body: { _id: "pass1" } };
-      },
+      }),
     } as unknown as TracePassClient;
     const r = await tool(buildComplianceTools(client), "create_draft_passport").handler({
       category: "battery",
@@ -466,17 +522,46 @@ describe("create_draft_passport", () => {
       gtin: "12345678901231",
       serialNumber: "SN-001",
     });
-    const text = r.content[0]!.text;
+    const text = (r.content[0] ?? expect.unreachable("r.content[0] is missing")).text;
     expect(text.toLowerCase()).toContain("publish");
     expect(text.toLowerCase()).toMatch(/never publish|not publish/);
   });
 
   it("relays product-create 402 as a payment-required message", async () => {
     const client = {
-      post: async () => ({
+      post: asyncStub(() => ({
         status: 402,
         ok: false,
         body: { message: "Subscription is past due." },
+      })),
+    } as unknown as TracePassClient;
+    const r = await tool(buildComplianceTools(client), "create_draft_passport").handler({
+      category: "battery",
+      productName: "Test",
+      gtin: "12345678901231",
+      serialNumber: "SN-001",
+    });
+    expect(r.isError).toBe(true);
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toMatch(
+      /payment required/i,
+    );
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toContain(
+      "Subscription is past due.",
+    );
+  });
+
+  it("relays passport-create 403 plan-gate as a readable message", async () => {
+    let callNum = 0;
+    const client = {
+      get: asyncStub(() => ({ status: 200, ok: true, body: {} })),
+      post: asyncStub(() => {
+        callNum++;
+        if (callNum === 1) return { status: 201, ok: true, body: { _id: "p1" } };
+        return {
+          status: 403,
+          ok: false,
+          body: { error: "plan_upgrade_required", message: "Needs Growth plan." },
+        };
       }),
     } as unknown as TracePassClient;
     const r = await tool(buildComplianceTools(client), "create_draft_passport").handler({
@@ -486,33 +571,10 @@ describe("create_draft_passport", () => {
       serialNumber: "SN-001",
     });
     expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toMatch(/payment required/i);
-    expect(r.content[0]!.text).toContain("Subscription is past due.");
-  });
-
-  it("relays passport-create 403 plan-gate as a readable message", async () => {
-    let callNum = 0;
-    const client = {
-      get: async () => ({ status: 200, ok: true, body: {} }),
-      post: async () => {
-        callNum++;
-        if (callNum === 1) return { status: 201, ok: true, body: { _id: "p1" } };
-        return {
-          status: 403,
-          ok: false,
-          body: { error: "plan_upgrade_required", message: "Needs Growth plan." },
-        };
-      },
-    } as unknown as TracePassClient;
-    const r = await tool(buildComplianceTools(client), "create_draft_passport").handler({
-      category: "battery",
-      productName: "Test",
-      gtin: "12345678901231",
-      serialNumber: "SN-001",
-    });
-    expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toMatch(/plan/i);
-    expect(r.content[0]!.text).toMatch(/do not retry/i);
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toMatch(/plan/i);
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toMatch(
+      /do not retry/i,
+    );
   });
 });
 
@@ -531,8 +593,16 @@ describe("complianceResult — closing disclaimer", () => {
       body: { status: "answered", answer: "x", disclaimer },
     });
     expect(r.content).toHaveLength(2);
-    expect(r.content[1].text).toBe(`End your answer with this line, word for word:\n${disclaimer}`);
-    expect(JSON.parse(r.content[0].text).disclaimer).toBe(disclaimer);
+    expect((r.content[1] ?? expect.unreachable("r.content[1] is missing")).text).toBe(
+      `End your answer with this line, word for word:\n${disclaimer}`,
+    );
+    expect(
+      (
+        JSON.parse((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text) as {
+          disclaimer: string;
+        }
+      ).disclaimer,
+    ).toBe(disclaimer);
   });
 
   it("adds nothing when the body has no disclaimer", () => {
@@ -558,7 +628,9 @@ describe("complianceResult — error mapping", () => {
       body: { error: "account_not_eligible", reason: "email_not_verified" },
     });
     expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toMatch(/email.*not verified/i);
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toMatch(
+      /email.*not verified/i,
+    );
   });
 
   it("403 account_not_eligible / disposable_email surfaces the disposable message", () => {
@@ -568,7 +640,9 @@ describe("complianceResult — error mapping", () => {
       body: { error: "account_not_eligible", reason: "disposable_email" },
     });
     expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toMatch(/disposable/i);
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toMatch(
+      /disposable/i,
+    );
   });
 
   it("429 scope_answer_cap surfaces the daily limit and reset time", () => {
@@ -578,8 +652,10 @@ describe("complianceResult — error mapping", () => {
       body: { error: "scope_answer_cap", limit: 100, resetAt: "2026-10-12T00:00:00.000Z" },
     });
     expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toMatch(/100/);
-    expect(r.content[0]!.text).toMatch(/2026-10-12/);
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toMatch(/100/);
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toMatch(
+      /2026-10-12/,
+    );
   });
 
   it("400 surfaces the platform message", () => {
@@ -589,7 +665,9 @@ describe("complianceResult — error mapping", () => {
       body: { message: "category is required" },
     });
     expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toMatch(/category is required/);
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toMatch(
+      /category is required/,
+    );
   });
 
   it("400 invalid_input with allowed array lists the allowed values", () => {
@@ -603,9 +681,11 @@ describe("complianceResult — error mapping", () => {
       },
     });
     expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toMatch(/battery/);
-    expect(r.content[0]!.text).toMatch(/textile/);
-    expect(r.content[0]!.text).toMatch(/Allowed values/i);
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toMatch(/battery/);
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toMatch(/textile/);
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toMatch(
+      /Allowed values/i,
+    );
   });
 
   it("409 conflict surfaces a readable message", () => {
@@ -615,8 +695,12 @@ describe("complianceResult — error mapping", () => {
       body: { message: "Product model already exists." },
     });
     expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toMatch(/Conflict/i);
-    expect(r.content[0]!.text).toMatch(/Product model already exists/);
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toMatch(
+      /Conflict/i,
+    );
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toMatch(
+      /Product model already exists/,
+    );
   });
 
   it("402 surfaces a payment-required message", () => {
@@ -626,8 +710,12 @@ describe("complianceResult — error mapping", () => {
       body: { message: "Subscription is past due." },
     });
     expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toMatch(/payment required/i);
-    expect(r.content[0]!.text).toMatch(/resolve billing/i);
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toMatch(
+      /payment required/i,
+    );
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toMatch(
+      /resolve billing/i,
+    );
   });
 
   it("403 'Subscription is not active' points to billing, not a plan change or re-auth", () => {
@@ -638,8 +726,12 @@ describe("complianceResult — error mapping", () => {
       body: { error: "Subscription is not active" },
     });
     expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toMatch(/resolve billing/i);
-    expect(r.content[0]!.text).not.toMatch(/plan change/i);
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toMatch(
+      /resolve billing/i,
+    );
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).not.toMatch(
+      /plan change/i,
+    );
   });
 
   it("403 non-account_not_eligible is a plan gate with do not retry", () => {
@@ -649,7 +741,9 @@ describe("complianceResult — error mapping", () => {
       body: { error: "plan_upgrade_required", message: "Needs higher plan." },
     });
     expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toMatch(/do not retry/i);
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toMatch(
+      /do not retry/i,
+    );
   });
 
   it("2xx passes the body through as jsonResult", () => {
@@ -693,21 +787,21 @@ describe("compliance client X-Source header", () => {
     const { client, calls } = stubClient();
     await tool(buildComplianceTools(client), "scope_check").handler({ category: "battery" });
     expect(calls).toHaveLength(1);
-    expect(calls[0]!.method).toBe("POST");
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).method).toBe("POST");
   });
 
   it("get_profile issues exactly one GET call", async () => {
     const { client, calls } = stubClient();
     await tool(buildComplianceTools(client), "get_profile").handler({});
     expect(calls).toHaveLength(1);
-    expect(calls[0]!.method).toBe("GET");
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).method).toBe("GET");
   });
 
   it("report_answer issues exactly one POST call (a write — adds to queue)", async () => {
     const { client, calls } = stubClient();
     await tool(buildComplianceTools(client), "report_answer").handler({ what: "Wrong verdict." });
     expect(calls).toHaveLength(1);
-    expect(calls[0]!.method).toBe("POST");
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).method).toBe("POST");
   });
 
   it("read-only tools issue only GET or stateless POST calls", async () => {
@@ -739,7 +833,7 @@ describe("compliance client X-Source header", () => {
 
 describe("compliance per-path metadata", () => {
   it("the compliance server card lists exactly the nine compliance tools", () => {
-    expect(COMPLIANCE_SERVER_CARD.capabilities.tools.sort()).toEqual([
+    expect([...COMPLIANCE_SERVER_CARD.capabilities.tools].sort()).toEqual([
       "create_draft_passport",
       "delete_profile",
       "get_profile",
@@ -789,6 +883,31 @@ describe("server.compliance.json version lockstep", () => {
 // Contract: scope_check sends only fields the v1 endpoint accepts
 // ---------------------------------------------------------------------------
 
+/** The request schema the published OpenAPI spec declares for /api/v1/scope/check. */
+interface ScopeCheckSchema {
+  properties: Record<string, { enum?: string[] } | undefined>;
+}
+
+/**
+ * Read the scope-check request schema out of the generated OpenAPI spec.
+ * @param specPath absolute path of the spec file
+ * @returns the declared properties of the request body
+ */
+function scopeCheckSchema(specPath: string): ScopeCheckSchema {
+  const spec = JSON.parse(readFileSync(specPath, "utf-8")) as {
+    paths: Record<
+      string,
+      { post: { requestBody: { content: Record<string, { schema: ScopeCheckSchema }> } } }
+    >;
+  };
+  const path =
+    spec.paths["/api/v1/scope/check"] ?? expect.unreachable("the spec has no scope/check path");
+  return (
+    path.post.requestBody.content["application/json"]?.schema ??
+    expect.unreachable("scope/check declares no JSON body")
+  );
+}
+
 describe("scope_check request contract", () => {
   // The endpoint rejects any field it does not declare (400 invalid_input), so an
   // argument the tool advertises but the API lacks fails on every call that uses it.
@@ -796,11 +915,7 @@ describe("scope_check request contract", () => {
     // Cross-repo: the spec is the marketing repo's generated openapi.json.
     const specPath = join(ROOT, "..", "tracepass", "public", "openapi.json");
     if (!existsSync(specPath)) return; // CI clones this repo alone.
-    const spec = JSON.parse(readFileSync(specPath, "utf-8"));
-    const declared = Object.keys(
-      spec.paths["/api/v1/scope/check"].post.requestBody.content["application/json"].schema
-        .properties,
-    );
+    const declared = Object.keys(scopeCheckSchema(specPath).properties);
 
     // One sample per advertised argument; a new argument without a sample fails here.
     const samples: Record<string, unknown> = {
@@ -812,29 +927,30 @@ describe("scope_check request contract", () => {
     };
     const { client, calls } = stubClient();
     const scope = tool(buildComplianceTools(client), "scope_check");
-    const advertised = Object.keys(scope.inputSchema as Record<string, unknown>);
+    const advertised = Object.keys(scope.inputSchema);
     for (const key of advertised)
       expect(samples, `a sample for argument "${key}"`).toHaveProperty(key);
 
-    await scope.handler(Object.fromEntries(advertised.map((k) => [k, samples[k]])) as never);
-    const sent = Object.keys(calls[0]!.body as Record<string, unknown>);
+    await scope.handler(Object.fromEntries(advertised.map((k) => [k, samples[k]])));
+    const sent = Object.keys(
+      (calls[0] ?? expect.unreachable("calls[0] is missing")).body as object,
+    );
     expect(sent.filter((k) => !declared.includes(k))).toEqual([]);
   });
 
   it("offers exactly the categories the published OpenAPI spec accepts", () => {
     const specPath = join(ROOT, "..", "tracepass", "public", "openapi.json");
     if (!existsSync(specPath)) return; // CI clones this repo alone.
-    const spec = JSON.parse(readFileSync(specPath, "utf-8"));
-    const accepted: string[] =
-      spec.paths["/api/v1/scope/check"].post.requestBody.content["application/json"].schema
-        .properties.category.enum;
+    const accepted = scopeCheckSchema(specPath).properties.category?.enum ?? [];
     expect([...SCOPE_CATEGORIES].sort()).toEqual([...accepted].sort());
   });
 
   it("declares category as an enum, so a free-text category never reaches the API", () => {
     // The model once passed "lamps", "paint" and "bicycle frame", each a 400.
     const scope = tool(buildComplianceTools(stubClient().client), "scope_check");
-    const category = (scope.inputSchema as Record<string, z.ZodType>).category!;
+    const category =
+      (scope.inputSchema as Record<string, z.ZodType>).category ??
+      expect.unreachable("scope_check has no category argument");
     for (const k of SCOPE_CATEGORIES) expect(category.safeParse(k).success, k).toBe(true);
     for (const words of ["lamps", "paint", "bicycle frame"])
       expect(category.safeParse(words).success, words).toBe(false);
@@ -849,7 +965,9 @@ describe("template-category tools", () => {
     if (!existsSync(dir)) return; // CI clones this repo alone.
     const categories = readdirSync(dir)
       .filter((f) => f.endsWith(".json"))
-      .map((f) => JSON.parse(readFileSync(join(dir, f), "utf-8")).category)
+      .map(
+        (f) => (JSON.parse(readFileSync(join(dir, f), "utf-8")) as { category?: unknown }).category,
+      )
       .filter((c): c is string => typeof c === "string");
     expect([...TEMPLATE_CATEGORIES].sort()).toEqual(categories.sort());
   });
@@ -858,7 +976,9 @@ describe("template-category tools", () => {
     "%s declares category as the template enum",
     (name) => {
       const t = tool(buildComplianceTools(stubClient().client), name);
-      const category = (t.inputSchema as Record<string, z.ZodType>).category!;
+      const category =
+        (t.inputSchema as Record<string, z.ZodType>).category ??
+        expect.unreachable(`${name} has no category argument`);
       for (const k of TEMPLATE_CATEGORIES) expect(category.safeParse(k).success, k).toBe(true);
       for (const v of ["lamps", "paint", "other", "vehicles"])
         expect(category.safeParse(v).success, v).toBe(false);

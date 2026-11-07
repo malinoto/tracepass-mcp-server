@@ -45,32 +45,45 @@
  *                             with 400 batch_too_large.
  */
 
+import type { ReadableStreamReadResult } from "node:stream/web";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { summarizeRpc, usageLogLine, type RpcSummary } from "./usage-log.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { createMcpServer, MCP_SERVER_INFO } from "./server.js";
 import { createSupplierMcpServer, matchSupplierPath } from "./supplier-server.js";
 import { createComplianceMcpServer } from "./compliance-server.js";
-import { clientIpFromForwardedFor } from "./api-client.js";
+import { clientIpFromForwardedFor, envText } from "./api-client.js";
+
+/**
+ * Swallow the failure of a best-effort close or cancel on a stream or server the
+ * client may already have torn down; there is nothing left to release or report.
+ */
+function ignoreCloseFailure(): void {
+  // Deliberately empty: the resource is already gone.
+}
 
 const PORT = Number(process.env.PORT) || 8080;
 const DEFAULT_BASE_URL = "https://app.tracepass.eu";
 // The API base the TOOLS call. In prod this is the INTERNAL Docker address
 // (http://platform:3000) — a private loopback, never exposed to clients.
-const BASE_URL = process.env.TRACEPASS_BASE_URL?.trim() || DEFAULT_BASE_URL;
+const BASE_URL = envText("TRACEPASS_BASE_URL") ?? DEFAULT_BASE_URL;
 // The PUBLIC origin of the TracePass authorization server, used ONLY in the
 // OAuth discovery metadata (RFC 9728 `authorization_servers`). MUST be a URL the
 // client's browser can reach — distinct from BASE_URL, which in prod is the
 // internal loopback. Defaults to the public app origin.
-const PUBLIC_AUTH_SERVER_URL = process.env.TRACEPASS_AUTH_SERVER_URL?.trim() || DEFAULT_BASE_URL;
+const PUBLIC_AUTH_SERVER_URL = envText("TRACEPASS_AUTH_SERVER_URL") ?? DEFAULT_BASE_URL;
 
-/** Maximum allowed request body size (bytes). Requests over this limit are
- *  rejected with 413 before the body reaches the SDK or is parsed as JSON. */
+/**
+ * Maximum allowed request body size (bytes). Requests over this limit are
+ *  rejected with 413 before the body reaches the SDK or is parsed as JSON.
+ */
 const BODY_LIMIT_BYTES = Number(process.env.MCP_BODY_LIMIT_BYTES) || 1_048_576; // 1 MB
 
-/** Maximum number of JSON-RPC messages in a single batch request. A batch
+/**
+ * Maximum number of JSON-RPC messages in a single batch request. A batch
  *  larger than this is rejected with 400 batch_too_large before the SDK sees
- *  it. */
+ *  it.
+ */
 const BATCH_LIMIT = Number(process.env.MCP_BATCH_LIMIT) || 10;
 
 /** The MCP endpoint path. `/mcp` is the conventional path. */
@@ -309,7 +322,7 @@ export const COMPLIANCE_SERVER_CARD = {
  * caller is responsible for the oversized data, not us).
  */
 class BodyTooLargeError extends Error {
-  constructor() {
+  public constructor() {
     super("Request body exceeds the size limit");
   }
 }
@@ -319,12 +332,15 @@ class BodyTooLargeError extends Error {
  * `tp_…` API key OR an OAuth 2.0 access token — we don't distinguish here. The
  * token is forwarded verbatim to the v1 API, whose unified auth gate branches on
  * the token shape (`tp_` prefix → API key, else → OAuth). Both are valid.
+ * @param req the inbound HTTP request
+ * @returns the token, or null when the header is absent or not a Bearer credential
  */
 function extractBearerToken(req: IncomingMessage): string | null {
   const auth = req.headers["authorization"];
   if (typeof auth !== "string") return null;
-  const m = auth.match(/^Bearer\s+(.+)$/i);
-  return m ? m[1]!.trim() : null;
+  const m = /^Bearer\s+(.+)$/i.exec(auth);
+  const token = m?.[1];
+  return token === undefined ? null : token.trim();
 }
 
 /**
@@ -335,6 +351,8 @@ function extractBearerToken(req: IncomingMessage): string | null {
  * the response headers reach the client. BodyTooLargeError is thrown from the
  * "end" handler, after all data has been consumed. The `requestTimeout` on the
  * HTTP server caps how long we drain.
+ * @param req the inbound HTTP request
+ * @returns the full request body, once the stream has ended
  */
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -369,11 +387,16 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
-/** Convert a Node IncomingMessage to a Web `Request`, reusing an already-read
+/**
+ * Convert a Node IncomingMessage to a Web `Request`, reusing an already-read
  *  body string (the body stream can only be consumed once — we read it up front
- *  to inspect the JSON-RPC method, then hand the buffered copy here). */
+ *  to inspect the JSON-RPC method, then hand the buffered copy here).
+ * @param req the inbound HTTP request
+ * @param body the already-read body, if any
+ * @returns the equivalent Web request
+ */
 function toWebRequest(req: IncomingMessage, body: string | undefined): Request {
-  const host = req.headers["host"] ?? `localhost:${PORT}`;
+  const host = req.headers["host"] ?? `localhost:${String(PORT)}`;
   const url = `http://${host}${req.url ?? "/"}`;
   const headers = new Headers();
   for (const [k, v] of Object.entries(req.headers)) {
@@ -381,7 +404,7 @@ function toWebRequest(req: IncomingMessage, body: string | undefined): Request {
     headers.set(k, Array.isArray(v) ? v.join(", ") : v);
   }
   const method = req.method ?? "GET";
-  return new Request(url, { method, headers, body: body || undefined });
+  return new Request(url, { method, headers, body: body === "" ? undefined : body });
 }
 
 /**
@@ -392,6 +415,8 @@ function toWebRequest(req: IncomingMessage, body: string | undefined): Request {
  * tailors the human-readable description.
  * NB: HTTP header values are Latin-1 only — keep this ASCII (use "->" not the
  * UTF-8 arrow, which makes Node throw "Invalid character in header content").
+ * @param res the response to write the 401 to
+ * @param reason whether the credential was missing or rejected
  */
 function sendAuthChallenge(res: ServerResponse, reason: "missing" | "invalid"): void {
   const desc =
@@ -417,6 +442,8 @@ function sendAuthChallenge(res: ServerResponse, reason: "missing" | "invalid"): 
  * Same as sendAuthChallenge but for /compliance/mcp: the resource_metadata URL
  * points to the per-path metadata document so an OAuth client discovers the
  * correct resource descriptor for this path.
+ * @param res the response to write the 401 to
+ * @param reason whether the credential was missing or rejected
  */
 function sendComplianceAuthChallenge(res: ServerResponse, reason: "missing" | "invalid"): void {
   const desc =
@@ -464,6 +491,8 @@ const PUBLIC_METHODS: ReadonlySet<string> = new Set([
  * A body we can't parse → require auth (fail closed). Empty/GET bodies (the
  * transport's SSE stream open) are treated as public so a token-less client can
  * still establish the stream; the actual tools/call within it is gated.
+ * @param body the raw request body, if any
+ * @returns true when the request must carry a credential
  */
 function requestRequiresAuth(body: string | undefined): boolean {
   if (!body) return false; // empty body — gate the method calls, not the stream
@@ -493,6 +522,8 @@ function requestRequiresAuth(body: string | undefined): boolean {
  * never fix it, so the call goes through and the tool result says what is wrong.
  * Any other failure (network blip, 5xx) also passes, so a transient error does
  * not block a connect; the real call surfaces it as an isError result.
+ * @param bearerToken the credential to probe
+ * @returns false only when the platform answers 401 for the credential
  */
 export async function credentialAccepted(bearerToken: string): Promise<boolean> {
   try {
@@ -516,6 +547,10 @@ export async function credentialAccepted(bearerToken: string): Promise<boolean> 
  * infinite response body (e.g. an SSE stream) in memory, and sends the HTTP
  * status line as soon as the first chunk arrives. Cancels the body reader if
  * the client disconnects mid-response.
+ * @param webRes the Web response to stream out
+ * @param res the Node response to write to
+ * @param req the inbound request, used to detect a client disconnect
+ * @returns resolves when the body has been fully written or the client left
  */
 async function writeWebResponse(
   webRes: Response,
@@ -532,14 +567,15 @@ async function writeWebResponse(
 
   const reader = webRes.body.getReader();
   const onClose = (): void => {
-    void reader.cancel().catch(() => {});
+    void reader.cancel().catch(ignoreCloseFailure);
   };
   req.once("close", onClose);
 
   try {
     for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
+      const chunk: ReadableStreamReadResult<Uint8Array> = await reader.read();
+      if (chunk.done) break;
+      const value = chunk.value;
       // Respect backpressure: wait for drain before reading the next chunk.
       if (!res.write(value)) {
         await new Promise<void>((r, j) => {
@@ -567,6 +603,8 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
  * Exported request handler so tests can mount it on a port-0 server without
  * triggering the module-level listen() call. Production entry point is the
  * httpServer.listen() call below, guarded by the VITEST env check.
+ * @param req the inbound HTTP request
+ * @param res the response to write
  */
 export function requestHandler(req: IncomingMessage, res: ServerResponse): void {
   void handleRequestAsync(req, res);
@@ -616,7 +654,7 @@ async function handleRequestAsync(req: IncomingMessage, res: ServerResponse): Pr
     // OAuth prompt would be a dead end for someone with no TracePass account.
     // An invalid or missing token reaches the tools, which explain it in plain
     // words (supplier-server.ts).
-    const supplier = matchSupplierPath(url.split("?")[0]!);
+    const supplier = matchSupplierPath(url.split("?")[0] ?? "");
     if (supplier) {
       // Only POST: stateless — no SSE session to resume; GET or DELETE would
       // open an infinite SSE stream that writeWebResponse streams indefinitely.
@@ -635,14 +673,15 @@ async function handleRequestAsync(req: IncomingMessage, res: ServerResponse): Pr
         if (Array.isArray(sParsed) && sParsed.length > BATCH_LIMIT) {
           sendJson(res, 400, {
             error: "batch_too_large",
-            message: `JSON-RPC batch exceeds the limit of ${BATCH_LIMIT} requests per call.`,
+            message: `JSON-RPC batch exceeds the limit of ${String(BATCH_LIMIT)} requests per call.`,
           });
           return;
         }
       } catch {
         /* unparseable — let the transport produce the JSON-RPC error */
       }
-      const token = supplier.pathToken || extractBearerToken(req) || "";
+      const token =
+        supplier.pathToken !== "" ? supplier.pathToken : (extractBearerToken(req) ?? "");
       logUsageOnFinish(req, res, "supplier", {
         ...summarizeRpc(sBodyStr, null),
         auth: token ? "supplier_token" : "none",
@@ -659,11 +698,11 @@ async function handleRequestAsync(req: IncomingMessage, res: ServerResponse): Pr
       await sServer.connect(sTransport);
       // Release the per-request server if the client disconnects before the response completes.
       req.once("close", () => {
-        void sServer.close().catch(() => {});
+        void sServer.close().catch(ignoreCloseFailure);
       });
       const sWebRes = await sTransport.handleRequest(toWebRequest(req, sBodyStr));
       await writeWebResponse(sWebRes, res, req);
-      await sServer.close().catch(() => {});
+      await sServer.close().catch(ignoreCloseFailure);
       return;
     }
 
@@ -702,7 +741,7 @@ async function handleRequestAsync(req: IncomingMessage, res: ServerResponse): Pr
         if (Array.isArray(cParsed) && cParsed.length > BATCH_LIMIT) {
           sendJson(res, 400, {
             error: "batch_too_large",
-            message: `JSON-RPC batch exceeds the limit of ${BATCH_LIMIT} requests per call.`,
+            message: `JSON-RPC batch exceeds the limit of ${String(BATCH_LIMIT)} requests per call.`,
           });
           return;
         }
@@ -732,11 +771,11 @@ async function handleRequestAsync(req: IncomingMessage, res: ServerResponse): Pr
       });
       await cServer.connect(cTransport);
       req.once("close", () => {
-        void cServer.close().catch(() => {});
+        void cServer.close().catch(ignoreCloseFailure);
       });
       const cWebRes = await cTransport.handleRequest(toWebRequest(req, cBodyStr));
       await writeWebResponse(cWebRes, res, req);
-      await cServer.close().catch(() => {});
+      await cServer.close().catch(ignoreCloseFailure);
       return;
     }
 
@@ -771,7 +810,7 @@ async function handleRequestAsync(req: IncomingMessage, res: ServerResponse): Pr
       if (Array.isArray(parsed) && parsed.length > BATCH_LIMIT) {
         sendJson(res, 400, {
           error: "batch_too_large",
-          message: `JSON-RPC batch exceeds the limit of ${BATCH_LIMIT} requests per call.`,
+          message: `JSON-RPC batch exceeds the limit of ${String(BATCH_LIMIT)} requests per call.`,
         });
         return;
       }
@@ -827,7 +866,7 @@ async function handleRequestAsync(req: IncomingMessage, res: ServerResponse): Pr
     // Release the per-request server if the client disconnects before the
     // response completes.
     req.once("close", () => {
-      void server.close().catch(() => {});
+      void server.close().catch(ignoreCloseFailure);
     });
 
     const webReq = toWebRequest(req, bodyStr);
@@ -835,7 +874,7 @@ async function handleRequestAsync(req: IncomingMessage, res: ServerResponse): Pr
     await writeWebResponse(webRes, res, req);
 
     // Stateless — release the per-request server once answered.
-    await server.close().catch(() => {});
+    await server.close().catch(ignoreCloseFailure);
   } catch (err) {
     // Body too large: client sent more than BODY_LIMIT_BYTES. Send 413 and
     // don't log (the client is responsible for the oversized payload).
@@ -872,6 +911,10 @@ async function handleRequestAsync(req: IncomingMessage, res: ServerResponse): Pr
  * Write one `mcp_usage` line when the response finishes, whatever path answered
  * it (tool result, 401 challenge, error). Read by the local usage report; see
  * usage-log.ts for what it deliberately leaves out.
+ * @param req the inbound HTTP request
+ * @param res the response whose completion triggers the log line
+ * @param endpoint which MCP endpoint answered
+ * @param summary the JSON-RPC summary of the request body
  */
 function logUsageOnFinish(
   req: IncomingMessage,
@@ -906,7 +949,8 @@ const httpServer = createServer(
 if (!process.env.VITEST) {
   httpServer.listen(PORT, () => {
     process.stdout.write(
-      `tracepass-mcp-server listening on :${PORT}${MCP_PATH} ` + `(TracePass API: ${BASE_URL})\n`,
+      `tracepass-mcp-server listening on :${String(PORT)}${MCP_PATH} ` +
+        `(TracePass API: ${BASE_URL})\n`,
     );
   });
 

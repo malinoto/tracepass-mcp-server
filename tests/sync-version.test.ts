@@ -9,6 +9,17 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 
+/** The parts of package.json these tests read and rewrite. */
+interface PackageJson {
+  version: string;
+}
+
+/** The parts of server.json these tests read. */
+interface ServerJson {
+  version: string;
+  packages: Array<{ version: string }>;
+}
+
 const repo = join(__dirname, "..");
 
 function withCopy(fn: (dir: string) => void) {
@@ -37,15 +48,13 @@ const run = (dir: string) =>
 describe("sync-version", () => {
   it("writes the package.json version into server.json (both spots) and MCP_SERVER_INFO", () => {
     withCopy((dir) => {
-      const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+      const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as PackageJson;
       pkg.version = "9.8.7";
       writeFileSync(join(dir, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
       run(dir);
-      const server = JSON.parse(readFileSync(join(dir, "server.json"), "utf8"));
+      const server = JSON.parse(readFileSync(join(dir, "server.json"), "utf8")) as ServerJson;
       expect(server.version).toBe("9.8.7");
-      expect(server.packages.map((p: { version: string }) => p.version)).toEqual(
-        server.packages.map(() => "9.8.7"),
-      );
+      expect(server.packages.map((p) => p.version)).toEqual(server.packages.map(() => "9.8.7"));
       expect(readFileSync(join(dir, "src", "server.ts"), "utf8")).toMatch(
         /MCP_SERVER_INFO = \{[^}]*version: "9\.8\.7"/,
       );
@@ -54,11 +63,13 @@ describe("sync-version", () => {
 
   it("writes the package.json version into server.compliance.json", () => {
     withCopy((dir) => {
-      const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+      const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as PackageJson;
       pkg.version = "9.8.7";
       writeFileSync(join(dir, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
       run(dir);
-      const compliance = JSON.parse(readFileSync(join(dir, "server.compliance.json"), "utf8"));
+      const compliance = JSON.parse(readFileSync(join(dir, "server.compliance.json"), "utf8")) as {
+        version: string;
+      };
       expect(compliance.version).toBe("9.8.7");
     });
   });

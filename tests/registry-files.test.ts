@@ -14,10 +14,13 @@ const REGISTRY_FILES = ["server.json", "server.compliance.json"];
 describe("registry files", () => {
   for (const file of REGISTRY_FILES) {
     it(`${file} has a description the registry accepts (at most 100 characters)`, () => {
-      const { description } = JSON.parse(readFileSync(join(root, file), "utf8"));
+      const { description } = JSON.parse(readFileSync(join(root, file), "utf8")) as {
+        description?: unknown;
+      };
       expect(typeof description).toBe("string");
-      expect(description.length).toBeGreaterThan(0);
-      expect(description.length).toBeLessThanOrEqual(100);
+      const text = typeof description === "string" ? description : "";
+      expect(text.length).toBeGreaterThan(0);
+      expect(text.length).toBeLessThanOrEqual(100);
     });
   }
 });

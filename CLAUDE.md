@@ -167,7 +167,8 @@ which holds the full steps.
 
 ## Before changing anything
 
-- `npm run lint && npm run typecheck && npm test` (vitest) green.
+- `npm run check` green (lint, Prettier check, typecheck, tests). `tsconfig.json` covers src and
+  tests with `noEmit`; `tsconfig.build.json` is the build (`npm run build`, the Dockerfile).
 - The ESLint rules and the TypeScript base settings come from the
   `@tracepass/code-standard` package (`eslint.config.mjs`, `tsconfig.json` `extends`).
   Add rules or stricter settings on top; never switch one of its rules off.

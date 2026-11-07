@@ -34,7 +34,13 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { TracePassClient } from "./api-client.js";
 import { MCP_SERVER_INFO } from "./server.js";
-import { errorResult, inactiveAccountMessage, jsonResult, type ToolResult } from "./result.js";
+import {
+  errorResult,
+  inactiveAccountMessage,
+  jsonResult,
+  textOf,
+  type ToolResult,
+} from "./result.js";
 import type { ToolAnnotations } from "./tools.js";
 
 /** Source tag for all platform calls from the compliance channel. */
@@ -45,10 +51,13 @@ export const COMPLIANCE_SERVER_INFO = {
   version: MCP_SERVER_INFO.version,
 } as const;
 
+/** What the DPP Assistant server needs to reach the platform on behalf of one caller. */
 export interface CreateComplianceMcpServerConfig {
   baseUrl: string;
-  /** The caller's bearer token — a tp_ API key or an OAuth access token.
-   *  Forwarded verbatim to the v1 API, which decides validity. */
+  /**
+   * The caller's bearer token — a tp_ API key or an OAuth access token.
+   *  Forwarded verbatim to the v1 API, which decides validity.
+   */
   apiKey: string;
   /** The end user's IP, forwarded to the platform (hosted only). */
   forwardedFor?: string;
@@ -65,6 +74,9 @@ const DASHBOARD_ORIGIN = "https://app.tracepass.eu";
  * Add the envelope's disclaimer as its own closing instruction. Left inside the
  * JSON, models drop it from most answers; a separate line next to the data is
  * what they keep.
+ * @param result the tool result to extend
+ * @param body the platform response body, whose `disclaimer` field is repeated
+ * @returns the result with the disclaimer appended as a final text block
  */
 export function withClosingDisclaimer(result: ToolResult, body: unknown): ToolResult {
   const disclaimer =
@@ -85,6 +97,11 @@ export function withClosingDisclaimer(result: ToolResult, body: unknown): ToolRe
  * The compliance channel adds two 403 sub-cases (account gate) and the
  * 429 scope_answer_cap. Everything else falls through to the generic
  * cases.
+ * @param res the platform response to render
+ * @param res.status HTTP status code of the platform response
+ * @param res.ok true for a 2xx status
+ * @param res.body parsed response body, or null when empty
+ * @returns the tool result, including the compliance-specific 403 and 429 cases
  */
 export function complianceResult(res: { status: number; ok: boolean; body: unknown }): ToolResult {
   if (res.ok) return withClosingDisclaimer(jsonResult(res.body), res.body);
@@ -106,15 +123,19 @@ export function complianceResult(res: { status: number; ok: boolean; body: unkno
         "This service is not available with a disposable email address. Please log in with your work or permanent email.",
       );
     }
-    return errorResult(
-      `Account not eligible: ${reason || message || "contact support@tracepass.eu."}`,
-    );
+    const detail =
+      reason !== ""
+        ? reason
+        : message !== undefined && message !== ""
+          ? message
+          : "contact support@tracepass.eu.";
+    return errorResult(`Account not eligible: ${detail}`);
   }
 
   // 429 scope_answer_cap: the per-company daily answer cap is exhausted.
   // Every assistant read counts one answer on the shared counter.
   if (res.status === 429 && errorCode === "scope_answer_cap") {
-    const limit = typeof body.limit === "number" ? `${body.limit}` : "the daily";
+    const limit = typeof body.limit === "number" ? String(body.limit) : "the daily";
     const resetAt = typeof body.resetAt === "string" ? body.resetAt : "00:00 UTC tomorrow";
     return errorResult(
       `Daily answer limit reached (${limit} answers). The limit resets at ${resetAt}. Please try again then.`,
@@ -165,7 +186,7 @@ export function complianceResult(res: { status: number; ok: boolean; body: unkno
 
   // Generic fallback.
   return errorResult(
-    `TracePass returned ${res.status}. ${message ?? errorCode ?? JSON.stringify(res.body)}`,
+    `TracePass returned ${String(res.status)}. ${message ?? errorCode ?? JSON.stringify(res.body)}`,
   );
 }
 
@@ -242,7 +263,11 @@ interface ComplianceTool {
   handler: (args: Record<string, unknown>) => Promise<ToolResult>;
 }
 
-/** Build the nine compliance tools bound to a client. */
+/**
+ * Build the nine compliance tools bound to a client.
+ * @param client API client carrying the caller credential and the assistant source tag
+ * @returns the compliance tool definitions
+ */
 export function buildComplianceTools(client: TracePassClient): ComplianceTool[] {
   return [
     // -------------------------------------------------------------------------
@@ -492,8 +517,11 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
       },
       handler: async (args) => {
         // Never invent a GTIN or a serial number — ask the user for both if missing.
-        const hasGtin = args.gtin && String(args.gtin).trim() !== "";
-        const hasSerial = args.serialNumber && String(args.serialNumber).trim() !== "";
+        const gtin = typeof args.gtin === "string" ? args.gtin : "";
+        const serialNumber = typeof args.serialNumber === "string" ? args.serialNumber : "";
+        const subType = typeof args.subType === "string" ? args.subType : "";
+        const hasGtin = gtin.trim() !== "";
+        const hasSerial = serialNumber.trim() !== "";
 
         if (!hasGtin) {
           return jsonResult({
@@ -530,20 +558,18 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
         if (!productRes.ok) return complianceResult(productRes);
         const productData = (productRes.body ?? {}) as Record<string, unknown>;
         // Platform returns `_id` (Mongo ObjectId string), not `id`.
-        const productId =
-          typeof productData._id === "string" ? productData._id : String(productData._id ?? "");
+        const productId = textOf(productData._id) ?? "";
 
         // Step 2: create the draft passport.
         // GS1 identifiers must be nested under `gs1: {}`, not at the top level.
-        const gs1: Record<string, string> = { gtin: String(args.gtin) };
-        if (args.serialNumber) gs1.serialNumber = String(args.serialNumber);
+        const gs1: Record<string, string> = { gtin };
+        if (serialNumber !== "") gs1.serialNumber = serialNumber;
         const passportBody: Record<string, unknown> = { productId, gs1 };
         const passportRes = await client.post("/api/v1/passports", passportBody);
         if (!passportRes.ok) return complianceResult(passportRes);
         const passportData = (passportRes.body ?? {}) as Record<string, unknown>;
         // Platform returns `_id`, not `id`.
-        const passportId =
-          typeof passportData._id === "string" ? passportData._id : String(passportData._id ?? "");
+        const passportId = textOf(passportData._id) ?? "";
 
         // Step 3: check how many required fields are still missing.
         // GET /api/v1/passports/{id}/compliance returns ComplianceResult (NOT the
@@ -580,7 +606,7 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
         let makerOrSupplierCount: number | null = null;
         if (category.toLowerCase() === "battery") {
           const rfRes = await client.get(
-            `/api/v1/regulatory/required-fields?category=battery${args.subType ? `&subType=${encodeURIComponent(String(args.subType))}` : ""}`,
+            `/api/v1/regulatory/required-fields?category=battery${subType !== "" ? `&subType=${encodeURIComponent(subType)}` : ""}`,
           );
           if (rfRes.ok) {
             const rfData = (rfRes.body ?? {}) as Record<string, unknown>;
@@ -610,7 +636,7 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
           answer:
             `Draft passport created. Open it in TracePass to complete the required fields: ${dashboardUrl}` +
             (stillRequired !== null
-              ? ` (${stillRequired} required field${stillRequired === 1 ? "" : "s"} still to fill)`
+              ? ` (${String(stillRequired)} required field${stillRequired === 1 ? "" : "s"} still to fill)`
               : "") +
             ". Publishing is done by you in TracePass; I never publish.",
         });
@@ -783,7 +809,11 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
   ];
 }
 
-/** Build the compliance `McpServer`. The caller connects it to a transport. */
+/**
+ * Build the compliance `McpServer`. The caller connects it to a transport.
+ * @param config base URL, credential and optional forwarded address for the platform calls
+ * @returns the configured server, not yet connected to a transport
+ */
 export function createComplianceMcpServer(config: CreateComplianceMcpServerConfig): McpServer {
   const server = new McpServer(COMPLIANCE_SERVER_INFO, {
     instructions:
@@ -808,7 +838,8 @@ export function createComplianceMcpServer(config: CreateComplianceMcpServerConfi
   });
 
   for (const tool of buildComplianceTools(client)) {
-    const cb = async (args: Record<string, unknown>) => {
+    // A tool without input arrives with no args at all, so the parameter may be absent.
+    const cb = async (args: Record<string, unknown> | undefined) => {
       try {
         return await tool.handler(args ?? {});
       } catch (err) {
@@ -825,8 +856,7 @@ export function createComplianceMcpServer(config: CreateComplianceMcpServerConfi
         inputSchema: tool.inputSchema,
         annotations: tool.annotations,
       },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      cb as any,
+      cb,
     );
   }
 

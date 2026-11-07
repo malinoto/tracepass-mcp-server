@@ -13,6 +13,7 @@
 /** `supplier_token`: the supplier endpoint's per-request token (no account). */
 export type AuthKind = "none" | "api_key" | "oauth" | "supplier_token";
 
+/** What the usage log records about one JSON-RPC request body, never its arguments. */
 export interface RpcSummary {
   /** JSON-RPC methods in the body (a batch can carry several). */
   methods: string[];
@@ -21,12 +22,22 @@ export interface RpcSummary {
   auth: AuthKind;
 }
 
-/** A `tp_…` bearer is an API key; any other bearer is an OAuth access token. */
+/**
+ * A `tp_…` bearer is an API key; any other bearer is an OAuth access token.
+ * @param bearerToken the bearer token, if any
+ * @returns the credential kind
+ */
 export function authKind(bearerToken: string | null | undefined): AuthKind {
   if (!bearerToken) return "none";
   return bearerToken.startsWith("tp_") ? "api_key" : "oauth";
 }
 
+/**
+ * Summarise a JSON-RPC body for the usage log: method, tool and action, never the arguments.
+ * @param body the raw request body, if any
+ * @param bearerToken the bearer token, if any
+ * @returns the summary of the request
+ */
 export function summarizeRpc(
   body: string | undefined,
   bearerToken: string | null | undefined,
@@ -64,7 +75,17 @@ export function summarizeRpc(
   return summary;
 }
 
-/** The log line: a fixed prefix the report greps for, then compact JSON. */
+/**
+ * The log line: a fixed prefix the report greps for, then compact JSON.
+ * @param args the facts to log
+ * @param args.at when the request finished
+ * @param args.endpoint which MCP endpoint answered
+ * @param args.httpMethod the HTTP method
+ * @param args.status the HTTP status sent
+ * @param args.userAgent the client user-agent, if any
+ * @param args.summary the JSON-RPC summary of the request
+ * @returns the log line
+ */
 export function usageLogLine(args: {
   at: Date;
   endpoint: "mcp" | "supplier" | "compliance";

@@ -29,10 +29,12 @@
 
 import { z } from "zod";
 import type { TracePassClient } from "./api-client.js";
-import { apiResult, errorResult, type ToolResult } from "./result.js";
+import { apiResult, errorResult, textOf, type ToolResult } from "./result.js";
 
-/** MCP tool hints. Required here, unlike in the protocol, so a new tool
- *  cannot ship with a hint left to the spec's pessimistic default. */
+/**
+ * MCP tool hints. Required here, unlike in the protocol, so a new tool
+ *  cannot ship with a hint left to the spec's pessimistic default.
+ */
 export interface ToolAnnotations {
   /** No action changes anything. */
   readOnlyHint: boolean;
@@ -44,14 +46,17 @@ export interface ToolAnnotations {
   openWorldHint: boolean;
 }
 
+/** One tool as registered on the server: its name, description, input schema and handler. */
 export interface McpToolDefinition {
   name: string;
   title: string;
   description: string;
   inputSchema: z.ZodRawShape;
-  /** Declared shape of the tool's structured result, so MCP clients (and
+  /**
+   * Declared shape of the tool's structured result, so MCP clients (and
    *  catalogues like Smithery) can validate + display the output. The tools
-   *  pass v1 API JSON straight through, so this describes that envelope. */
+   *  pass v1 API JSON straight through, so this describes that envelope.
+   */
   outputSchema: z.ZodRawShape;
   annotations: ToolAnnotations;
   handler: (args: Record<string, unknown>) => Promise<ToolResult>;
@@ -63,7 +68,11 @@ export interface McpToolDefinition {
  * hiding it behind a generic "Tool failed unexpectedly" wrapper.
  */
 export class SegError extends Error {
-  constructor(msg: string) {
+  /**
+   * Build the error with the message shown to the model.
+   * @param msg what was wrong with the input
+   */
+  public constructor(msg: string) {
     super(msg);
     this.name = "SegError";
   }
@@ -76,6 +85,8 @@ export class SegError extends Error {
  * (e.g. /api/v1/products/.. normalises to /api/v1/). The Zod schemas already
  * enforce min(1), so the empty check is defence-in-depth; "." and ".." are the
  * real risk.
+ * @param s the raw path segment
+ * @returns the encoded segment
  */
 function seg(s: string): string {
   if (s === "" || s === "." || s === "..") {
@@ -129,12 +140,18 @@ const apiOutputShape = {
   message: z.string().nullish().describe("Human-readable error or status detail, when present."),
 } as const;
 
-/** A ZodRawShape that validates the open API envelope without rejecting
- *  action-specific fields. (Spread into each tool's `outputSchema`.) */
+/**
+ * A ZodRawShape that validates the open API envelope without rejecting
+ *  action-specific fields. (Spread into each tool's `outputSchema`.)
+ */
 const API_OUTPUT_SCHEMA: z.ZodRawShape = apiOutputShape;
 
-/** Build a query string from defined values only. */
-function qs(params: Record<string, unknown>): string {
+/**
+ * Build a query string from defined values only.
+ * @param params name to value pairs; undefined values are skipped
+ * @returns the query string with a leading "?", or "" when nothing is defined
+ */
+function qs(params: Record<string, string | number | boolean | null | undefined>): string {
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
@@ -147,8 +164,13 @@ function qs(params: Record<string, unknown>): string {
  * Validate an action's `args` against its per-action schema.
  * Returns the parsed args, or an `errorResult` naming what's wrong —
  * which the handler returns straight to the model.
+ * @param schema the per-action Zod schema
+ * @param args the raw `args` object from the tool call
+ * @param tool tool name, used in the error text
+ * @param action action name, used in the error text
+ * @returns the parsed args, or an error result
  */
-function parseArgs<T extends z.ZodTypeAny>(
+function parseArgs<T extends z.ZodType>(
   schema: T,
   args: unknown,
   tool: string,
@@ -164,12 +186,20 @@ function parseArgs<T extends z.ZodTypeAny>(
       `Check the tool description for this action's required args.`,
   );
 }
-/** The archive request body: `{ reason }` when one was given, else none. */
+/**
+ * The archive request body: `{ reason }` when one was given, else none.
+ * @param reason why the record is archived, if given
+ * @returns the request body, or undefined when there is no reason
+ */
 function archiveBody(reason: string | undefined): Record<string, unknown> | undefined {
   return reason === undefined ? undefined : { reason };
 }
 
-/** Type guard — did parseArgs return an error result? */
+/**
+ * Type guard — did parseArgs return an error result?
+ * @param v the value returned by parseArgs
+ * @returns true when the value is an error result
+ */
 function isErr(v: unknown): v is ToolResult {
   return typeof v === "object" && v !== null && "content" in v;
 }
@@ -208,7 +238,7 @@ const productIdentifierSchema = z.discriminatedUnion("scheme", [
   }),
   z.object({
     scheme: z.literal("iec61406"),
-    uri: z.string().url(),
+    uri: z.url(),
   }),
   z.object({
     scheme: z.literal("did"),
@@ -349,16 +379,20 @@ const measurementSchema = z.object({
   unit: z.string().optional(),
 });
 
-/** Origin a caller may declare on a field write. Omitted → the API default,
+/**
+ * Origin a caller may declare on a field write. Omitted → the API default,
  *  `manual` (the caller's own statement). `ai_suggested` sends the value to the
  *  dashboard review queue instead of approving it — for values the agent found
  *  itself rather than was told. The platform refuses other origins from API
- *  callers, so only these two are offered. */
+ *  callers, so only these two are offered.
+ */
 const FIELD_SOURCE = z.enum(["manual", "ai_suggested"]);
 
-/** Why a passport is archived. The platform requires one of these for a battery
+/**
+ * Why a passport is archived. The platform requires one of these for a battery
  *  passport (400 reason_required / invalid_reason otherwise) and validates it
- *  when given for any other category. Sent as the JSON body `{ reason }`. */
+ *  when given for any other category. Sent as the JSON body `{ reason }`.
+ */
 const ARCHIVE_REASON = z.enum(["recycled", "never_placed", "duplicate_or_error"]);
 const ARCHIVE_REASON_DESCRIPTION =
   "Required for battery passports: why the passport ends. A battery passport ends only when the battery has been recycled, so the choices are recycled, never placed on the market or put into service, or a duplicate or erroneous record.";
@@ -385,9 +419,13 @@ const SCHEMAS = {
       model: z.string().min(1).max(100).optional(),
       description: z.string().max(2000).optional(),
     })
-    .refine((v) => v.name || v.model || v.description !== undefined, {
-      message: "pass at least one of name, model, description",
-    }),
+    .refine(
+      (v) =>
+        (v.name !== undefined && v.name !== "") ||
+        (v.model !== undefined && v.model !== "") ||
+        v.description !== undefined,
+      { message: "pass at least one of name, model, description" },
+    ),
   productArchive: z.object({ id: z.string().min(1) }),
   productCreateBatch: z.object({
     // The platform caps a batch at 100 and rejects the WHOLE request with 429
@@ -680,6 +718,8 @@ const SCHEMAS = {
 
 /**
  * Build the 8 grouped tools, bound to a TracePass API client.
+ * @param client API client carrying the caller credential
+ * @returns the tool definitions
  */
 export function buildTools(client: TracePassClient): McpToolDefinition[] {
   // ─────────────────────────── products ────────────────────────
@@ -1697,7 +1737,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           if (!res.ok && res.status === 429) {
             const b = (res.body ?? {}) as Record<string, unknown>;
             if (b.error === "scope_answer_cap") {
-              const limit = b.limit;
+              const limit = textOf(b.limit);
               const resetAt = typeof b.resetAt === "string" ? b.resetAt : undefined;
               return errorResult(
                 `Scope check limit reached${limit !== undefined ? ` (${limit} per day per account)` : ""}.` +
@@ -1711,7 +1751,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           const p = parseArgs(SCHEMAS.catalogueReport, a.args, "tracepass_scope", action);
           if (isErr(p)) return p;
           const { changed, ...rest } = p;
-          const params: Record<string, unknown> = { ...rest };
+          const params: Record<string, string | number | boolean | undefined> = { ...rest };
           if (changed !== undefined) params.changed = changed ? "true" : undefined;
           return apiResult(await client.get(`/api/v1/scope/catalogue${qs(params)}`));
         }
@@ -1727,10 +1767,11 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
               const existingRun = (rb.run ?? {}) as Record<string, unknown>;
               const retryAfter =
                 code === "run_cooldown" && typeof rb.retryAfter === "number"
-                  ? ` Retry in ${rb.retryAfter} seconds.`
+                  ? ` Retry in ${String(rb.retryAfter)} seconds.`
                   : "";
-              const runInfo = existingRun.id
-                ? ` Existing run id: ${existingRun.id} (status: ${existingRun.status ?? "unknown"}).`
+              const runId = textOf(existingRun.id);
+              const runInfo = runId
+                ? ` Existing run id: ${runId} (status: ${textOf(existingRun.status) ?? "unknown"}).`
                 : "";
               return errorResult(
                 `Catalogue run ${code === "run_cooldown" ? "cooldown" : "already in progress"}.${runInfo}${retryAfter}`,

@@ -17,9 +17,14 @@
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createMcpServer } from "./server.js";
+import { envText } from "./api-client.js";
 
 const DEFAULT_BASE_URL = "https://app.tracepass.eu";
 
+/**
+ * Start the stdio server: read the key and base URL from the environment and serve until the pipe closes.
+ * @returns resolves once the transport is connected
+ */
 async function main(): Promise<void> {
   const apiKey = process.env.TRACEPASS_API_KEY?.trim() ?? "";
   if (apiKey === "") {
@@ -36,7 +41,7 @@ async function main(): Promise<void> {
     );
   }
 
-  const baseUrl = process.env.TRACEPASS_BASE_URL?.trim() || DEFAULT_BASE_URL;
+  const baseUrl = envText("TRACEPASS_BASE_URL") ?? DEFAULT_BASE_URL;
 
   const server = createMcpServer({ apiKey, baseUrl });
   const transport = new StdioServerTransport();
@@ -46,7 +51,7 @@ async function main(): Promise<void> {
   // client closes the pipe.
 }
 
-main().catch((err) => {
+main().catch((err: unknown) => {
   process.stderr.write(
     `tracepass-mcp-server: fatal — ${err instanceof Error ? err.message : String(err)}\n`,
   );

@@ -23,9 +23,21 @@
 
 import { isIP } from "node:net";
 
-/** Value sent in the `X-Source` header on every request, so the TracePass
- *  request log can attribute v1 traffic to this client (vs n8n / raw api). */
+/**
+ * Value sent in the `X-Source` header on every request, so the TracePass
+ * request log can attribute v1 traffic to this client (vs n8n / raw api).
+ */
 export const SOURCE_TAG = "mcp";
+
+/**
+ * Read an environment variable as trimmed text, treating an empty or blank value as unset.
+ * @param name the environment variable to read
+ * @returns the trimmed value, or undefined when it is unset or blank
+ */
+export function envText(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  return value === undefined || value === "" ? undefined : value;
+}
 
 /**
  * The end user's IP from the inbound request's `X-Forwarded-For`, or
@@ -37,6 +49,8 @@ export const SOURCE_TAG = "mcp";
  * reason the platform trusts Caddy: Caddy overwrites `X-Forwarded-For` with
  * the TCP peer on the way into this server, and the platform is reachable
  * only from inside the docker network.
+ * @param value the raw `X-Forwarded-For` header value from the inbound request
+ * @returns the first entry when it is a valid IP address, otherwise undefined
  */
 export function clientIpFromForwardedFor(value: string | string[] | undefined): string | undefined {
   const raw = Array.isArray(value) ? value[0] : value;
@@ -44,6 +58,7 @@ export function clientIpFromForwardedFor(value: string | string[] | undefined): 
   return first && isIP(first) !== 0 ? first : undefined;
 }
 
+/** What a v1 API call gave back: the status, a 2xx flag and the parsed body. */
 export interface TracePassApiResponse {
   /** HTTP status code. */
   status: number;
@@ -53,36 +68,51 @@ export interface TracePassApiResponse {
   body: unknown;
 }
 
+/** Where the client sends requests and what credential and attribution it carries. */
 export interface TracePassClientConfig {
-  /** Base URL of the TracePass app, no trailing slash —
-   *  e.g. "https://app.tracepass.eu". */
+  /**
+   * Base URL of the TracePass app, no trailing slash —
+   * e.g. "https://app.tracepass.eu".
+   */
   baseUrl: string;
   /** The caller's tp_ API key. */
   apiKey: string;
-  /** Override the `X-Source` header value. Defaults to `SOURCE_TAG` ("mcp").
-   *  The compliance assistant sets this to "assistant" so the platform can
-   *  attribute v1 traffic to the correct channel. */
+  /**
+   * Override the `X-Source` header value. Defaults to `SOURCE_TAG` ("mcp").
+   * The compliance assistant sets this to "assistant" so the platform can
+   * attribute v1 traffic to the correct channel.
+   */
   source?: string;
-  /** The end user's IP, sent as `X-Forwarded-For` (see
-   *  `clientIpFromForwardedFor`). Hosted only; the stdio package leaves it
-   *  unset. */
+  /**
+   * The end user's IP, sent as `X-Forwarded-For` (see
+   * `clientIpFromForwardedFor`). Hosted only; the stdio package leaves it
+   * unset.
+   */
   forwardedFor?: string;
 }
 
-/** Generate a random Idempotency-Key for a write request. */
+/**
+ * Generate a random Idempotency-Key for a write request.
+ * @returns a fresh key, unique per call
+ */
 function newIdempotencyKey(): string {
   // crypto.randomUUID is available on Node 18+ and every Web runtime
   // the MCP server can plausibly run on.
   return `mcp-${crypto.randomUUID()}`;
 }
 
+/** Thin HTTP client for the TracePass v1 API: forwards the key and returns status plus body. */
 export class TracePassClient {
   private readonly baseUrl: string;
   private readonly apiKey: string;
   private readonly source: string;
   private readonly forwardedFor: string | undefined;
 
-  constructor(config: TracePassClientConfig) {
+  /**
+   * Build a client for one caller.
+   * @param config base URL, API key and optional attribution for the requests
+   */
+  public constructor(config: TracePassClientConfig) {
     this.baseUrl = config.baseUrl.replace(/\/+$/, "");
     this.apiKey = config.apiKey;
     this.source = config.source ?? SOURCE_TAG;
@@ -92,16 +122,16 @@ export class TracePassClient {
   /**
    * Perform a v1 API request.
    *
-   * @param method  HTTP method
-   * @param path    path under the base URL, must start with "/"
-   * @param body    JSON body for write methods (omitted for GET)
-   *
    * Write methods automatically carry an `Idempotency-Key` header so
    * a retried tool call doesn't double-execute. Never throws on a
    * non-2xx response — the status + body come back for the tool to
    * interpret. Throws only on a genuine network/transport failure.
+   * @param method HTTP method
+   * @param path path under the base URL, must start with "/"
+   * @param body JSON body for write methods (omitted for GET)
+   * @returns the status, the 2xx flag and the parsed body
    */
-  async request(
+  public async request(
     method: "GET" | "POST" | "PATCH" | "DELETE",
     path: string,
     body?: unknown,
@@ -156,16 +186,41 @@ export class TracePassClient {
     return { status: res.status, ok: res.ok, body: parsed };
   }
 
-  get(path: string) {
+  /**
+   * GET a v1 path.
+   * @param path path under the base URL, must start with "/"
+   * @returns the status, the 2xx flag and the parsed body
+   */
+  public get(path: string): Promise<TracePassApiResponse> {
     return this.request("GET", path);
   }
-  post(path: string, body?: unknown) {
+
+  /**
+   * POST to a v1 path; an absent body is sent as `{}`.
+   * @param path path under the base URL, must start with "/"
+   * @param body JSON body to send
+   * @returns the status, the 2xx flag and the parsed body
+   */
+  public post(path: string, body?: unknown): Promise<TracePassApiResponse> {
     return this.request("POST", path, body ?? {});
   }
-  patch(path: string, body?: unknown) {
+
+  /**
+   * PATCH a v1 path; an absent body is sent as `{}`.
+   * @param path path under the base URL, must start with "/"
+   * @param body JSON body to send
+   * @returns the status, the 2xx flag and the parsed body
+   */
+  public patch(path: string, body?: unknown): Promise<TracePassApiResponse> {
     return this.request("PATCH", path, body ?? {});
   }
-  delete(path: string) {
+
+  /**
+   * DELETE a v1 path.
+   * @param path path under the base URL, must start with "/"
+   * @returns the status, the 2xx flag and the parsed body
+   */
+  public delete(path: string): Promise<TracePassApiResponse> {
     return this.request("DELETE", path);
   }
 }

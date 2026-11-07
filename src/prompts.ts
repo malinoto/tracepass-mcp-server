@@ -18,7 +18,11 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-/** Build a GetPromptResult from a single user-role text message. */
+/**
+ * Build a GetPromptResult from a single user-role text message.
+ * @param text the message text
+ * @returns a prompt result with one user message
+ */
 function userPrompt(text: string) {
   return {
     messages: [
@@ -32,6 +36,7 @@ function userPrompt(text: string) {
 
 /**
  * Register every TracePass prompt on the server.
+ * @param server the server to register the prompts on
  */
 export function registerPrompts(server: McpServer): void {
   // ── Audit a passport's completeness ───────────────────────────

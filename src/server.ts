@@ -19,22 +19,27 @@ import { registerResources } from "./resources.js";
 import { registerPrompts } from "./prompts.js";
 import { errorResult } from "./result.js";
 
-/** Server identity reported to MCP clients.
+/**
+ * Server identity reported to MCP clients.
  *
  *  THIS IS THE ONLY PLACE THE VERSION IS WRITTEN. `http.ts` reads it for both
  *  the server card and the initialize response — do not re-type the literal
  *  there. Keep it in step with `package.json` + `server.json` on a release;
  *  a stale value here makes a correct deploy look like a failed one, because
- *  the endpoint keeps reporting the old version while serving the new code. */
+ *  the endpoint keeps reporting the old version while serving the new code.
+ */
 export const MCP_SERVER_INFO = {
   name: "tracepass",
   version: "1.25.0",
 } as const;
 
+/** What the main server needs to reach the v1 API on behalf of one caller. */
 export interface CreateMcpServerConfig {
-  /** Base URL of the TracePass app — e.g. "https://app.tracepass.eu".
+  /**
+   * Base URL of the TracePass app — e.g. "https://app.tracepass.eu".
    *  The hosted route passes its own origin; the npm package passes
-   *  the public URL (or a customer override). */
+   *  the public URL (or a customer override).
+   */
   baseUrl: string;
   /** The caller's tp_ API key — every v1 call is made as this key. */
   apiKey: string;
@@ -45,6 +50,8 @@ export interface CreateMcpServerConfig {
 /**
  * Build a fully-wired TracePass `McpServer`. The caller is
  * responsible for connecting it to a transport via `.connect()`.
+ * @param config base URL, credential and optional forwarded address for the v1 calls
+ * @returns the configured server, not yet connected to a transport
  */
 export function createMcpServer(config: CreateMcpServerConfig): McpServer {
   const server = new McpServer(MCP_SERVER_INFO, {
@@ -109,8 +116,7 @@ export function createMcpServer(config: CreateMcpServerConfig): McpServer {
         outputSchema: tool.outputSchema,
         annotations: tool.annotations,
       },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      cb as any,
+      cb,
     );
   }
 

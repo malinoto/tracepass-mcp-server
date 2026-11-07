@@ -21,22 +21,46 @@
  * exception) lets the model explain the situation to the user.
  */
 
-/** The MCP CallToolResult shape (text content only — sufficient for
- *  every TracePass tool; no tool returns binary). */
+/**
+ * The MCP CallToolResult shape (text content only — sufficient for
+ *  every TracePass tool; no tool returns binary).
+ */
 export interface ToolResult {
+  // Index signature: structurally matches the SDK's `CallToolResult` without a cast.
+  [key: string]: unknown;
   content: Array<{ type: "text"; text: string }>;
   isError?: boolean;
   structuredContent?: Record<string, unknown>;
 }
 
-/** A plain text result. */
+/**
+ * Plain text for a value of unknown type that may be a string or a number, as the
+ * platform's JSON gives identifiers and counts. Anything else has no sensible text.
+ * @param value a value read from a platform response body
+ * @returns the text, or undefined when the value is neither a string nor a number
+ */
+export function textOf(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return String(value);
+  return undefined;
+}
+
+/**
+ * A plain text result.
+ * @param text the text to return
+ * @returns a tool result with one text block
+ */
 export function textResult(text: string): ToolResult {
   return { content: [{ type: "text", text }] };
 }
 
-/** A successful result carrying JSON data — pretty-printed so the
+/**
+ * A successful result carrying JSON data — pretty-printed so the
  *  model reads it cleanly, plus structuredContent for clients that
- *  consume it. */
+ *  consume it.
+ * @param data the value to return
+ * @returns a tool result with the data as text and structured content
+ */
 export function jsonResult(data: unknown): ToolResult {
   return {
     content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
@@ -47,8 +71,12 @@ export function jsonResult(data: unknown): ToolResult {
   };
 }
 
-/** An error result — `isError: true` so the client renders it as a
- *  failed tool call, with a human-readable explanation. */
+/**
+ * An error result — `isError: true` so the client renders it as a
+ *  failed tool call, with a human-readable explanation.
+ * @param message the explanation shown to the model
+ * @returns a tool result flagged as an error
+ */
 export function errorResult(message: string): ToolResult {
   return { content: [{ type: "text", text: message }], isError: true };
 }
@@ -64,6 +92,8 @@ export function errorResult(message: string): ToolResult {
  * active" while the subscription is past due, unpaid or cancelled, and with
  * "API access is disabled for this account." when access was switched off.
  * Neither is fixed by a plan change or by re-authorising, so say what is.
+ * @param errorCode the `error` text of a 403 response body
+ * @returns the explanation, or null when the error is not about the account state
  */
 export function inactiveAccountMessage(errorCode: string | undefined): string | null {
   if (errorCode && /subscription is not active/i.test(errorCode)) {
@@ -78,6 +108,14 @@ export function inactiveAccountMessage(errorCode: string | undefined): string | 
   return null;
 }
 
+/**
+ * Turn a v1 API response into a tool result: data for a 2xx, readable text for the meaningful 4xx cases.
+ * @param res the platform response to render
+ * @param res.status HTTP status code of the platform response
+ * @param res.ok true for a 2xx status
+ * @param res.body parsed response body, or null when empty
+ * @returns the tool result for the response
+ */
 export function apiResult(res: { status: number; ok: boolean; body: unknown }): ToolResult {
   if (res.ok) return jsonResult(res.body);
 
@@ -136,7 +174,7 @@ export function apiResult(res: { status: number; ok: boolean; body: unknown }): 
       );
     default:
       return errorResult(
-        `TracePass API returned ${res.status}. ${message ?? errorCode ?? JSON.stringify(res.body)}`,
+        `TracePass API returned ${String(res.status)}. ${message ?? errorCode ?? JSON.stringify(res.body)}`,
       );
   }
 }

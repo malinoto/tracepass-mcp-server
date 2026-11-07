@@ -1,5 +1,6 @@
+import { asyncStub } from "./helpers.js";
 import { describe, it, expect } from "vitest";
-import { apiResult, textResult, jsonResult, errorResult } from "../src/result.js";
+import { apiResult, textResult, jsonResult, errorResult, textOf } from "../src/result.js";
 import { credentialAccepted } from "../src/http.js";
 import { vi, afterEach } from "vitest";
 
@@ -12,7 +13,9 @@ describe("textResult / jsonResult / errorResult", () => {
 
   it("jsonResult pretty-prints and carries structuredContent for objects", () => {
     const r = jsonResult({ a: 1 });
-    expect(r.content[0]!.text).toContain('"a": 1');
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toContain(
+      '"a": 1',
+    );
     expect(r.structuredContent).toEqual({ a: 1 });
   });
 
@@ -30,13 +33,15 @@ describe("apiResult — status mapping", () => {
   it("2xx → success json result", () => {
     const r = apiResult({ status: 200, ok: true, body: { id: "p1" } });
     expect(r.isError).toBeUndefined();
-    expect(r.content[0]!.text).toContain("p1");
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toContain("p1");
   });
 
   it("401 → auth error", () => {
     const r = apiResult({ status: 401, ok: false, body: {} });
     expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toMatch(/authentication failed/i);
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toMatch(
+      /authentication failed/i,
+    );
   });
 
   it("402 → payment-required message that says do not retry, with no overage offer", () => {
@@ -46,11 +51,19 @@ describe("apiResult — status mapping", () => {
       body: { error: "epcis_events_overage_required", message: "Plan includes 10 events a month." },
     });
     expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toContain("Plan includes 10 events a month.");
-    expect(r.content[0]!.text).toContain("epcis_events_overage_required");
-    expect(r.content[0]!.text).toMatch(/do not retry/i);
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toContain(
+      "Plan includes 10 events a month.",
+    );
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toContain(
+      "epcis_events_overage_required",
+    );
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toMatch(
+      /do not retry/i,
+    );
     // No tool forwards confirmOverage, so the message must not offer it.
-    expect(r.content[0]!.text).not.toMatch(/confirmOverage/);
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).not.toMatch(
+      /confirmOverage/,
+    );
   });
 
   it("403 → plan-gate error that says do not retry", () => {
@@ -60,26 +73,38 @@ describe("apiResult — status mapping", () => {
       body: { error: "epcis_capture_not_available", message: "EPCIS add-on required." },
     });
     expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toContain("epcis_capture_not_available");
-    expect(r.content[0]!.text).toMatch(/do not retry/i);
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toContain(
+      "epcis_capture_not_available",
+    );
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toMatch(
+      /do not retry/i,
+    );
   });
 
   it("404 → not-found error", () => {
     const r = apiResult({ status: 404, ok: false, body: { message: "no such passport" } });
     expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toMatch(/not found/i);
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toMatch(
+      /not found/i,
+    );
   });
 
   it("409 → conflict error", () => {
     const r = apiResult({ status: 409, ok: false, body: {} });
-    expect(r.content[0]!.text).toMatch(/conflict/i);
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toMatch(
+      /conflict/i,
+    );
   });
 
   it("409 with a code and no message names the code, not a duplicate-data guess", () => {
     const r = apiResult({ status: 409, ok: false, body: { error: "already_placed" } });
     expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toContain("already_placed");
-    expect(r.content[0]!.text).not.toMatch(/duplicate GTIN/);
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toContain(
+      "already_placed",
+    );
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).not.toMatch(
+      /duplicate GTIN/,
+    );
   });
 
   it("409 carries findings[] through to the agent", () => {
@@ -91,8 +116,12 @@ describe("apiResult — status mapping", () => {
         findings: ['Required field "carbonFootprintTotal" has no value.'],
       },
     });
-    expect(r.content[0]!.text).toContain("registry_not_ready");
-    expect(r.content[0]!.text).toContain('Required field "carbonFootprintTotal" has no value.');
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toContain(
+      "registry_not_ready",
+    );
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toContain(
+      'Required field "carbonFootprintTotal" has no value.',
+    );
   });
 
   it("409 with a message keeps the message and adds the code", () => {
@@ -104,21 +133,29 @@ describe("apiResult — status mapping", () => {
         message: "Operator and facility identifiers are locked after Place on market.",
       },
     });
-    expect(r.content[0]!.text).toContain("operator_locked");
-    expect(r.content[0]!.text).toContain("locked after Place on market");
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toContain(
+      "operator_locked",
+    );
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toContain(
+      "locked after Place on market",
+    );
   });
 
   it("429 → rate-limit error mentioning the UTC reset", () => {
     const r = apiResult({ status: 429, ok: false, body: {} });
     expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toMatch(/rate limit/i);
-    expect(r.content[0]!.text).toMatch(/00:00 UTC/);
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toMatch(
+      /rate limit/i,
+    );
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toMatch(
+      /00:00 UTC/,
+    );
   });
 
   it("500 → generic error carrying the status", () => {
     const r = apiResult({ status: 500, ok: false, body: { message: "boom" } });
     expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toContain("500");
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toContain("500");
   });
 });
 
@@ -126,13 +163,19 @@ describe("403 about the account, not the plan", () => {
   it("an inactive subscription says resolve billing, never re-authorise or change plan", () => {
     const r = apiResult({ status: 403, ok: false, body: { error: "Subscription is not active" } });
     expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toMatch(/resolve billing/i);
-    expect(r.content[0]!.text).not.toMatch(/plan change/i);
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toMatch(
+      /resolve billing/i,
+    );
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).not.toMatch(
+      /plan change/i,
+    );
   });
 
   it("a plan-tier 403 keeps the plan-change text", () => {
     const r = apiResult({ status: 403, ok: false, body: { error: "epcis_capture_not_available" } });
-    expect(r.content[0]!.text).toMatch(/plan change/i);
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toMatch(
+      /plan change/i,
+    );
   });
 });
 
@@ -142,10 +185,7 @@ describe("credential probe", () => {
   // to re-authorise, which can never help.
   afterEach(() => vi.unstubAllGlobals());
   const probeWith = (status: number) => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response("{}", { status })),
-    );
+    vi.stubGlobal("fetch", vi.fn(asyncStub(() => new Response("{}", { status }))));
     return credentialAccepted("tp_test");
   };
 
@@ -159,5 +199,16 @@ describe("credential probe", () => {
 
   it("does not block on a transient failure", async () => {
     expect(await probeWith(503)).toBe(true);
+  });
+});
+
+describe("textOf", () => {
+  it("returns strings and numbers as text", () => {
+    expect(textOf("abc")).toBe("abc");
+    expect(textOf(42)).toBe("42");
+  });
+
+  it("returns undefined for anything else, never an object's default text", () => {
+    for (const value of [{}, [], null, undefined, true]) expect(textOf(value)).toBeUndefined();
   });
 });

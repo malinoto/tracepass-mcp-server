@@ -33,14 +33,19 @@ export const SUPPLIER_SERVER_INFO = {
   version: MCP_SERVER_INFO.version,
 } as const;
 
+/** What the supplier server needs to reach the platform for one data request. */
 export interface CreateSupplierMcpServerConfig {
   baseUrl: string;
-  /** The platform's PUBLIC origin, for commands the supplier's own machine
-   *  runs (get_upload_command). `baseUrl` is internal when hosted. */
+  /**
+   * The platform's PUBLIC origin, for commands the supplier's own machine
+   *  runs (get_upload_command). `baseUrl` is internal when hosted.
+   */
   publicBaseUrl?: string;
-  /** The supplier request token, from the connection URL or the Bearer header.
+  /**
+   * The supplier request token, from the connection URL or the Bearer header.
    *  Empty when the client connected without one: discovery still works, and
-   *  every tool explains how to connect. */
+   *  every tool explains how to connect.
+   */
   token: string;
   /** The end user's IP, forwarded to the platform (hosted only). */
   forwardedFor?: string;
@@ -56,13 +61,17 @@ export interface CreateSupplierMcpServerConfig {
  */
 const SUPPLIER_MCP_PATH = "/supplier/mcp";
 
-/** A supplier token in a path segment: the platform mints 64 hex chars; accept
- *  a URL-safe superset and let the platform decide validity. */
+/**
+ * A supplier token in a path segment: the platform mints 64 hex chars; accept
+ *  a URL-safe superset and let the platform decide validity.
+ */
 const SUPPLIER_TOKEN_SEGMENT = /^[A-Za-z0-9_-]{16,256}$/;
 
 /**
  * Match a supplier MCP path. Returns the token from the path ("" when it must
  * come from the header), or null when the path is not a supplier path.
+ * @param pathname the request path
+ * @returns the path token, or null when the path is not a supplier path
  */
 export function matchSupplierPath(pathname: string): { pathToken: string } | null {
   if (pathname === SUPPLIER_MCP_PATH || pathname === `${SUPPLIER_MCP_PATH}/`)
@@ -78,6 +87,11 @@ const NO_TOKEN =
 /**
  * Supplier-facing wording for the platform's answers. The customer server's
  * `apiResult` talks about API keys and plans; a supplier has neither.
+ * @param res the platform response to render
+ * @param res.status HTTP status code of the platform response
+ * @param res.ok true for a 2xx status
+ * @param res.body parsed response body, or null when empty
+ * @returns the tool result, worded for a supplier
  */
 export function supplierResult(res: { status: number; ok: boolean; body: unknown }): ToolResult {
   if (res.ok) return jsonResult(res.body);
@@ -106,7 +120,9 @@ export function supplierResult(res: { status: number; ok: boolean; body: unknown
         "Too many calls for this request in the last minute. Wait a minute, then retry.",
       );
     default:
-      return errorResult(`TracePass returned ${res.status}. ${detail ?? JSON.stringify(res.body)}`);
+      return errorResult(
+        `TracePass returned ${String(res.status)}. ${detail ?? JSON.stringify(res.body)}`,
+      );
   }
 }
 
@@ -152,16 +168,29 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   webp: "image/webp",
 };
 
-/** Quote a value for a POSIX shell. */
+/**
+ * Quote a value for a POSIX shell.
+ * @param v the string to quote
+ * @returns the value wrapped in single quotes with embedded quotes escaped
+ */
 const shellQuote = (v: string) => `'${v.replace(/'/g, `'\\''`)}'`;
 
+/**
+ * Build the supplier tools bound to a client; the upload tool is offered only when a public base URL is known.
+ * @param client API client carrying the request token
+ * @param hasToken whether a request token was supplied
+ * @param upload what the upload tool needs to build its command
+ * @param upload.token the supplier request token
+ * @param upload.publicBaseUrl public base URL of the hosted server, if known
+ * @returns the supplier tool definitions
+ */
 export function buildSupplierTools(
   client: TracePassClient,
   hasToken: boolean,
   upload?: { token: string; publicBaseUrl: string },
 ): SupplierTool[] {
   const guard =
-    (fn: (args: Record<string, unknown>) => Promise<ToolResult>) =>
+    (fn: (args: Record<string, unknown>) => Promise<ToolResult> | ToolResult) =>
     async (args: Record<string, unknown>): Promise<ToolResult> =>
       hasToken ? fn(args) : errorResult(NO_TOKEN);
 
@@ -231,8 +260,8 @@ export function buildSupplierTools(
         idempotentHint: true,
         openWorldHint: false,
       },
-      handler: guard(async (args) => {
-        const path = String(args.path ?? "");
+      handler: guard((args) => {
+        const path = typeof args.path === "string" ? args.path : "";
         const ext = path.split(".").pop()?.toLowerCase() ?? "";
         const mime = MIME_BY_EXTENSION[ext];
         if (!mime) {
@@ -350,7 +379,11 @@ export function buildSupplierTools(
   ];
 }
 
-/** Build the supplier `McpServer`. The caller connects it to a transport. */
+/**
+ * Build the supplier `McpServer`. The caller connects it to a transport.
+ * @param config base URL, request token and optional forwarded address for the platform calls
+ * @returns the configured server, not yet connected to a transport
+ */
 export function createSupplierMcpServer(config: CreateSupplierMcpServerConfig): McpServer {
   const server = new McpServer(SUPPLIER_SERVER_INFO, {
     instructions:
@@ -371,7 +404,8 @@ export function createSupplierMcpServer(config: CreateSupplierMcpServerConfig): 
     ? { token: config.token, publicBaseUrl: config.publicBaseUrl ?? config.baseUrl }
     : undefined;
   for (const tool of buildSupplierTools(client, hasToken, upload)) {
-    const cb = async (args: Record<string, unknown>) => {
+    // A tool without input arrives with no args at all, so the parameter may be absent.
+    const cb = async (args: Record<string, unknown> | undefined) => {
       try {
         return await tool.handler(args ?? {});
       } catch (err) {
@@ -388,8 +422,7 @@ export function createSupplierMcpServer(config: CreateSupplierMcpServerConfig): 
         inputSchema: tool.inputSchema,
         annotations: tool.annotations,
       },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      cb as any,
+      cb,
     );
   }
   return server;

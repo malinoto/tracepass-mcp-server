@@ -2,7 +2,7 @@
  * MCP resources for the TracePass server.
  *
  * Resources differ from tools: a tool is something the model
- * *calls*; a resource is data the user (or client) *attaches as
+ * calls*; a resource is data the user (or client) *attaches as
  * context*. For TracePass that's read-only entity data — a product,
  * a passport, its EPCIS event history — addressed by a `tracepass://`
  * URI so a user can drop "this passport" into a conversation.
@@ -21,7 +21,12 @@ import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { TracePassClient } from "./api-client.js";
 
-/** Build a ReadResourceResult `contents` entry carrying JSON text. */
+/**
+ * Build a ReadResourceResult `contents` entry carrying JSON text.
+ * @param uri the resource URI being read
+ * @param data the value to serialise as the body
+ * @returns a resource contents entry with a JSON mime type
+ */
 function jsonContents(uri: string, data: unknown) {
   return {
     contents: [
@@ -34,12 +39,18 @@ function jsonContents(uri: string, data: unknown) {
   };
 }
 
-/** Build a contents entry for an error — resources can't return an
+/**
+ * Build a contents entry for an error — resources can't return an
  *  isError flag, so an unreadable resource yields a JSON error body
- *  the model can still read. */
+ *  the model can still read.
+ * @param uri the resource URI being read
+ * @param status HTTP status of the failed platform call
+ * @param body parsed body of the failed platform call
+ * @returns a contents entry holding the error as JSON
+ */
 function errorContents(uri: string, status: number, body: unknown) {
   return jsonContents(uri, {
-    error: `TracePass API returned ${status}`,
+    error: `TracePass API returned ${String(status)}`,
     detail: body,
   });
 }
@@ -47,6 +58,8 @@ function errorContents(uri: string, status: number, body: unknown) {
 /**
  * Register every TracePass resource + resource template on the
  * server, bound to a v1 API client.
+ * @param server the server to register the resources on
+ * @param client API client used for the read-only fetches
  */
 export function registerResources(server: McpServer, client: TracePassClient): void {
   // ── Static resource: the product catalogue ────────────────────

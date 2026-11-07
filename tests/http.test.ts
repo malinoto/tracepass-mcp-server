@@ -32,7 +32,10 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { requestHandler } from "../src/http.js";
 
-/** Start the MCP request handler on a random port. Returns port + close fn. */
+/**
+ * Start the MCP request handler on a random port.
+ * @returns the port it listens on and a function that closes it
+ */
 function startTestServer(): Promise<{ port: number; close: () => Promise<void> }> {
   return new Promise((resolve, reject) => {
     const server = createServer(requestHandler);
@@ -40,7 +43,12 @@ function startTestServer(): Promise<{ port: number; close: () => Promise<void> }
       const port = (server.address() as AddressInfo).port;
       resolve({
         port,
-        close: () => new Promise<void>((r) => server.close(() => r())),
+        close: () =>
+          new Promise<void>((r) => {
+            server.close(() => {
+              r();
+            });
+          }),
       });
     });
     server.once("error", reject);
@@ -59,7 +67,7 @@ describe("SEC-08 — non-POST methods on MCP endpoints return 405", () => {
   });
 
   it("GET /mcp returns 405 with Allow: POST (not a hanging SSE stream)", async () => {
-    const res = await fetch(`http://127.0.0.1:${srv.port}/mcp`, {
+    const res = await fetch(`http://127.0.0.1:${String(srv.port)}/mcp`, {
       method: "GET",
       headers: { Accept: "text/event-stream" },
       signal: AbortSignal.timeout(2000), // must respond before the timeout
@@ -70,7 +78,7 @@ describe("SEC-08 — non-POST methods on MCP endpoints return 405", () => {
   });
 
   it("DELETE /mcp returns 405", async () => {
-    const res = await fetch(`http://127.0.0.1:${srv.port}/mcp`, {
+    const res = await fetch(`http://127.0.0.1:${String(srv.port)}/mcp`, {
       method: "DELETE",
       signal: AbortSignal.timeout(2000),
     });
@@ -79,7 +87,7 @@ describe("SEC-08 — non-POST methods on MCP endpoints return 405", () => {
   });
 
   it("GET /compliance/mcp returns 405", async () => {
-    const res = await fetch(`http://127.0.0.1:${srv.port}/compliance/mcp`, {
+    const res = await fetch(`http://127.0.0.1:${String(srv.port)}/compliance/mcp`, {
       method: "GET",
       headers: { Accept: "text/event-stream" },
       signal: AbortSignal.timeout(2000),
@@ -90,7 +98,7 @@ describe("SEC-08 — non-POST methods on MCP endpoints return 405", () => {
 
   it("GET /supplier/mcp returns 405 (path without token)", async () => {
     // /supplier/mcp (no token in path) also matches the supplier handler
-    const res = await fetch(`http://127.0.0.1:${srv.port}/supplier/mcp`, {
+    const res = await fetch(`http://127.0.0.1:${String(srv.port)}/supplier/mcp`, {
       method: "GET",
       headers: { Accept: "text/event-stream" },
       signal: AbortSignal.timeout(2000),
@@ -114,7 +122,7 @@ describe("SEC-08 — oversized request body returns 413", () => {
   it("POST /mcp body > 1 MB returns 413 request_too_large", async () => {
     // Default limit is 1 048 576 bytes; send 1 byte over.
     const oversizedBody = "x".repeat(1_048_577);
-    const res = await fetch(`http://127.0.0.1:${srv.port}/mcp`, {
+    const res = await fetch(`http://127.0.0.1:${String(srv.port)}/mcp`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: oversizedBody,
@@ -144,7 +152,7 @@ describe("SEC-08 — oversized JSON-RPC batch returns 400", () => {
       method: "tools/list",
       params: {},
     }));
-    const res = await fetch(`http://127.0.0.1:${srv.port}/mcp`, {
+    const res = await fetch(`http://127.0.0.1:${String(srv.port)}/mcp`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(batch),
@@ -162,7 +170,7 @@ describe("SEC-08 — oversized JSON-RPC batch returns 400", () => {
       method: "tools/list",
       params: {},
     }));
-    const res = await fetch(`http://127.0.0.1:${srv.port}/mcp`, {
+    const res = await fetch(`http://127.0.0.1:${String(srv.port)}/mcp`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

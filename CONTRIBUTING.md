@@ -41,10 +41,10 @@ daily API budget, and some actions are irreversible — the tool descriptions sa
 ## Before opening a PR
 
 ```bash
-npm run lint && npm run typecheck && npm test
+npm run check
 ```
 
-All three must pass; the publish workflow runs the same four steps plus `build`.
+It must pass; the publish workflow runs the same checks plus `build`.
 There is currently **no CI on pull requests**, so please run them locally — a
 maintainer will otherwise find out at release time.
 

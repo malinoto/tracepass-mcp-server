@@ -1,13 +1,14 @@
+import { named, asyncStub } from "./helpers.js";
 import { describe, it, expect } from "vitest";
 import { buildSupplierTools, matchSupplierPath, supplierResult } from "../src/supplier-server.js";
 import type { TracePassClient } from "../src/api-client.js";
 
 function stubClient(status = 200, body: unknown = { ok: true }) {
   const calls: Array<{ method: string; path: string; body?: unknown }> = [];
-  const respond = async (method: string, path: string, b?: unknown) => {
+  const respond = asyncStub((method: string, path: string, b?: unknown) => {
     calls.push({ method, path, body: b });
     return { status, ok: status < 300, body };
-  };
+  });
   const client = {
     get: (p: string) => respond("GET", p),
     post: (p: string, b?: unknown) => respond("POST", p, b),
@@ -15,8 +16,7 @@ function stubClient(status = 200, body: unknown = { ok: true }) {
   return { client, calls };
 }
 
-const tool = (tools: ReturnType<typeof buildSupplierTools>, name: string) =>
-  tools.find((t) => t.name === name)!;
+const tool = (tools: ReturnType<typeof buildSupplierTools>, name: string) => named(tools, name);
 
 describe("supplier tool surface", () => {
   it("exposes exactly the five supplier tools and none of the customer tools", () => {
@@ -53,13 +53,18 @@ describe("supplier tool surface", () => {
       "POST /api/supplier/v1/documents",
       "POST /api/supplier/v1/submit",
     ]);
-    expect(calls[3]!.body).toEqual({ fieldValues: { a: 1 }, evidence: { a: { note: "p.2" } } });
+    expect((calls[3] ?? expect.unreachable("calls[3] is missing")).body).toEqual({
+      fieldValues: { a: 1 },
+      evidence: { a: { note: "p.2" } },
+    });
   });
 
   it("drops a lang value that is not a language code", async () => {
     const { client, calls } = stubClient();
     await tool(buildSupplierTools(client, true), "get_request").handler({ lang: "de&x=1" });
-    expect(calls[0]!.path).toBe("/api/supplier/v1/request");
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).path).toBe(
+      "/api/supplier/v1/request",
+    );
   });
 
   it("without a token, every tool explains how to connect and makes no call", async () => {
@@ -67,7 +72,9 @@ describe("supplier tool surface", () => {
     for (const t of buildSupplierTools(client, false)) {
       const r = await t.handler({ fieldValues: {} });
       expect(r.isError).toBe(true);
-      expect(r.content[0]!.text).toContain("/supplier/mcp/<token>");
+      expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toContain(
+        "/supplier/mcp/<token>",
+      );
     }
     expect(calls).toEqual([]);
   });
@@ -95,30 +102,40 @@ describe("supplierResult — supplier wording, never API keys or plans", () => {
   it.each([401, 404, 409, 410, 413, 429])("%i is an error without customer jargon", (status) => {
     const r = supplierResult({ status, ok: false, body: {} });
     expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).not.toMatch(/API key|plan/i);
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).not.toMatch(
+      /API key|plan/i,
+    );
   });
 
   it("410 says the request expired or was cancelled", () => {
-    expect(supplierResult({ status: 410, ok: false, body: {} }).content[0]!.text).toMatch(
-      /expired or was cancelled/,
-    );
+    expect(
+      (
+        supplierResult({ status: 410, ok: false, body: {} }).content[0] ??
+        expect.unreachable("no content")
+      ).text,
+    ).toMatch(/expired or was cancelled/);
   });
 });
 
 describe("matchSupplierPath", () => {
   const token = "c86594f355692145e0431a645b195d48920c3e91d74fd71e7e053bbafc93c670";
-  it("takes the token from the path", () =>
-    expect(matchSupplierPath(`/supplier/mcp/${token}`)).toEqual({ pathToken: token }));
-  it("accepts a trailing slash", () =>
-    expect(matchSupplierPath(`/supplier/mcp/${token}/`)).toEqual({ pathToken: token }));
-  it("leaves the token to the header on the bare path", () =>
-    expect(matchSupplierPath("/supplier/mcp")).toEqual({ pathToken: "" }));
+  it("takes the token from the path", () => {
+    expect(matchSupplierPath(`/supplier/mcp/${token}`)).toEqual({ pathToken: token });
+  });
+  it("accepts a trailing slash", () => {
+    expect(matchSupplierPath(`/supplier/mcp/${token}/`)).toEqual({ pathToken: token });
+  });
+  it("leaves the token to the header on the bare path", () => {
+    expect(matchSupplierPath("/supplier/mcp")).toEqual({ pathToken: "" });
+  });
   it("rejects a segment that is not a token", () => {
     expect(matchSupplierPath("/supplier/mcp/short")).toBeNull();
     expect(matchSupplierPath(`/supplier/mcp/${token}/extra`)).toBeNull();
     expect(matchSupplierPath("/supplier/mcp/..%2F..%2Fetc")).toBeNull();
   });
-  it("does not match the customer endpoint", () => expect(matchSupplierPath("/mcp")).toBeNull());
+  it("does not match the customer endpoint", () => {
+    expect(matchSupplierPath("/mcp")).toBeNull();
+  });
 });
 
 describe("get_upload_command", () => {
@@ -144,6 +161,8 @@ describe("get_upload_command", () => {
   it("refuses a file type the upload does not accept", async () => {
     const r = await run("./notes.txt");
     expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toMatch(/not accepted/);
+    expect((r.content[0] ?? expect.unreachable("r.content[0] is missing")).text).toMatch(
+      /not accepted/,
+    );
   });
 });

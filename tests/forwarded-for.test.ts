@@ -1,3 +1,4 @@
+import { asyncStub } from "./helpers.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TracePassClient, clientIpFromForwardedFor } from "../src/api-client.js";
 
@@ -29,10 +30,12 @@ describe("TracePassClient forwards the end user's IP", () => {
     let seen: Record<string, string> = {};
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (_url: string, init: RequestInit) => {
-        seen = init.headers as Record<string, string>;
-        return new Response("{}", { status: 200 });
-      }),
+      vi.fn(
+        asyncStub((_url: string, init: RequestInit) => {
+          seen = init.headers as Record<string, string>;
+          return new Response("{}", { status: 200 });
+        }),
+      ),
     );
     return { headers: () => seen };
   }

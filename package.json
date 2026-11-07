@@ -41,7 +41,7 @@
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json",
     "start": "node dist/http.js",
     "start:stdio": "node dist/stdio.js",
     "typecheck": "tsc --noEmit",

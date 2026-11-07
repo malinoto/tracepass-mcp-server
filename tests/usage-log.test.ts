@@ -46,7 +46,7 @@ describe("usage log", () => {
       summary: summarizeRpc(JSON.stringify({ method: "tools/list" }), "tp_secretkey"),
     });
     expect(line.startsWith("mcp_usage {")).toBe(true);
-    const j = JSON.parse(line.slice("mcp_usage ".length));
+    const j = JSON.parse(line.slice("mcp_usage ".length)) as Record<string, unknown>;
     expect(j).toMatchObject({
       ep: "mcp",
       status: 200,
