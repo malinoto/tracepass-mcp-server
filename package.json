@@ -61,7 +61,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
-    "@tracepass/code-standard": "file:../tracepass-code-standard",
+    "@tracepass/code-standard": "^1.0.0",
     "@types/node": "^22.0.0",
     "eslint": "^9.0.0",
     "prettier": "^3.9.10",
