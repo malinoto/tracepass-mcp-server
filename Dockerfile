@@ -11,7 +11,7 @@
 # ---- build stage --------------------------------------------------
 # Base image pinned tag@digest (reproducible builds); Dependabot
 # (.github/dependabot.yml) proposes the digest bumps.
-FROM node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914 AS build
+FROM node:24-alpine@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8 AS build
 WORKDIR /app
 
 # Install ALL deps (incl. devDependencies) for the tsc build.
@@ -24,7 +24,7 @@ COPY src ./src
 RUN npm run build
 
 # ---- runtime stage ------------------------------------------------
-FROM node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914 AS runtime
+FROM node:24-alpine@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8 AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 

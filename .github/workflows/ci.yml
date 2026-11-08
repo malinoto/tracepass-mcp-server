@@ -29,8 +29,12 @@ concurrency:
 
 jobs:
   verify:
-    name: Lint, typecheck, test, build
+    name: Lint, typecheck, test, build (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # 20 is the engines.node floor consumers may run; 24 is what we develop on and host.
+        node-version: [20, 24]
 
     steps:
       - uses: actions/checkout@v5
@@ -38,8 +42,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          # Matches the `engines.node` floor in package.json.
-          node-version: 20
+          node-version: ${{ matrix.node-version }}
           cache: npm
 
       - name: Install dependencies
