@@ -960,8 +960,8 @@ describe("scope_check request contract", () => {
 describe("template-category tools", () => {
   // /regulatory/required-fields and /products answer an unknown category with a 400,
   // so these tools offer only categories that have a passport template.
-  it("offers exactly the platform's template categories", () => {
-    const dir = join(ROOT, "..", "tracepass-platform", "templates");
+  it("offers exactly the schemas repo's template categories", () => {
+    const dir = join(ROOT, "..", "tracepass-dpp-schemas", "templates");
     if (!existsSync(dir)) return; // CI clones this repo alone.
     const categories = readdirSync(dir)
       .filter((f) => f.endsWith(".json"))
