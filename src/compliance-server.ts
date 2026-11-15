@@ -248,7 +248,7 @@ const TEMPLATE_CATEGORY_HINT =
 // ---------------------------------------------------------------------------
 
 const HARD_RULES =
-  ' Use only what this tool returns: add no facts, dates or articles of your own, not even today\'s date. Keep every citation and the disclaimer line, and any "Planned, not law yet" or "being re-checked" label. Phrase answers about the product type, never as personal duties ("you must"). Never rank or recommend vendors. Never call this advice or yourself a consultant. If the result is not_covered, say so and point to the article given.';
+  ' Use only what this tool returns: add no facts, dates or articles of your own, not even today\'s date. Keep every citation and the disclaimer line, and any "Planned, not law yet" or "being re-checked" label. For inScope no, never say "not yet" or "yet"; for pending, name the planned act from data.planned. Phrase answers about the product type, never as personal duties ("you must"). Never rank or recommend vendors. Never call this advice or yourself a consultant. If the result is not_covered, say so and point to the article given.';
 
 // ---------------------------------------------------------------------------
 // Tool interface (same pattern as supplier-server.ts)
@@ -282,7 +282,7 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
       name: "scope_check",
       title: "Check if a product needs a passport",
       description:
-        'Checks whether EU law requires a Digital Product Passport for a type of product, from when, and what the law requires of each role. Use it for "do I need a passport", "from when", "who is responsible", whether that responsibility can be handed to another company, who keeps and stores the passport and whether it must stay available after the company ceases, whether there is one passport per item, batch or model, and for repurposing, remanufacturing, waste or a battery inside another product. Pass whatever facts the user gave; if the result is needs_input, ask the user its questions in plain words and call again. The result\'s data.inScope is one of: yes, no, pending, depends.' +
+        'Checks whether EU law requires a Digital Product Passport for a type of product, from when, and what the law requires of each role. Use it for "do I need a passport", "from when", "who is responsible", whether that responsibility can be handed to another company, who keeps and stores the passport and whether it must stay available after the company ceases, whether there is one passport per item, batch or model, and for repurposing, remanufacturing, waste or a battery inside another product. Pass whatever facts the user gave; if the result is needs_input, ask the user its questions in plain words and call again. The result\'s data.inScope is yes (a passport is required), no (none required and none planned, or only the ESPR framework applies; packaging has no passport act), pending (none today, but a passport act is planned: data.planned names it) or depends (on unanswered facts).' +
         HARD_RULES,
       inputSchema: {
         category: z
@@ -825,7 +825,7 @@ export function createComplianceMcpServer(config: CreateComplianceMcpServerConfi
       "When the user asks to create a passport, call create_draft_passport — it never publishes. " +
       "Offer to save any lasting company facts the user states (role, categories, markets) with update_profile. " +
       "If an answer is flagged as wrong, call report_answer with the user's words and the ruleIds. " +
-      'Say answers are "Planned, not law yet" for planned items. ' +
+      'Say answers are "Planned, not law yet" for planned items. For a "no" answer never say "not yet"; for "pending", name the planned act. ' +
       "Where ruleStatus is needs_recheck, say the law behind the act changed and the rules are being re-checked. " +
       "End every answer with the disclaimer line from the result.",
   });
