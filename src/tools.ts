@@ -113,31 +113,19 @@ function seg(s: string): string {
 const apiOutputShape = {
   // Single-entity reads/writes (product, passport) return the entity object;
   // these are the fields most responses carry.
-  id: z
-    .string()
-    .optional()
-    .describe("The resource's TracePass id, when the response is a single entity."),
+  id: z.string().optional(),
   // List reads return a paginated envelope.
-  items: z
-    .array(z.unknown())
-    .optional()
-    .describe("The page of results, when the action is a list."),
-  total: z.number().optional().describe("Total matching records across all pages (list actions)."),
-  page: z.number().optional().describe("Current page number (list actions)."),
-  limit: z.number().optional().describe("Page size (list actions)."),
-  totalPages: z.number().optional().describe("Total number of pages (list actions)."),
+  items: z.array(z.unknown()).optional(),
+  total: z.number().optional(),
+  page: z.number().optional(),
+  limit: z.number().optional(),
+  totalPages: z.number().optional(),
   // Non-object bodies (e.g. a QR SVG/PNG string) are wrapped as { result: … }.
-  result: z
-    .unknown()
-    .optional()
-    .describe("Wraps a non-object response body (e.g. a QR code string)."),
+  result: z.unknown().optional(),
   // Error envelope (also returned as isError text, but a structured copy may ride along).
   // Some API responses include `"error": null` (e.g. scope/catalogue/runs/{id}) — nullish accepts null | undefined | string.
-  error: z
-    .string()
-    .nullish()
-    .describe("Machine-readable error code, when the API rejected the request."),
-  message: z.string().nullish().describe("Human-readable error or status detail, when present."),
+  error: z.string().nullish(),
+  message: z.string().nullish(),
 } as const;
 
 /**
@@ -394,8 +382,6 @@ const FIELD_SOURCE = z.enum(["manual", "ai_suggested"]);
  *  when given for any other category. Sent as the JSON body `{ reason }`.
  */
 const ARCHIVE_REASON = z.enum(["recycled", "never_placed", "duplicate_or_error"]);
-const ARCHIVE_REASON_DESCRIPTION =
-  "Required for battery passports: why the passport ends. A battery passport ends only when the battery has been recycled, so the choices are recycled, never placed on the market or put into service, or a duplicate or erroneous record.";
 
 const SCHEMAS = {
   productList: z.object({
@@ -727,56 +713,25 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     name: "tracepass_products",
     title: "TracePass products",
     description:
-      "Manage the TracePass product catalogue. A product is the catalogue layer — one product can have many passports (one per serialised unit). Products are not billable on their own.\n\nActions (pass via `action`, with `args`):\n" +
-      "- list — args: { page?, limit? (≤100), category?, status?, search? }. Read-only.\n" +
-      "- get — args: { id }. Read-only.\n" +
-      "- create — args: { name, model, category, description? }. `category` is one of: battery, textile, electronics, construction, steel, detergents, paints-coatings, packaging, furniture, tyres, jewelry, toys, fmcg.\n" +
-      "- update — args: { id, name?, model?, description? }; pass at least one field to change.\n" +
-      "- create_batch — args: { products: [ { name, model, category, description? }, … ] }, up to 100. Partial-success: the response carries a per-item status, so some items can be created while others error. The whole batch consumes N writes upfront; if that would exceed the daily cap NOTHING is created (429).\n" +
-      "Archive is in tracepass_passport_lifecycle.",
+      "Manage the TracePass product catalogue. A product is the catalogue layer — one product can have many passports (one per serialised unit). Products are not billable on their own. Archive is in tracepass_passport_lifecycle.\n\n" +
+      "Actions (pass via `action`; `{…}` is the `args` object):\n- list — { page?, limit? (≤100), category?, status?, search? }. Read-only.\n- get — { id }. Read-only.\n- create — { name, model, category, description? }. `category` is one of the 13 DPP categories (tracepass_templates list).\n- update — { id, name?, model?, description? }; at least one field.\n- create_batch — { products: [ { name, model, category, description? }, … ] }, up to 100. Partial-success: per-item status, so some can be created while others error. The batch consumes N writes upfront; if that would exceed the daily cap NOTHING is created (429).",
     inputSchema: {
-      action: z
-        .enum(["list", "get", "create", "create_batch", "update"])
-        .describe(
-          "Which product operation to run: list | get | create | create_batch | update. (archive is in tracepass_passport_lifecycle.)",
-        ),
+      action: z.enum(["list", "get", "create", "create_batch", "update"]),
       args: z
         .object({
-          id: z.string().optional().describe("Product id. Required for get and update."),
-          name: z
-            .string()
-            .optional()
-            .describe("Product name. Required for create; optional on update."),
-          model: z
-            .string()
-            .optional()
-            .describe("Manufacturer model / SKU. Required for create; optional on update."),
-          category: z
-            .string()
-            .optional()
-            .describe(
-              "DPP category for create: battery | textile | electronics | construction | steel | detergents | paints-coatings | packaging | furniture | tyres | jewelry | toys | fmcg.",
-            ),
-          description: z
-            .string()
-            .optional()
-            .describe("Free-text product description (create/update)."),
-          page: z.number().optional().describe("Page number for list (1-based)."),
-          limit: z.number().optional().describe("Page size for list, max 100."),
-          status: z.string().optional().describe("Filter list by product status."),
-          search: z.string().optional().describe("Filter list by a search term."),
-          products: z
-            .array(z.record(z.string(), z.unknown()))
-            .optional()
-            .describe(
-              "Products to create for create_batch: [{ name, model, category, description? }], max 100.",
-            ),
+          id: z.string().optional(),
+          name: z.string().optional(),
+          model: z.string().optional(),
+          category: z.string().optional().describe("One of the 13 DPP categories."),
+          description: z.string().optional(),
+          page: z.number().optional(),
+          limit: z.number().optional(),
+          status: z.string().optional(),
+          search: z.string().optional(),
+          products: z.array(z.record(z.string(), z.unknown())).optional(),
         })
         .partial()
-        .optional()
-        .describe(
-          "Arguments for the chosen action; required fields depend on `action` (see each action above).",
-        ),
+        .optional(),
     },
     outputSchema: API_OUTPUT_SCHEMA,
     annotations: {
@@ -830,188 +785,78 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     name: "tracepass_passports",
     title: "TracePass passports",
     description:
-      "Manage Digital Product Passports — create, read, and run compliance checks.\n\n" +
-      "IMPORTANT: `create` makes a DRAFT passport. A draft takes no plan DPP slot and is never billed; the slot, and any per-DPP overage past the plan cap, is taken when the passport is published, which happens in the TracePass dashboard, not through this tool. Each create counts against the daily write budget.\n\n" +
-      "Archive, suspend and place on market are in tracepass_passport_lifecycle.\n\n" +
-      "EU DPP REGISTRY (battery passports): the economic operator registers a passport itself, on the EU DPP Registry website under its own EU Login. TracePass prepares what the operator submits (prepare_registry_upi, prepare_registry_upload_file) and records what the operator reports back; it never submits to the Registry and never verifies the outcome. The Registry has two environments: acceptance (for testing, no legal effect) and production (the registration that counts). An acceptance result is recorded here (record_acceptance_test); a production registration is recorded with record_registration in tracepass_passport_lifecycle. These actions need a paid plan, and a connected app (OAuth) must act for an admin or owner.\n\n" +
-      "IDENTIFIER SCHEMES (EN 18219): passports are identified by one of five schemes. Battery passports (Battery Regulation Art. 77(3)) accept ONLY gs1 and iso15459.\n" +
-      '  • gs1 — { scheme:"gs1", gtin, serialNumber } — GS1 GTIN + serial; gtin is 8/12/13/14 digits, stored as GTIN-14.\n' +
-      '  • iso15459 — { scheme:"iso15459", issuingAgencyCode, primaryId, serial? } — ISO/IEC 15459; the server derives raw (IAC + primaryId + serial).\n' +
-      '  • iec61406 — { scheme:"iec61406", uri } — IEC 61406 Identification Link (https URI). Not valid for batteries.\n' +
-      '  • did — { scheme:"did", did, method } — W3C DID Core. Not valid for batteries.\n' +
-      '  • doi — { scheme:"doi", doi, granularity:"model"|"batch"|"item" } — ISO 26324 DOI, stored as bare 10.<registrant>/<suffix> (any https://doi.org/ or doi: prefix stripped on input; resolves as https://doi.org/<doi>); granularity REQUIRED per EN 18219 §5.6.2(b). Not valid for batteries.\n' +
-      'The legacy top-level gtin + serialNumber pair is still accepted as a deprecated alias for scheme:"gs1".\n\n' +
-      "Actions (pass via `action`, with `args`):\n" +
-      "- list — args: { page?, limit? (≤100), productId?, status?, search? }. status ∈ draft|in_review|approved|published|suspended|expired|archived. Read-only.\n" +
-      "- get — args: { id, format? (summary|full), lang? }. Read-only. Response includes `identifier`, `identifierKey`, and (for GS1 passports) `gs1`.\n" +
-      "- get_by_serial — args: { serial, format?, lang?, gtin? }. Read-only. Addresses the passport by your own serial. A serial is unique only WITHIN a GTIN — if the same serial exists under two GTINs in your account the call returns 409 ambiguous_serial; pass `gtin` (or use the by-id action) to resolve exactly.\n" +
-      "- compliance — args: { id }. Read-only. Returns a three-tier compliance verdict (compliant | compliant_with_warnings | incomplete) with regulation-cited findings — use to gap-check a passport against the rules for its category, fix the cited fields/parties, then re-check. Also returns byRegulation[]: the same findings grouped per regulation, worst first, so you can tell WHICH regime is failing instead of reading one `incomplete` as everything being wrong. A regulation absent from that array raised no finding — that is not the same as it having passed.\n" +
-      "- registry_readiness — args: { id }. Read-only. Returns { ready, findings[] } — whether the passport would pass the EU DPP Registry's FORMAL submission gate (mandatory fields present, correct formatting, a resolvable public link, item-level granularity via a serial number, and a well-formed commodity code where the category carries one, and, for EV, LMT and industrial (over 2 kWh) batteries, conformance to the Commission's battery data model that the Registry validates against (REG-READY-SEMANTIC)). This is the registry's mechanical pre-submission check, NOT the substantive compliance verdict; a passport can be registry-ready yet not substantively compliant. Battery passports only.\n" +
-      "- prepare_registry_upi — args: { id }. WRITE, battery passports only, published only. Returns { upi, preparedAt }: the exact address (unique product identifier) the operator pastes into the EU DPP Registry's online form. The first call fixes the UPI on the passport; later calls return the same one. Each call records the preparation. It submits nothing: the operator submits on the Registry website. Refusals: 404 passport_not_found; 409 not_a_battery | not_published | registered_in_production | registry_not_ready (findingDetails[]: { severity: critical|warning, why, fix?, target?, ruleId? }, blockers first; fix the critical ones and call again) | invalid_upi. Counts 1 write.\n" +
-      "- prepare_registry_upload_file — args: { passportIds: string[] (1–100) }. WRITE, battery passports. Builds the EU DPP Registry upload file for several passports at once. Returns { xml, filename, included: [{ id, upi }], excluded: [{ id, reason, details? }] }. Give the operator `xml` to save unchanged under `filename` and upload on the Registry website; TracePass does not upload it. Passports that would fail are left out and listed in `excluded`, because the Registry fails a whole file on one bad entry; reason ∈ not_found | not_battery | not_published | registered_in_production | registration_in_progress | readiness_blocked | invalid_upi | duplicate_upi | over_limit. Each included passport has its UPI fixed, as with prepare_registry_upi. Counts 1 write per included passport.\n" +
-      "- record_acceptance_test — args: { id, result: passed|failed, errorCode? }. WRITE, battery passports only, published only. Records the result the operator reports from a test in the Registry's ACCEPTANCE environment. Acceptance has no legal effect: this is not a registration, and it changes nothing else on the passport. TracePass records the operator's report and does not verify it. errorCode: the code the Registry showed for a failed test (≤100 chars). Returns { passport }. 400 Validation failed; 404; 409 not_a_battery | not_published. Undo a mistaken record with undo_registration (environment: acceptance) in tracepass_passport_lifecycle. Counts 1 write.\n" +
-      "- create — args: { productId, identifier?, gtin?, serialNumber?, lineage? }. Creates a draft (not billed). Provide identifier (preferred) or legacy gtin + serialNumber. Battery passports accept only gs1 and iso15459 schemes — other schemes return 400. A duplicate identifier returns 409.\n" +
-      "  lineage (battery only) — a repurposed, remanufactured or reused battery needs a NEW passport linked to the original(s) (Battery Regulation Art. 77(7)): { predecessors: [ { internalPassportId? | identifier?, trigger: preparation_for_reuse|preparation_for_repurposing|repurposing|remanufacturing } ] (≤10), noPredecessorReason? (only with an empty list, e.g. placed on the market before 18 Feb 2027) }. The server derives batteryStatus from the triggers and links your own predecessor passports back. Immutable after create. Rule violations return 422 with the rule code (duplicate_predecessor, predecessor_not_found, status_trigger_mismatch, …).\n" +
-      "- get_qr — args: { id, format? (svg|png), symbology? (qr|datamatrix) }. Read-only. symbology=datamatrix renders an ISO/IEC 16022 Data Matrix instead of a QR (EN 18220 permits both; same passport URL).\n" +
-      "- get_qr_by_serial — args: { serial, format? (svg|png), symbology? (qr|datamatrix), gtin? }. Read-only. Same as get_qr, addressed by your own serial. A serial is unique only WITHIN a GTIN — if the same serial exists under two GTINs in your account the call returns 409 ambiguous_serial; pass `gtin` (or use get_qr by id) to resolve exactly.\n" +
-      '- list_snapshots — args: { id, page?, limit? (≤100), at? (ISO 8601) }. Read-only. Returns a paginated list of snapshots for the passport (newest first). A snapshot is written on publish and after every change to a non-draft passport (EN 18221 change archive); each carries id, version, reason (e.g. published|field_edit|status_change|baseline), actor (who caused it, when known), snapshotAt, contentHash, hashValid (re-verified on every read), restorable, fieldCount. With `at`, returns instead the single snapshot valid at that instant (full record plus validFrom/validUntil) — answers "what did this passport say on date D"; 404 before the first snapshot. Counts 1 against the daily read budget.\n' +
-      "- get_snapshot — args: { id, snapshotId }. Read-only. Returns the full archival record of one snapshot: the complete JSON-LD the passport asserted at that time, plus hash and hashValid. Counts 1 against the daily read budget.\n" +
-      "- get_condition_flags — args: { id }. Read-only. Returns the resolved condition profile Record<flagKey,{value,status,source}>. Condition flags are reviewer-approved yes/no facts gating conditional legal duties. Battery flags: hasBMS, rechargeable, externalStorageOnly, isStationaryBess. An approved flag makes specific fields required — a missing gated field is a hard publish block (conditional_missing). Counts 1 against the daily read budget.\n" +
-      "- get_condition_flags_by_serial — args: { serial, gtin? }. Read-only. Same as get_condition_flags, addressed by your own serial. 409 ambiguous_serial if serial not unique — pass gtin.\n" +
-      "- set_condition_flags — args: { id, flags: Record<flagKey, boolean|null> }. WRITE. Set or clear condition flags (null clears). Keys must be registered for the passport category (battery: hasBMS, rechargeable, externalStorageOnly, isStationaryBess). WARNING: approving a flag can make fields required and block publishing if those fields are empty — fix any gated fields before or immediately after setting the flag. Writes are approved + audited. Idempotency-Key supported. Counts 1 write.\n" +
-      "- set_condition_flags_by_serial — args: { serial, gtin?, flags }. WRITE. Same as set_condition_flags, addressed by your own serial. 409 ambiguous_serial if serial not unique — pass gtin.\n" +
-      "- capture_measurements — args: { id, measurements: [ { fieldKey, value, measuredAt (ISO 8601), externalId?, unit? } ] (≤500) }. WRITE, battery passports only, published only. Pushes over-life measurements from the customer's own equipment (e.g. a BMS reporting stateOfHealth, numberOfFullEquivalentChargingCycles; the Annex XIII point 4 use-data keys). Every measurement is stored; the newest per field becomes the passport's current value and sets dynamicDataAsOf. externalId makes a measurement idempotent. A value may be at most 16 KB serialised. batteryStatus is NOT a measurement (400 invalid_field_key). A key the Regulation keeps off this battery category returns 422 field_not_applicable (e.g. stateOfCertifiedEnergy on an LMT battery). Metered against the plan's monthly measurement allowance, not the daily write budget: paid plans keep counting past it at no charge; Free stops at its allowance. Reading a passport is never metered.\n" +
-      "- capture_measurements_by_serial — args: { serial, gtin?, measurements }. Same, addressed by your own serial.\n" +
-      "- list_measurements — args: { id, fieldKey?, from?, to? (ISO 8601), limit? (≤200), cursor? }. Read-only. Measurement history, newest first; page with the returned nextCursor.\n" +
-      "- list_measurements_by_serial — args: { serial, gtin?, fieldKey?, from?, to?, limit?, cursor? }. Read-only.\n" +
-      "- latest_measurements — args: { id }. Read-only. The newest measurement per accepted key (null where none yet).\n" +
-      "- latest_measurements_by_serial — args: { serial, gtin? }. Read-only.",
+      "Manage Digital Product Passports — create, read, run compliance checks. Archive, suspend, place on market and record_registration are in tracepass_passport_lifecycle.\n\n" +
+      "IMPORTANT: `create` makes a DRAFT passport: no plan DPP slot, never billed. The slot, and any overage past the plan cap, is taken when it is published in the TracePass dashboard, not through this tool. Each create counts against the daily write budget.\n\n" +
+      "EU DPP REGISTRY (battery): the operator registers a passport itself, on the Registry website under its own EU Login. TracePass prepares what it submits and records what it reports; it never submits to the Registry and never verifies the outcome. The acceptance environment has no legal effect; production is recorded with record_registration (tracepass_passport_lifecycle). Paid plan; an OAuth app must act for an admin or owner.\n\n" +
+      "Identifier schemes (EN 18219): gs1 | iso15459 | iec61406 | did | doi; batteries accept ONLY gs1 and iso15459. Shapes, lineage, snapshots, measurements, refusal codes: resource tracepass://reference/passports.\n\n" +
+      "Actions (pass via `action`; `{…}` is the `args` object). Read-only unless marked WRITE. A *_by_serial action takes { serial, gtin? } instead of `id` (on 409 ambiguous_serial pass `gtin`).\n- list — { page?, limit? (≤100), productId?, status?, search? }. status ∈ draft|in_review|approved|published|suspended|expired|archived.\n- get, get_by_serial — { id, format? (summary|full), lang? }.\n- compliance — { id }. compliant | compliant_with_warnings | incomplete, with regulation-cited findings and byRegulation[]. A regulation absent from byRegulation raised no finding, which is not the same as passed.\n- registry_readiness — { id }. Battery only. { ready, findings[] }: the Registry's FORMAL pre-submission check, not the compliance verdict.\n- prepare_registry_upi — { id }. WRITE, battery, published only. { upi, preparedAt } for the operator to paste into the Registry form. Submits nothing.\n- prepare_registry_upload_file — { passportIds (1–100) }. WRITE, battery. { xml, filename, included, excluded }: the operator uploads `xml` on the Registry website; TracePass does not. 1 write per included passport.\n- record_acceptance_test — { id, result: passed|failed, errorCode? }. WRITE, battery, published only. Records what the operator reports from the ACCEPTANCE environment: no legal effect, not verified. Undo: undo_registration (acceptance).\n- create — { productId, identifier?, gtin?, serialNumber?, lineage? }. Draft, not billed. identifier preferred, or legacy gtin + serialNumber. Battery: only gs1/iso15459, else 400. Duplicate: 409. lineage (battery): a repurposed, remanufactured or reused battery needs a NEW passport linked to the original(s) (Art. 77(7)); immutable after create.\n- get_qr, get_qr_by_serial — { id, format? (svg|png), symbology? (qr|datamatrix) }.\n- list_snapshots — { id, page?, limit?, at? (ISO 8601) }; get_snapshot — { id, snapshotId }. EN 18221 change archive (`at` = the snapshot valid then). 1 read each.\n- get_condition_flags, _by_serial — { id }. Approved yes/no facts that gate conditional duties; an approved flag can make fields required and block publish. 1 read.\n- set_condition_flags, _by_serial — { id, flags: Record<flagKey, boolean|null> }. WRITE; null clears. WARNING: approving a flag can make fields required and block publishing if empty — fix them before or right after.\n- capture_measurements, _by_serial — { id, measurements: [ { fieldKey, value, measuredAt (ISO 8601), externalId?, unit? } ] (≤500) }. WRITE, battery, published only. Over-life data from the customer's equipment; metered against the monthly measurement allowance, not the write budget.\n- list_measurements, _by_serial — { id, fieldKey?, from?, to?, limit? (≤200), cursor? }; latest_measurements, _by_serial — { id }. Read-only.",
     inputSchema: {
-      action: z
-        .enum([
-          "list",
-          "get",
-          "get_by_serial",
-          "compliance",
-          "registry_readiness",
-          "prepare_registry_upi",
-          "prepare_registry_upload_file",
-          "record_acceptance_test",
-          "get_condition_flags",
-          "get_condition_flags_by_serial",
-          "set_condition_flags",
-          "set_condition_flags_by_serial",
-          "capture_measurements",
-          "capture_measurements_by_serial",
-          "list_measurements",
-          "list_measurements_by_serial",
-          "latest_measurements",
-          "latest_measurements_by_serial",
-          "create",
-          "get_qr",
-          "get_qr_by_serial",
-          "list_snapshots",
-          "get_snapshot",
-        ])
-        .describe(
-          "Which passport operation to run. Reads: list | get | get_by_serial | compliance | registry_readiness | get_condition_flags | get_condition_flags_by_serial | get_qr | get_qr_by_serial | list_snapshots | get_snapshot | list_measurements(_by_serial) | latest_measurements(_by_serial). Writes: set_condition_flags | set_condition_flags_by_serial | capture_measurements(_by_serial) | create (a draft, not billed) | prepare_registry_upi | prepare_registry_upload_file | record_acceptance_test (EU DPP Registry: prepare what the operator submits on the Registry website, record an acceptance test; TracePass never submits). (archive, suspend, place_on_market, record_registration, undo_registration are in tracepass_passport_lifecycle.)",
-        ),
+      action: z.enum([
+        "list",
+        "get",
+        "get_by_serial",
+        "compliance",
+        "registry_readiness",
+        "prepare_registry_upi",
+        "prepare_registry_upload_file",
+        "record_acceptance_test",
+        "get_condition_flags",
+        "get_condition_flags_by_serial",
+        "set_condition_flags",
+        "set_condition_flags_by_serial",
+        "capture_measurements",
+        "capture_measurements_by_serial",
+        "list_measurements",
+        "list_measurements_by_serial",
+        "latest_measurements",
+        "latest_measurements_by_serial",
+        "create",
+        "get_qr",
+        "get_qr_by_serial",
+        "list_snapshots",
+        "get_snapshot",
+      ]),
       args: z
         .object({
-          id: z
-            .string()
-            .optional()
-            .describe(
-              "Passport id. Required for get/compliance/registry_readiness/prepare_registry_upi/record_acceptance_test/get_qr (the by-id actions).",
-            ),
-          passportIds: z
-            .array(z.string())
-            .optional()
-            .describe(
-              "prepare_registry_upload_file: the battery passport ids to put in the EU DPP Registry upload file (1–100).",
-            ),
-          result: z
-            .enum(["passed", "failed"])
-            .optional()
-            .describe(
-              "record_acceptance_test: the outcome the operator saw in the Registry's acceptance environment.",
-            ),
-          errorCode: z
-            .string()
-            .optional()
-            .describe(
-              "record_acceptance_test: the error code the Registry showed for a failed test (≤100 chars).",
-            ),
-          serial: z
-            .string()
-            .optional()
-            .describe("Your own serial number. Required for the *_by_serial actions."),
+          id: z.string().optional(),
+          passportIds: z.array(z.string()).optional(),
+          result: z.enum(["passed", "failed"]).optional(),
+          errorCode: z.string().optional(),
+          serial: z.string().optional(),
           gtin: z
             .string()
             .optional()
-            .describe(
-              "For create (legacy): GS1 GTIN. Also used as a disambiguator for *_by_serial actions when a serial isn't unique (else 409 ambiguous_serial).",
-            ),
-          productId: z.string().optional().describe("Parent product id. Required for create."),
+            .describe("Legacy GS1 GTIN (create), or the disambiguator for *_by_serial."),
+          productId: z.string().optional(),
           identifier: z
             .record(z.string(), z.unknown())
             .optional()
             .describe(
-              'EN 18219 scheme-tagged identifier for create. Must have `scheme` plus scheme-specific fields. Schemes: gs1 {gtin, serialNumber} | iso15459 {issuingAgencyCode, primaryId, serial?} | iec61406 {uri} | did {did, method} | doi {doi, granularity} (granularity: "model"|"batch"|"item" REQUIRED per EN 18219 §5.6.2(b)). Battery passports: gs1 and iso15459 only.',
+              "{ scheme: gs1|iso15459|iec61406|did|doi, … }. Shapes: tracepass://reference/passports.",
             ),
-          serialNumber: z
-            .string()
-            .optional()
-            .describe("Serial for the new passport (create, legacy gs1 path)."),
-          lineage: lineageSchema
-            .optional()
-            .describe(
-              "create, battery only: link a second-life battery's new passport to the original passport(s) (Art. 77(7)). See the create action.",
-            ),
-          format: z
-            .string()
-            .optional()
-            .describe("get/get_by_serial: summary|full. get_qr/get_qr_by_serial: svg|png."),
-          symbology: z
-            .string()
-            .optional()
-            .describe("get_qr/get_qr_by_serial: qr (default) | datamatrix."),
-          at: z
-            .string()
-            .optional()
-            .describe(
-              "list_snapshots: ISO 8601 instant — return the snapshot valid then instead of the list.",
-            ),
-          lang: z
-            .string()
-            .optional()
-            .describe(
-              "Resolve field values to one of the 24 EU locales server-side (get/get_by_serial).",
-            ),
-          page: z.number().optional().describe("Page number for list (1-based)."),
-          limit: z.number().optional().describe("Page size for list, max 100."),
-          status: z
-            .string()
-            .optional()
-            .describe(
-              "Filter list by status: draft|in_review|approved|published|suspended|expired|archived.",
-            ),
-          search: z.string().optional().describe("Filter list by a search term."),
-          snapshotId: z.string().optional().describe("Snapshot id. Required for get_snapshot."),
-          measurements: z
-            .array(measurementSchema)
-            .optional()
-            .describe(
-              "capture_measurements(_by_serial): [{ fieldKey, value, measuredAt, externalId?, unit? }], max 500.",
-            ),
-          fieldKey: z
-            .string()
-            .optional()
-            .describe("list_measurements(_by_serial): only this field key."),
-          from: z
-            .string()
-            .optional()
-            .describe("list_measurements(_by_serial): measuredAt from (ISO 8601)."),
-          to: z
-            .string()
-            .optional()
-            .describe("list_measurements(_by_serial): measuredAt to (ISO 8601)."),
-          cursor: z
-            .string()
-            .optional()
-            .describe("list_measurements(_by_serial): nextCursor from the previous page."),
+          serialNumber: z.string().optional(),
+          lineage: lineageSchema.optional(),
+          format: z.string().optional().describe("summary|full (get); svg|png (get_qr)."),
+          symbology: z.string().optional().describe("qr (default) | datamatrix."),
+          at: z.string().optional(),
+          lang: z.string().optional().describe("One of the 24 EU locales (get)."),
+          page: z.number().optional(),
+          limit: z.number().optional(),
+          status: z.string().optional(),
+          search: z.string().optional(),
+          snapshotId: z.string().optional(),
+          measurements: z.array(measurementSchema).optional(),
+          fieldKey: z.string().optional(),
+          from: z.string().optional(),
+          to: z.string().optional(),
+          cursor: z.string().optional(),
           flags: z
             .record(z.string(), z.union([z.boolean(), z.null()]))
             .optional()
-            .describe(
-              "For set_condition_flags / set_condition_flags_by_serial: Record<flagKey, boolean|null>. null clears the flag.",
-            ),
+            .describe("flagKey → boolean; null clears."),
         })
         .partial()
-        .optional()
-        .describe(
-          "Arguments for the chosen action; required fields depend on `action` (see each action above).",
-        ),
+        .optional(),
     },
     outputSchema: API_OUTPUT_SCHEMA,
     annotations: {
@@ -1255,41 +1100,24 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     name: "tracepass_passport_fields",
     title: "TracePass passport fields",
     description:
-      "Update field values on a Digital Product Passport. Every change is recorded in the passport's audit trail with the credential that made it (API key or connected app) and this MCP channel.\n\n" +
-      '`source` (optional) says where the value came from. Omit it, or pass "manual", when the user gave you the value or it comes from their own records: it is written with the user\'s rights (approved for an API key or an admin; sent to review for a connected app acting for an editor). Pass "ai_suggested" when you found or inferred the value yourself (web research, reading a document): it lands in the dashboard review queue for a human to approve, and it is refused on fields only the economic operator may state or that must be measured (e.g. battery stateOfHealth).\n\n' +
-      "Actions (pass via `action`, with `args`):\n" +
-      "- update — args: { id, fieldKey, value, source? }. `value` type matches the field's dataType (string, number, boolean, array, object).\n" +
-      "- update_by_serial — args: { serial, fieldKey, value, gtin?, source? }. Same as update, addressed by your own serial. A serial is unique only WITHIN a GTIN — if it isn't unique in your account the call returns 409 ambiguous_serial; pass `gtin` (or use update by id) to resolve exactly.",
+      "Update field values on a Digital Product Passport. Every change is audit-logged with the credential (API key or connected app) and this MCP channel.\n\n" +
+      '`source` (optional): omit it or pass "manual" when the user gave you the value or it comes from their own records — written with the user\'s rights (approved for an API key or an admin; sent to review for a connected app acting for an editor). Pass "ai_suggested" when you found or inferred it yourself: it goes to the dashboard review queue for a human, and is refused on fields only the operator may state or that must be measured (e.g. stateOfHealth).\n\n' +
+      "Actions (pass via `action`; `{…}` is the `args` object):\n- update — { id, fieldKey, value, source? }. `value` type matches the field's dataType.\n- update_by_serial — { serial, fieldKey, value, gtin?, source? }. On 409 ambiguous_serial (a serial is unique only WITHIN a GTIN) pass `gtin`.",
     inputSchema: {
-      action: z
-        .enum(["update", "update_by_serial"])
-        .describe(
-          "Update one passport field, addressed by passport id (update) or by your serial (update_by_serial).",
-        ),
+      action: z.enum(["update", "update_by_serial"]),
       args: z
         .object({
-          id: z.string().optional().describe("Passport id. Required for update."),
-          serial: z.string().optional().describe("Your serial. Required for update_by_serial."),
-          gtin: z
-            .string()
-            .optional()
-            .describe(
-              "GTIN disambiguator for update_by_serial when the serial isn't unique (else 409).",
-            ),
-          fieldKey: z.string().optional().describe("The field key to set (required)."),
-          value: z
-            .unknown()
-            .optional()
-            .describe(
-              "The new value for the field (required). Type depends on the field's dataType.",
-            ),
+          id: z.string().optional(),
+          serial: z.string().optional(),
+          gtin: z.string().optional(),
+          fieldKey: z.string().optional(),
+          value: z.unknown().optional(),
           source: FIELD_SOURCE.optional().describe(
-            'Where the value came from: "manual" (default — the user\'s statement) or "ai_suggested" (you found it; it goes to human review).',
+            "manual (default) | ai_suggested (goes to human review).",
           ),
         })
         .partial()
-        .optional()
-        .describe("Arguments for the chosen action; required fields depend on `action`."),
+        .optional(),
     },
     outputSchema: API_OUTPUT_SCHEMA,
     annotations: {
@@ -1337,89 +1165,43 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     name: "tracepass_passport_parties",
     title: "TracePass passport parties",
     description:
-      "Manage the economic-operator parties on a passport — manufacturer, importer, authorisedRepresentative, distributor, recycler, producerResponsibilityOrg. Each party carries a legal name and at least one identifier.\n\n" +
-      "Identifier rules (EN 18219 §6.2–6.5): a party needs at least one of `gln`, `legacyOperatorId`, or `operatorIdentifier`. " +
-      "If both `gln` and `operatorIdentifier` (scheme gln) are provided they must agree — a mismatch returns 400. " +
-      "An operatorIdentifier of scheme gln also fills the top-level `gln` field; facilityIdentifier never does. " +
-      "Typed identifiers (operatorIdentifier / facilityIdentifier) are not set by AI extraction or CSV import.\n\n" +
-      "operatorIdentifier schemes:\n" +
-      '  • iso6523 — { scheme:"iso6523", icd:"<4 digits>", value } — ICD 0199 = LEI (ISO 17442), 0088 = GLN, 0060 = DUNS.\n' +
-      '  • gln — { scheme:"gln", gln:"<13 digits>" } — also fills top-level `gln`.\n' +
-      '  • did — { scheme:"did", did:"did:<method>:<id>" } — syntax-checked only (EN 18219 §6.4.2(b)).\n' +
-      '  • doi — { scheme:"doi", doi:"10.<registrant>/<suffix>" } — doi:/https://doi.org/ prefix accepted and stripped.\n\n' +
-      "facilityIdentifier schemes: same four; the gln variant also accepts optional `extension` (GS1 SGLN sub-location).\n\n" +
-      "Actions (pass via `action`, with `args`):\n" +
-      "- set — args: { id, role, legalName, gln?, country?, url?, tradeName?, postalAddress?, email?, legacyOperatorId?, operatorIdentifier?, facilityIdentifier? }. Sets or updates one role. tradeName, postalAddress and email are shown on the public passport; for a battery importer they are its Battery Regulation Art. 41(3) details.\n" +
-      "- remove — args: { id, role }. Clears one role.\n" +
-      "Once a battery passport is placed on the market, a change to a stored operatorIdentifier or facilityIdentifier returns 409 operator_locked; other party edits stay allowed. To correct a locked identifier, the passport is marked for deletion and a new one created.",
+      "Manage the economic-operator parties on a passport (manufacturer, importer, authorisedRepresentative, distributor, recycler, producerResponsibilityOrg). Each carries a legal name and an identifier.\n\n" +
+      "A party needs at least one of `gln`, `legacyOperatorId` or `operatorIdentifier` (EN 18219 §6.2–6.5; they must agree if both gln forms are given, else 400). Identifier shapes: resource tracepass://reference/parties.\n\n" +
+      "Actions (pass via `action`; `{…}` is the `args` object):\n- set — { id, role, legalName, gln?, country?, url?, tradeName?, postalAddress?, email?, legacyOperatorId?, operatorIdentifier?, facilityIdentifier? }. tradeName, postalAddress and email are public; for a battery importer they are its Battery Regulation Art. 41(3) details.\n- remove — { id, role }.\n\n" +
+      "After a battery passport is placed on the market, changing a stored operatorIdentifier or facilityIdentifier returns 409 operator_locked; other edits stay allowed.",
     inputSchema: {
-      action: z
-        .enum(["set", "remove"])
-        .describe(
-          "Set (add/replace) or remove an economic-operator party on a passport by its role.",
-        ),
+      action: z.enum(["set", "remove"]),
       args: z
         .object({
-          id: z.string().optional().describe("Passport id (required)."),
+          id: z.string().optional(),
           role: z
             .string()
             .optional()
             .describe(
               "Economic-operator role: manufacturer | importer | authorisedRepresentative | distributor | recycler | producerResponsibilityOrg (required).",
             ),
-          legalName: z.string().optional().describe("Party legal name. Required for set."),
-          gln: z
-            .string()
-            .optional()
-            .describe(
-              "GS1 Global Location Number (13 digits). Strongly recommended for multi-role disambiguation.",
-            ),
-          country: z
-            .string()
-            .optional()
-            .describe("ISO 3166-1 alpha-2 country code (set, optional)."),
-          url: z.string().optional().describe("Organisation web address (set, optional)."),
-          tradeName: z
-            .string()
-            .optional()
-            .describe(
-              "Registered trade name or registered trade mark, max 200 chars (set, optional). Public.",
-            ),
-          postalAddress: z
-            .string()
-            .optional()
-            .describe(
-              "Postal address with a single contact point, one line, max 500 chars (set, optional). Public.",
-            ),
-          email: z
-            .string()
-            .optional()
-            .describe("Company contact e-mail, not a person's (set, optional). Public."),
+          legalName: z.string().optional(),
+          gln: z.string().optional().describe("13 digits."),
+          country: z.string().optional().describe("ISO 3166-1 alpha-2."),
+          url: z.string().optional(),
+          tradeName: z.string().optional().describe("Max 200 chars. Public."),
+          postalAddress: z.string().optional().describe("One line, max 500 chars. Public."),
+          email: z.string().optional().describe("Company contact, not a person's. Public."),
           legacyOperatorId: z
             .string()
             .optional()
-            .describe(
-              "Free-text fallback identifier (VAT, EORI, supplier code). Required when gln and operatorIdentifier are both absent.",
-            ),
+            .describe("Fallback identifier (VAT, EORI, supplier code)."),
           operatorIdentifier: z
             .record(z.string(), z.unknown())
             .optional()
-            .describe(
-              "Structured operator identifier per EN 18219 §6.2–6.5. Must have `scheme` plus scheme fields. " +
-                'Schemes: iso6523 {icd:"<4 digits>", value} | gln {gln:"<13 digits>"} | did {did:"did:<method>:<id>"} | doi {doi:"10.<registrant>/<suffix>"}. ' +
-                "scheme gln also fills the top-level gln field; they must match if both are set (400 otherwise). Not set by AI extraction.",
-            ),
+            .describe("{ scheme: iso6523|gln|did|doi, … }. Shapes: tracepass://reference/parties."),
           facilityIdentifier: z
             .record(z.string(), z.unknown())
             .optional()
-            .describe(
-              "Structured facility identifier per EN 18219 §6.2–6.5. Same four schemes as operatorIdentifier; " +
-                "the gln variant also accepts optional `extension` (GS1 SGLN sub-location). Never fills the top-level gln field. Not set by AI extraction.",
-            ),
+            .describe("Same schemes as operatorIdentifier; gln also takes `extension`."),
         })
         .partial()
-        .optional()
-        .describe("Arguments for the chosen action; required fields depend on `action`."),
+        .optional(),
     },
     outputSchema: API_OUTPUT_SCHEMA,
     annotations: {
@@ -1457,47 +1239,21 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     name: "tracepass_epcis",
     title: "TracePass EPCIS 2.0",
     description:
-      "GS1 EPCIS 2.0 supply-chain events. `export`, `capture`, `capture_job` and `query` are on every plan, Free included. Captured events count against the plan's event allowance (10 a month on Free); over it, `capture` returns an overage or hard-block message.\n\n" +
-      "Actions (pass via `action`, with `args`):\n" +
-      "- export — args: { id }. Export a passport's events as an EPCIS 2.0 JSON-LD document. Read-only.\n" +
-      "- export_by_serial — args: { serial, gtin? }. Same as export, addressed by your own serial. A serial is unique only WITHIN a GTIN — if it isn't unique in your account the call returns 409 ambiguous_serial; pass `gtin` (or use export by id). Read-only.\n" +
-      "- capture — args: { events }. `events` is an EPCISDocument, a single event, or an array of events (JSON-LD). Returns a 202 with a captureJobId.\n" +
-      "- capture_job — args: { jobId }. Poll an async capture job. Read-only.\n" +
-      "- query — args: { params? }. `params` is a key/value map of standard EPCIS query parameters (EQ_bizStep, GE_eventTime, MATCH_epc, …). Read-only.",
+      "GS1 EPCIS 2.0 supply-chain events. `export`, `capture`, `capture_job` and `query` are on every plan, Free included. Captured events count against the plan's event allowance (10 a month on Free); over it `capture` returns an overage or hard-block message.\n\n" +
+      "Actions (pass via `action`; `{…}` is the `args` object):\n- export, export_by_serial — { id } or { serial, gtin? } (on 409 ambiguous_serial pass `gtin`). A passport's events as an EPCIS 2.0 JSON-LD document. Read-only.\n- capture — { events }. An EPCISDocument, a single event, or an array of events (JSON-LD). Returns 202 with a captureJobId.\n- capture_job — { jobId }. Poll a capture job. Read-only.\n- query — { params? }. Standard EPCIS query parameters as key/value (EQ_bizStep, GE_eventTime, MATCH_epc, …). Read-only.",
     inputSchema: {
-      action: z
-        .enum(["export", "export_by_serial", "capture", "capture_job", "query"])
-        .describe(
-          "EPCIS 2.0: export a passport's events (export | export_by_serial), capture new events, poll a capture job, or query events.",
-        ),
+      action: z.enum(["export", "export_by_serial", "capture", "capture_job", "query"]),
       args: z
         .object({
-          id: z.string().optional().describe("Passport id. Required for export."),
-          serial: z.string().optional().describe("Your serial. Required for export_by_serial."),
-          gtin: z
-            .string()
-            .optional()
-            .describe(
-              "GTIN disambiguator for export_by_serial when the serial isn't unique (else 409).",
-            ),
-          events: z
-            .unknown()
-            .optional()
-            .describe(
-              "EPCIS 2.0 event payload (an EPCISDocument or event list). Required for capture.",
-            ),
-          jobId: z
-            .string()
-            .optional()
-            .describe("Capture job id to poll. Required for capture_job."),
-          params: z
-            .record(z.string(), z.string())
-            .optional()
-            .describe("EPCIS query parameters as key→value strings (query, optional)."),
+          id: z.string().optional(),
+          serial: z.string().optional(),
+          gtin: z.string().optional(),
+          events: z.unknown().optional(),
+          jobId: z.string().optional(),
+          params: z.record(z.string(), z.string()).optional(),
         })
         .partial()
-        .optional()
-        .describe("Arguments for the chosen action; required fields depend on `action`."),
+        .optional(),
     },
     outputSchema: API_OUTPUT_SCHEMA,
     annotations: {
@@ -1554,32 +1310,22 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     name: "tracepass_templates",
     title: "TracePass DPP templates (regulatory schemas)",
     description:
-      "Discover the regulatory field schema for each DPP category — what a COMPLIANT passport must contain, per the governing EU regulation. Read-only reference data. Use this to advise on requirements before creating products/passports, and to gap-check a draft against the rules.\n\nActions (pass via `action`, with `args`):\n" +
-      "- list — args: {}. Lists all 13 categories with their field count, required-field count, and governing regulation (name + number + effective/mandatory dates).\n" +
-      "- get — args: { category }. Full field schema for one category: every field's key, label, dataType, whether it is REQUIRED, its access level (public/restricted/authority), enum options, validation bounds, and — where known — the regulation article/annex that mandates it. `category` is one of: battery, textile, electronics, construction, steel, detergents, paints-coatings, packaging, furniture, tyres, jewelry, toys, fmcg.\n\n" +
-      "BATTERY — required-ness is per-category, so `required` alone is the wrong answer. Resolve it in this order:\n" +
-      "  1. SCOPE FIRST. Only EV, LMT and industrial_gt_2kwh batteries owe a passport at all (Art. 77(1), Reg (EU) 2023/1542). For portable, SLI or industrial_lte_2kwh, NO field is required — do not list mandatory fields for them; say the battery is out of scope.\n" +
-      "  2. Then `requiredBy[batteryCategory]` where the field carries that map (required | conditional | notApplicable). `conditional` means owed only when a fact holds (a commercial warranty offered, a BMS present, the battery in service); an approved condition flag can make it required. Annex XIII 4(d) use data (charging cycles, negative events, temperature history, state of charge) is expected once the battery is in service and never blocks publishing.\n" +
-      "  3. Then fall back to `required`.\n" +
-      "The map is keyed ONLY by the three in-scope categories, so skipping step 1 falls through to `required` and invents an obligation the Regulation does not impose. Note also that EV and LMT report state-of-health through MUTUALLY EXCLUSIVE field sets — an EV battery must leave the remaining-capacity cluster empty and an LMT battery must leave stateOfCertifiedEnergy empty, so no single battery ever fills every field.",
+      "What a COMPLIANT passport must contain per category, per the governing EU regulation. Read-only reference data; use it to advise on requirements before creating products/passports and to gap-check a draft.\n\n" +
+      "Actions (pass via `action`; `{…}` is the `args` object):\n- list — {}. All 13 categories with counts and governing regulation.\n- get — { category }. Every field: key, label, dataType, REQUIRED flag, access level, options, bounds and, where known, the mandating article.\n\n" +
+      "BATTERY — `required` alone is the wrong answer. SCOPE FIRST: only EV, LMT and industrial_gt_2kwh batteries owe a passport (Art. 77(1), Reg (EU) 2023/1542); for portable, SLI or industrial_lte_2kwh NO field is required — say it is out of scope and list no mandatory fields. Then use `requiredBy[batteryCategory]` (required | conditional | notApplicable), and `required` only as a fallback; skipping the scope step invents an obligation the Regulation does not impose. `conditional` fields, use data and the EV/LMT state-of-health split: resource tracepass://reference/templates.",
     inputSchema: {
-      action: z
-        .enum(["list", "get"])
-        .describe("List all DPP category templates, or get one template by category."),
+      action: z.enum(["list", "get"]),
       args: z
         .object({
           category: z
             .string()
             .optional()
             .describe(
-              "DPP category to fetch (required for get): battery | textile | electronics | construction | steel | detergents | paints-coatings | packaging | furniture | tyres | jewelry | toys | fmcg.",
+              "battery | textile | electronics | construction | steel | detergents | paints-coatings | packaging | furniture | tyres | jewelry | toys | fmcg.",
             ),
         })
         .partial()
-        .optional()
-        .describe(
-          "Arguments for the chosen action; `category` is required for get, ignored for list.",
-        ),
+        .optional(),
     },
     outputSchema: API_OUTPUT_SCHEMA,
     annotations: {
@@ -1615,62 +1361,34 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     name: "tracepass_scope",
     title: "TracePass DPP scope checker",
     description:
-      "Check what EU law says for a product type matching the facts given: whether it needs a Digital Product Passport, from when, at which level, under which act and article, and the duties of each role. Also read the company's catalogue-wide scope report and trigger a catalogue refresh run.\n\n" +
-      "HARD RULES — always apply these to scope answers:\n" +
-      "- Answers state what the law says for product types matching the given facts. This is not legal advice; never write 'you must' — use product-type phrasing ('LMT batteries need a passport from 18 February 2027, Battery Regulation Art. 77(1)').\n" +
-      "- Cite the article the answer gives for every verdict and duty. A regulation without an article is not a citation. A `not_covered` answer rests on no article: say our rules do not cover the product and name the nearest act it gives, never cite that act as the basis.\n" +
-      "- A date with precision 'quarter', 'month' or 'year' is a plan, NEVER a deadline or a start date. Write 'planned for Q2 2027 (planned, not law yet)', never 'from', 'by' or 'deadline'.\n" +
-      "- Relay `not_covered` and `needs_input` as the results they are, never as errors. `not_covered` = the product falls outside these scope rules. `needs_input` = blocking questions remain unanswered — relay the questions in `ask[]` to the user before giving a verdict.\n" +
-      "- Items in an act's `planned` list are not law yet: always label them 'Planned, not law yet' (`labelText`), with their `wording`.\n" +
-      "- `ruleStatus: 'needs_recheck'` means the law behind an act changed and our rules for it are being re-checked (since `recheckSince`): say so with the answer.\n\n" +
-      "Actions (pass via `action`, with `args`):\n" +
-      "- check — args: { category?, facts?, role?, placedOnMarket?, lifecycleEvent?, contains?, productId?, passportId?, locale? }. " +
-      "Ask whether a product type needs a DPP. Available on every plan, Free included. Counts against the per-company scope-answer cap (~100/day, 30/min burst), NOT the v1 read/write budget. 429 `scope_answer_cap` when the daily cap is spent. `not_covered` and `needs_input` are 200 results, not errors.\n" +
-      "  category: one of battery | detergents | toys | construction | textile | steel | tyres | furniture | electronics | packaging | paints-coatings | jewelry | fmcg | vehicles | other.\n" +
-      "  facts: namespace-prefixed keys from the loaded rules (e.g. battery.use, battery.capacityKWh). Unknown keys or wrong values return 400 invalid_input.\n" +
-      "  role: your role in the act's terms: manufacturer | importer | distributor | authorised_representative | fulfilment_service_provider. Selling under your own name = manufacturer with facts.ownBrand: true. Omit to list every role's duties.\n" +
-      "  placedOnMarket: { date: 'YYYY-MM-DD' | 'YYYY-MM' | 'YYYY', precision?: 'day'|'month'|'year' } or null.\n" +
-      "  contains: array (≤5) of component queries — use to ask about a battery inside a toy: [ { label?, facts? } ].\n" +
-      "  locale: en | bg | de | it (default: from Accept-Language header, else en).\n" +
-      "- catalogue_report — args: { classification?, category?, act?, changed?, q?, cursor?, limit? (≤500) }. " +
-      "Read the catalogue-wide scope report (one row per product). Requires the Growth plan or above; 403 `plan_upgrade_required` below Growth — tell the user this needs a plan upgrade, do not retry. Counts 1 against the daily read budget per page.\n" +
-      "  classification filter: missing | draft_only | published_incomplete | published | not_required | open_questions | not_covered.\n" +
-      "  Response: { run, running, totals, items: [{ productId, passportIds, gtin, category, summary, classification, changedAt }], nextCursor, disclaimer }. Full answer for one product: call check with that productId.\n" +
-      "- catalogue_run — args: {}. Start a catalogue scope refresh run (also runs nightly). Returns 202 { runId, status }; poll with catalogue_run_status. Requires Growth plan. 409 run_in_progress if already active; 429 run_cooldown with retryAfter within 10 minutes of a finished run.\n" +
-      "- catalogue_run_status — args: { runId }. Get the status (queued | running | done | failed) and result counts for one catalogue run. Requires Growth plan.",
+      "Check what EU law says for a product type matching the facts given: whether it needs a Digital Product Passport, from when, at which level, under which act and article, and the duties of each role. Also reads the catalogue-wide scope report and triggers a refresh run.\n\n" +
+      "HARD RULES — always apply to scope answers:\n- State what the law says for product types matching the given facts. Not legal advice; never write 'you must' — use product-type phrasing ('LMT batteries need a passport from 18 February 2027, Battery Regulation Art. 77(1)').\n- Cite the article given for every verdict and duty; a regulation without an article is not a citation. `not_covered` rests on no article: say our rules do not cover the product, name the nearest act given, never cite it as the basis.\n- A date with precision 'quarter', 'month' or 'year' is a plan, NEVER a deadline: write 'planned for Q2 2027 (planned, not law yet)', never 'from', 'by' or 'deadline'.\n- Relay `not_covered` and `needs_input` as results, never errors. `needs_input` = blocking questions remain — relay `ask[]` to the user before giving a verdict.\n- Items in an act's `planned` list are not law yet: label them 'Planned, not law yet' (`labelText`), with their `wording`.\n- `ruleStatus: 'needs_recheck'`: the law behind the act changed and our rules are being re-checked (since `recheckSince`); say so.\n\n" +
+      "Actions (pass via `action`; `{…}` is the `args` object); values, caps and response shapes: resource tracepass://reference/scope.\n- check — { category?, facts?, role?, placedOnMarket?, lifecycleEvent?, contains?, productId?, passportId?, locale? }. Every plan; counts against the scope-answer cap (~100/day), not the v1 budget (429 `scope_answer_cap`). Unknown `facts` keys: 400. Omit `role` for all roles' duties.\n- catalogue_report — { classification?, category?, act?, changed?, q?, cursor?, limit? (≤500) }. One row per product. Growth plan or above; 403 `plan_upgrade_required` below it — tell the user this needs a plan upgrade, do not retry.\n- catalogue_run — {}. Start a refresh run (also nightly); poll with catalogue_run_status. Growth plan. 409 run_in_progress; 429 run_cooldown.\n- catalogue_run_status — { runId }. Growth plan.",
     inputSchema: {
-      action: z
-        .enum(["check", "catalogue_report", "catalogue_run", "catalogue_run_status"])
-        .describe(
-          "Which scope operation to run: check | catalogue_report | catalogue_run | catalogue_run_status.",
-        ),
+      action: z.enum(["check", "catalogue_report", "catalogue_run", "catalogue_run_status"]),
       args: z
         .object({
           // check
           category: z
             .string()
             .optional()
-            .describe("Product category for check (battery, textile, vehicles, other, …)."),
+            .describe("Product category (values: tracepass://reference/scope)."),
           facts: z
             .record(z.string(), z.unknown())
             .optional()
-            .describe("Fact key→value map for check (e.g. { 'battery.use': 'ev' })."),
+            .describe("Namespaced fact keys, e.g. { 'battery.use': 'ev' }."),
           role: z
             .string()
             .optional()
-            .describe("Role hint for check (e.g. manufacturer, importer, ownBrand)."),
+            .describe(
+              "manufacturer | importer | distributor | authorised_representative | fulfilment_service_provider.",
+            ),
           placedOnMarket: z
             .object({ date: z.string(), precision: z.string().optional() })
             .nullable()
             .optional()
-            .describe(
-              "Placing date for check: { date: YYYY[-MM[-DD]], precision?: day|month|year } or null.",
-            ),
-          lifecycleEvent: z
-            .string()
-            .nullable()
-            .optional()
-            .describe("Lifecycle event for check (e.g. end_of_life)."),
+            .describe("{ date: YYYY[-MM[-DD]], precision?: day|month|year } or null."),
+          lifecycleEvent: z.string().nullable().optional(),
           contains: z
             .array(
               z.object({
@@ -1678,45 +1396,22 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
                 facts: z.record(z.string(), z.unknown()).optional(),
               }),
             )
-            .optional()
-            .describe("Component queries for check (max 5), e.g. a toy containing a battery."),
-          productId: z
-            .string()
-            .nullable()
-            .optional()
-            .describe("Product id — adds saved product facts and passport data to check."),
-          passportId: z
-            .string()
-            .nullable()
-            .optional()
-            .describe("Passport id — adds saved passport facts to check."),
-          locale: z.string().optional().describe("Answer locale for check: en | bg | de | it."),
+            .optional(),
+          productId: z.string().nullable().optional().describe("Adds saved product facts."),
+          passportId: z.string().nullable().optional().describe("Adds saved passport facts."),
+          locale: z.string().optional(),
           // catalogue_report
-          classification: z
-            .string()
-            .optional()
-            .describe(
-              "Filter catalogue_report by classification: missing | draft_only | published_incomplete | published | not_required | open_questions | not_covered.",
-            ),
-          act: z
-            .string()
-            .optional()
-            .describe("Filter catalogue_report by governing act (CELEX, e.g. 32023R1542)."),
-          changed: z
-            .boolean()
-            .optional()
-            .describe("catalogue_report: true to return only rows changed since the last run."),
-          q: z.string().optional().describe("catalogue_report: search by product name or GTIN."),
-          cursor: z.string().optional().describe("Pagination cursor (catalogue_report)."),
-          limit: z.number().optional().describe("Page size for catalogue_report, max 500."),
+          classification: z.string().optional(),
+          act: z.string().optional().describe("CELEX, e.g. 32023R1542."),
+          changed: z.boolean().optional(),
+          q: z.string().optional(),
+          cursor: z.string().optional(),
+          limit: z.number().optional(),
           // catalogue_run_status
-          runId: z.string().optional().describe("Run id to poll (catalogue_run_status)."),
+          runId: z.string().optional(),
         })
         .partial()
-        .optional()
-        .describe(
-          "Arguments for the chosen action; required fields depend on `action` (see above).",
-        ),
+        .optional(),
     },
     outputSchema: API_OUTPUT_SCHEMA,
     annotations: {
@@ -1799,16 +1494,8 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     title: "TracePass passport lifecycle (irreversible actions)",
     description:
       "WARNING: Every action here changes what the public sees or is a legal act, some irreversible. `archive` permanently removes the public QR code (it 404s forever). `record_registration` records the economic operator's registration in the production EU DPP Registry and locks the passport's operator and facility identifiers. `place_on_market` submits a registration to an EN 18222 registry API. The assistant MUST confirm with the user before each call. Use `suspend` (reversible — public QR shows 'suspended') as the safe alternative to archive when a change might need to be undone; a passport placed on the market cannot be suspended, because it must stay public.\n\n" +
-      "EU DPP REGISTRY: the economic operator registers a battery passport itself, on the EU DPP Registry website under its own EU Login. TracePass prepares what the operator submits (prepare_registry_upi / prepare_registry_upload_file in tracepass_passports) and records what the operator reports; it never submits to the Registry and never verifies the registration. The Registry's acceptance environment is for testing and has no legal effect (record_acceptance_test in tracepass_passports); only a registration in the production environment counts, and that is what record_registration records. The EU DPP Registry does not accept registrations through place_on_market. record_registration and undo_registration need a paid plan, and a connected app (OAuth) must act for an admin or owner.\n\n" +
-      "Actions (pass via `action`, with `args`):\n" +
-      '- record_registration — args: { id, placedOnMarketAt? (YYYY-MM-DD), registrationId? (≤200 chars) }. WRITE, battery passports only, published only. Records that the operator has registered this passport in the PRODUCTION EU DPP Registry, as the operator states it: TracePass does not check it with the Registry. Confirm with the user first, and only after the operator has registered on the Registry website. Effects: the passport is marked placed on the market (placeOnMarketStatus "placed", registrationMode "website"), the operator and facility party identifiers are locked (409 operator_locked on a later change), the backup copy is queued and the passport.placed_on_market webhook fires. placedOnMarketAt defaults to today; it may not be in the future or before the passport was first published. registrationId: the identifier the Registry gave, if any. Returns { passport }. Refusals: 400 Validation failed | invalid_date | date_in_future | date_before_publication | registration_id_too_long; 404; 409 not_a_battery | not_published | already_registered. A mistaken record can be undone with undo_registration. Counts 1 write.\n' +
-      "- undo_registration — args: { id, environment: production|acceptance }. WRITE. Undoes a mistaken record. production: removes a registration recorded with record_registration (one made through place_on_market is not undone here), so the passport is no longer marked placed and its operator identifiers unlock; a webhook already delivered is not recalled. acceptance: removes the recorded acceptance test. It changes nothing in the Registry itself. Confirm with the user first. Returns { passport }. 404; 409 nothing_to_undo. Counts 1 write.\n" +
-      "- place_on_market — args: { id }. WRITE, battery passports only, published only. Submits a registration to the EN 18222 registry API configured in the account's registry access settings. This is NOT the way into the EU DPP Registry, which does not accept it: for the EU DPP Registry use prepare_registry_upi / prepare_registry_upload_file and then record_registration. A legal act for the economic operator — confirm with the user first. ASYNCHRONOUS: answers 202 { passport, passportId, status: \"placing\", dppId } and the registry call follows in the background; read the passport (get) to follow placeOnMarketStatus: placing → placed (placedOnMarketAt, registrationId) or rejected (registrationRejectionReason). To retry a rejected passport, fix the cause and call place_on_market again. Refusals are 409 with a code: not_a_battery | not_published | already_placed (placing or placed) | operator_id_missing (no economic-operator identifier on the account) | registry_not_configured (an admin sets registry access in the dashboard) | registry_host_not_allowed (TracePass does not send registrations to the configured registry address; check the registry URL), registry_not_ready (findings[] lists what stands in the way — run registry_readiness for the structured findings). After placement the passport's party operatorIdentifier / facilityIdentifier are locked (409 operator_locked on a change). Counts 1 write.\n" +
-      "- suspend — args: { id }. Reversible — public QR shows 'suspended'. Refused with 409 passport_placed_on_market once the passport is placed on the market or its registration is under way.\n" +
-      "- suspend_by_serial — args: { serial, gtin? }. Same as suspend, addressed by your serial. 409 ambiguous_serial if the serial isn't unique in your account — pass `gtin`.\n" +
-      "- archive — args: { id, reason? (recycled|never_placed|duplicate_or_error) }. never_placed is refused (409 reason_contradicts_placement) on a passport placed on the market. IRREVERSIBLE and destructive — confirm with the user first. The public QR permanently 404s. reason is REQUIRED for battery passports (400 reason_required / invalid_reason without a valid one): recycled, never_placed (never placed on the market or put into service), or duplicate_or_error (a duplicate or erroneous record); for other categories it is optional. A passport marked for deletion cannot be archived (409).\n" +
-      "- archive_by_serial — args: { serial, gtin?, reason? }. IRREVERSIBLE and destructive, addressed by your serial — confirm first. Same reason rule as archive. 409 ambiguous_serial if the serial isn't unique — pass `gtin`.\n" +
-      "- archive_product — args: { id }. Archives a PRODUCT (not a passport). Reversible — this soft-archives the product from the catalogue. Blocked (409) while any non-archived passport still references it — archive those passports first. Not deletion.",
+      "EU DPP REGISTRY: the operator registers a battery passport itself, on the Registry website under its own EU Login; TracePass never submits to the Registry and never verifies the outcome. The acceptance environment has no legal effect; only a production registration counts. Paid plan; a connected app (OAuth) must act for an admin or owner. Refusal codes: resource tracepass://reference/lifecycle.\n\n" +
+      "Actions (pass via `action`; `{…}` is the `args` object). All are WRITEs (1 write each). A *_by_serial action takes { serial, gtin? } instead of `id` (on 409 ambiguous_serial pass `gtin`).\n- record_registration — { id, placedOnMarketAt? (YYYY-MM-DD), registrationId? }. Battery, published only. Records that the operator has registered this passport in the PRODUCTION EU DPP Registry, as the operator states it; TracePass does not check it. Confirm with the user first, and only after the operator has registered on the Registry website. Effects: marked placed on the market; operator and facility identifiers locked (409 operator_locked); webhook fires.\n- undo_registration — { id, environment: production|acceptance }. Undoes a mistaken record; production unlocks the operator identifiers (a delivered webhook is not recalled). Changes nothing in the Registry. Confirm with the user first.\n- place_on_market — { id }. Battery, published only. Submits to the EN 18222 registry API in the account's registry settings. NOT the way into the EU DPP Registry, which does not accept it: use prepare_registry_upi / prepare_registry_upload_file, then record_registration. A legal act for the economic operator — confirm with the user first. ASYNCHRONOUS: answers 202 \"placing\"; follow placeOnMarketStatus (placing → placed | rejected) by reading the passport. 409 codes include registry_host_not_allowed (the configured registry address is not allowed; check the URL) and registry_not_ready (run registry_readiness).\n- suspend, suspend_by_serial — { id }. Reversible — public QR shows 'suspended'. Refused with 409 passport_placed_on_market once the passport is placed on the market or its registration is under way.\n- archive, archive_by_serial — { id, reason? }. IRREVERSIBLE and destructive — confirm with the user first. The public QR permanently 404s. reason is REQUIRED for battery passports (400 reason_required): recycled, never_placed (never placed on the market or put into service) or duplicate_or_error; never_placed is refused (409 reason_contradicts_placement) once placed on the market.\n- archive_product — { id }. Archives a PRODUCT (not a passport). Reversible — soft-archives it from the catalogue. 409 while any non-archived passport references it; archive those first.",
     inputSchema: {
       action: z
         .enum([
@@ -1822,55 +1509,20 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           "archive_product",
         ])
         .describe(
-          "Which lifecycle action to run. All require user confirmation. record_registration (battery, published; records the operator's own registration in the production EU DPP Registry, made on the Registry website; locks the operator identifiers) | undo_registration (undo a mistaken production or acceptance record) | place_on_market (battery, published; submits to an EN 18222 registry API, not accepted by the EU DPP Registry) | suspend (reversible) | suspend_by_serial | archive (IRREVERSIBLE; QR 404s forever; battery passports need reason) | archive_by_serial | archive_product (reversible product archive; blocked while passports reference it).",
+          "All actions require user confirmation. archive is IRREVERSIBLE (QR 404s forever); suspend is reversible.",
         ),
       args: z
         .object({
-          id: z
-            .string()
-            .optional()
-            .describe(
-              "Passport or product id. Required for record_registration, undo_registration, place_on_market, suspend, archive, archive_product.",
-            ),
-          placedOnMarketAt: z
-            .string()
-            .optional()
-            .describe(
-              "record_registration: the date the battery was placed on the market, YYYY-MM-DD. Defaults to today; not in the future, not before the passport was first published.",
-            ),
-          registrationId: z
-            .string()
-            .optional()
-            .describe(
-              "record_registration: the identifier the EU DPP Registry gave the registration, if any (≤200 chars).",
-            ),
-          environment: z
-            .enum(["production", "acceptance"])
-            .optional()
-            .describe(
-              "undo_registration: which record to undo — production (a registration recorded with record_registration) or acceptance (a recorded acceptance test).",
-            ),
-          serial: z
-            .string()
-            .optional()
-            .describe(
-              "Your own serial number. Required for suspend_by_serial and archive_by_serial.",
-            ),
-          gtin: z
-            .string()
-            .optional()
-            .describe(
-              "GTIN disambiguator for *_by_serial actions when the serial isn't unique (else 409 ambiguous_serial).",
-            ),
-          reason: ARCHIVE_REASON.optional().describe(
-            `archive / archive_by_serial: ${ARCHIVE_REASON_DESCRIPTION}`,
-          ),
+          id: z.string().optional(),
+          placedOnMarketAt: z.string().optional(),
+          registrationId: z.string().optional(),
+          environment: z.enum(["production", "acceptance"]).optional(),
+          serial: z.string().optional(),
+          gtin: z.string().optional(),
+          reason: ARCHIVE_REASON.optional().describe("Required for battery passports."),
         })
         .partial()
-        .optional()
-        .describe(
-          "Arguments for the chosen action; required fields depend on `action` (see each action above).",
-        ),
+        .optional(),
     },
     outputSchema: API_OUTPUT_SCHEMA,
     annotations: {

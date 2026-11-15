@@ -209,7 +209,15 @@ export const SERVER_CARD = {
       "tracepass_scope",
       "tracepass_passport_lifecycle",
     ],
-    resources: ["tracepass://products", "tracepass://templates"],
+    resources: [
+      "tracepass://products",
+      "tracepass://templates",
+      "tracepass://reference/passports",
+      "tracepass://reference/lifecycle",
+      "tracepass://reference/scope",
+      "tracepass://reference/parties",
+      "tracepass://reference/templates",
+    ],
     resourceTemplates: [
       "tracepass://product/{id}",
       "tracepass://passport/{id}",

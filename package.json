@@ -48,6 +48,7 @@
     "test": "vitest run",
     "build:server-card": "npm run build --silent && node scripts/build-server-card.mjs",
     "check:server-card": "npm run build --silent && node scripts/build-server-card.mjs --check",
+    "measure:tools": "npm run build --silent && node scripts/measure-tools.mjs",
     "lint": "eslint .",
     "version": "node scripts/sync-version.mjs",
     "format": "prettier --write \"**/*.{ts,tsx,js,mjs,cjs}\"",

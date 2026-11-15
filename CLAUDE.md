@@ -127,6 +127,15 @@ negligible. Don't "optimize" this into direct lib calls.
   the specific per-action Zod schema (`ACTION_SCHEMAS`). When adding an endpoint,
   add an action to the right resource tool — don't add a new flat tool unless it's
   genuinely a new resource.
+- **`tools/list` is read into the model's context every conversation: keep it small.**
+  `npm run measure:tools` prints bytes per tool (`-- --check` fails over budget);
+  `tests/tools-list-size.test.ts` holds a size budget and a description-free contract
+  (`tests/fixtures/tools-contract.json`: names, annotations, schemas). A tool description
+  carries what picks the action and keeps the caller safe (args, required fields,
+  confirmations, irreversible effects, plan gates); per-scheme shapes, refusal-code lists
+  and response fields go in `src/reference.ts`, served as `tracepass://reference/<slug>`
+  resources and pointed at from the description. Describe a parameter once, in the tool
+  description or the property, not both.
 - **402 / 403 / 429 are meaningful results, not exceptions** (`src/result.ts`).
   402 payment required (past-due subscription, or a metered write over the plan's
   allowance) → tell the user, don't retry: no tool accepts an overage charge;

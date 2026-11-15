@@ -20,6 +20,7 @@
 import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { TracePassClient } from "./api-client.js";
+import { REFERENCE_DOCS } from "./reference.js";
 
 /**
  * Build a ReadResourceResult `contents` entry carrying JSON text.
@@ -239,4 +240,16 @@ export function registerResources(server: McpServer, client: TracePassClient): v
         : errorContents(uri.href, res.status, res.body);
     },
   );
+
+  // ── Static reference text the tool descriptions point at ──────
+  // Long-form detail (identifier shapes, refusal codes, response fields) lives
+  // here, read on demand, instead of riding in every `tools/list`.
+  for (const doc of REFERENCE_DOCS) {
+    server.registerResource(
+      `reference-${doc.slug}`,
+      `tracepass://reference/${doc.slug}`,
+      { title: doc.title, description: doc.description, mimeType: "text/markdown" },
+      (uri) => ({ contents: [{ uri: uri.href, mimeType: "text/markdown", text: doc.text }] }),
+    );
+  }
 }

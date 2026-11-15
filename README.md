@@ -247,6 +247,7 @@ Read-only entity data you can attach as conversation context:
 - `tracepass://passport/{id}/snapshots` — the snapshot history of a passport (newest first): a snapshot on publish and after every change to a non-draft passport; each entry carries version, reason (e.g. published, field_edit, status_change, baseline), actor, snapshotAt, contentHash, hashValid (re-verified on read), restorable flag, and field count.
 - `tracepass://templates` — all 13 DPP category field schemas
 - `tracepass://template/{category}` — one category's full field schema
+- `tracepass://reference/{passports|lifecycle|scope|parties|templates}` — long-form reference the tool descriptions point at (identifier scheme shapes, refusal codes, EU DPP Registry action detail, scope argument values). Kept out of the tool descriptions so `tools/list` stays small; read on demand
 
 ## Prompts
 
