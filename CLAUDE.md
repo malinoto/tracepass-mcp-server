@@ -53,12 +53,19 @@ the hosted endpoint and the local package.**
   `https://ai.tracepass.eu/compliance/mcp`), and it has its own card at
   `/.well-known/mcp/compliance-server-card.json`, not mirrored on www. Every platform
   call carries `X-Source: assistant`, so answers are logged and capped on that
-  channel. The platform owns every answer; the server adds two things only:
+  channel. The platform owns every answer; the server adds three things only:
   - **the hard-rule block** (`HARD_RULES`) in each tool description and the server
-    instructions: answer from a tool result, never from memory, never rank vendors;
+    instructions (`COMPLIANCE_INSTRUCTIONS`): answer from a tool result, never from
+    memory, never rank vendors;
+  - **the answer rules next to the data**: `withClosingDisclaimer` adds
+    `ANSWER_WORDING_RULE` (a duty's holder is the subject, never "you must") to every
+    answer, and `NEEDS_INPUT_RULE` (settle what the user's own message already says,
+    call again, ask only the rest) to a `needs_input` one. A rule only in the
+    descriptions was dropped in the runner's accuracy benchmark;
   - **the closing disclaimer**: `withClosingDisclaimer` repeats the envelope's
     `disclaimer` as a separate final text block ("End your answer with this line,
-    word for word"). Left only inside the JSON, models drop it from most answers.
+    word for word"), always last. Left only inside the JSON, models drop it from most
+    answers.
   **A tool argument must exist in the v1 request.** `/api/v1/scope/check` is strict
   (an undeclared field or fact is 400 `invalid_input`), so an argument the tool
   advertises but the API lacks fails on every call that uses it. The model then
