@@ -592,8 +592,9 @@ describe("complianceResult — closing disclaimer", () => {
       ok: true,
       body: { status: "answered", answer: "x", disclaimer },
     });
-    expect(r.content).toHaveLength(2);
-    expect((r.content[1] ?? expect.unreachable("r.content[1] is missing")).text).toBe(
+    // The disclaimer is the last block; the answer rules sit between it and the data
+    // (tests/compliance-answer-rules.test.ts).
+    expect((r.content.at(-1) ?? expect.unreachable("no closing block")).text).toBe(
       `End your answer with this line, word for word:\n${disclaimer}`,
     );
     expect(

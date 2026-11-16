@@ -71,21 +71,42 @@ const DASHBOARD_ORIGIN = "https://app.tracepass.eu";
 // ---------------------------------------------------------------------------
 
 /**
- * Add the envelope's disclaimer as its own closing instruction. Left inside the
- * JSON, models drop it from most answers; a separate line next to the data is
- * what they keep.
+ * How every answer words a duty. A rule only in the tool descriptions was
+ * dropped (the assistant wrote "You must also ensure the passport is available
+ * for 10 years"); next to the data, like the disclaimer, it is kept.
+ */
+export const ANSWER_WORDING_RULE =
+  'Write every duty with its holder as the subject ("the authorised representative keeps the passport available for 10 years", "the manufacturer creates the passport"). Never address the user with "you must", "you have to", "you need to" or "you are required to", even when the user holds that role.';
+
+/**
+ * What to do with a needs_input result. Without it the assistant handed the user
+ * every question, including ones the user's own message settled.
+ */
+export const NEEDS_INPUT_RULE =
+  "Before asking the user anything, answer each question that the user's own description already settles (for example, a battery in a UPS or other equipment for server rooms, data centres or factories is for industrial use) and call scope_check again with those facts. Ask the user only the questions their message leaves open, in plain words.";
+
+/**
+ * Add the answer rules and the envelope's disclaimer as their own closing
+ * instructions. Left inside the JSON, models drop them from most answers; a
+ * separate line next to the data is what they keep. Only an answer carries a
+ * disclaimer, so a profile read or an error gets neither.
  * @param result the tool result to extend
  * @param body the platform response body, whose `disclaimer` field is repeated
- * @returns the result with the disclaimer appended as a final text block
+ * @returns the result with the rules and, last, the disclaimer appended as text blocks
  */
 export function withClosingDisclaimer(result: ToolResult, body: unknown): ToolResult {
-  const disclaimer =
-    body && typeof body === "object" ? (body as Record<string, unknown>).disclaimer : undefined;
+  const fields = body && typeof body === "object" ? (body as Record<string, unknown>) : undefined;
+  const disclaimer = fields?.disclaimer;
   if (typeof disclaimer !== "string" || disclaimer.trim() === "") return result;
+  const rules = [
+    ...(fields?.status === "needs_input" ? [NEEDS_INPUT_RULE] : []),
+    ANSWER_WORDING_RULE,
+  ];
   return {
     ...result,
     content: [
       ...result.content,
+      ...rules.map((text) => ({ type: "text" as const, text })),
       { type: "text", text: `End your answer with this line, word for word:\n${disclaimer}` },
     ],
   };
@@ -289,7 +310,7 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
           .enum(SCOPE_CATEGORIES)
           .optional()
           .describe(
-            "Product category key, one of the listed values. Map the user's product to the closest key (paint → paints-coatings, an e-bike battery → battery); use \"other\" when no key fits. Never pass the user's own words.",
+            "Product category key, one of the listed values. Map the user's product to the closest key (paint → paints-coatings, an e-bike battery → battery). Consumer goods no other key names (cosmetics, personal care, food and drink, household consumables other than detergents) are fmcg. Use \"other\" only for a product no key covers; its result is not_covered. Never pass the user's own words.",
           ),
         role: z
           .string()
@@ -809,26 +830,29 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
   ];
 }
 
+/** The DPP Assistant's server instructions: which tool answers what, and how to word it. */
+export const COMPLIANCE_INSTRUCTIONS =
+  "You are the TracePass DPP Compliance Assistant. You answer EU Digital Product Passport scope, field, registry and change questions. " +
+  "Answer every question about what EU DPP law requires, or about the registry and its standards, from a tool result: call the closest tool first, even when you think you know the answer, and if the result does not cover the question, say so. " +
+  "Questions about vendors, software, providers or prices are not in the tools: call no tool, and say you do not compare, rank or price vendors. " +
+  "Use only what the tools return: add no facts, dates or articles of your own, not even today's date. Keep every citation and the disclaimer. " +
+  "Reading a fact from the user's own description into a tool call (a rack UPS for server rooms is for industrial use) is not adding a fact: fill every fact the user's message settles, and ask only what it leaves open. " +
+  "For a scope question, call scope_check. For field requirements, call required_fields. For law changes, call what_changed. For registry, call registry_guidance. " +
+  "When the user asks to create a passport, call create_draft_passport — it never publishes. " +
+  "Offer to save any lasting company facts the user states (role, categories, markets) with update_profile. " +
+  "If an answer is flagged as wrong, call report_answer with the user's words and the ruleIds. " +
+  'Say answers are "Planned, not law yet" for planned items. For a "no" answer never say "not yet"; for "pending", name the planned act. ' +
+  "Where ruleStatus is needs_recheck, say the law behind the act changed and the rules are being re-checked. " +
+  `${ANSWER_WORDING_RULE} ` +
+  "End every answer with the disclaimer line from the result.";
+
 /**
  * Build the compliance `McpServer`. The caller connects it to a transport.
  * @param config base URL, credential and optional forwarded address for the platform calls
  * @returns the configured server, not yet connected to a transport
  */
 export function createComplianceMcpServer(config: CreateComplianceMcpServerConfig): McpServer {
-  const server = new McpServer(COMPLIANCE_SERVER_INFO, {
-    instructions:
-      "You are the TracePass DPP Compliance Assistant. You answer EU Digital Product Passport scope, field, registry and change questions. " +
-      "Answer every question about what EU DPP law requires, or about the registry and its standards, from a tool result: call the closest tool first, even when you think you know the answer, and if the result does not cover the question, say so. " +
-      "Questions about vendors, software, providers or prices are not in the tools: call no tool, and say you do not compare, rank or price vendors. " +
-      "Use only what the tools return: add no facts, dates or articles of your own, not even today's date. Keep every citation and the disclaimer. " +
-      "For a scope question, call scope_check. For field requirements, call required_fields. For law changes, call what_changed. For registry, call registry_guidance. " +
-      "When the user asks to create a passport, call create_draft_passport — it never publishes. " +
-      "Offer to save any lasting company facts the user states (role, categories, markets) with update_profile. " +
-      "If an answer is flagged as wrong, call report_answer with the user's words and the ruleIds. " +
-      'Say answers are "Planned, not law yet" for planned items. For a "no" answer never say "not yet"; for "pending", name the planned act. ' +
-      "Where ruleStatus is needs_recheck, say the law behind the act changed and the rules are being re-checked. " +
-      "End every answer with the disclaimer line from the result.",
-  });
+  const server = new McpServer(COMPLIANCE_SERVER_INFO, { instructions: COMPLIANCE_INSTRUCTIONS });
 
   const client = new TracePassClient({
     baseUrl: config.baseUrl,
