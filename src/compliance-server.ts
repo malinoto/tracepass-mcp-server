@@ -317,7 +317,7 @@ export function buildComplianceTools(client: TracePassClient): ComplianceTool[] 
           .max(120)
           .optional()
           .describe(
-            'The user\'s role in plain words, e.g. "maker", "importer", "reseller". The platform maps this to the act\'s term.',
+            'The user\'s role in plain words, e.g. "maker", "own brand" (another company makes it for them), "importer", "reseller", "authorised representative". The platform maps this to the act\'s term.',
           ),
         placedOnMarket: z
           .object({
