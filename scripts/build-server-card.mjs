@@ -69,7 +69,7 @@ if (checkOnly) {
 mkdirSync(dirname(TARGET), { recursive: true });
 writeFileSync(TARGET, rendered, "utf8");
 console.log(`✓ wrote ${TARGET}`);
-console.log("  Commit it in the marketing repo — a push to main publishes.");
+console.log("  Commit it in the marketing repo; the next marketing deploy publishes it.");
 // Importing dist/http.js starts its listener, so exit explicitly (as the
 // other branches do) or the script never ends.
 process.exit(0);
