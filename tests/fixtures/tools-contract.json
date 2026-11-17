@@ -908,5 +908,111 @@
     "execution": {
       "taskSupport": "forbidden"
     }
+  },
+  {
+    "name": "tracepass_access_grants",
+    "title": "TracePass access grants",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["list", "get", "create", "update", "revoke", "activity"]
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "role": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "purpose": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            "evidence": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            "expiresInDays": {
+              "type": ["number", "null"]
+            },
+            "status": {
+              "type": "string"
+            },
+            "passportId": {
+              "type": "string"
+            },
+            "productId": {
+              "type": "string"
+            },
+            "limit": {
+              "type": "number"
+            },
+            "cursor": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": ["action"],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {}
+        },
+        "total": {
+          "type": "number"
+        },
+        "page": {
+          "type": "number"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "totalPages": {
+          "type": "number"
+        },
+        "result": {},
+        "error": {
+          "type": ["string", "null"]
+        },
+        "message": {
+          "type": ["string", "null"]
+        }
+      },
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
   }
 ]

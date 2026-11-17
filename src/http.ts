@@ -208,6 +208,7 @@ export const SERVER_CARD = {
       "tracepass_templates",
       "tracepass_scope",
       "tracepass_passport_lifecycle",
+      "tracepass_access_grants",
     ],
     resources: [
       "tracepass://products",
@@ -258,6 +259,8 @@ const PROTECTED_RESOURCE_METADATA = {
     "documents:write",
     "suppliers:read",
     "suppliers:write",
+    "access_grants:read",
+    "access_grants:write",
     "offline_access",
   ],
   bearer_methods_supported: ["header"],

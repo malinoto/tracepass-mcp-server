@@ -55,7 +55,7 @@ under **Developer → OAuth Apps** to get a `client_id`; many hosted
 clients self-register via Dynamic Client Registration automatically.
 
 Request only the scopes you need, e.g. `passports:read passports:write
-offline_access`. Users manage connected apps (and revoke) under
+offline_access`; managing access grants needs `access_grants:read` / `access_grants:write`. Users manage connected apps (and revoke) under
 **Developer → OAuth Apps → Connected Apps**.
 
 ### API key
@@ -107,7 +107,7 @@ The hosted endpoint accepts **POST only** on `/mcp`, `/compliance/mcp`, and the 
 
 ## Tools
 
-The TracePass v1 API operations are grouped into **8 tools**.
+The TracePass v1 API operations are grouped into **9 tools**.
 Each takes an action enum plus action-specific arguments. The tools are:
 
 - `tracepass_products` - manage the product catalogue (list, get, create, create_batch, update products; get_links lists every published passport link of a product plus its model page, get_model_qr renders the model page QR).
@@ -116,6 +116,7 @@ Each takes an action enum plus action-specific arguments. The tools are:
 - `tracepass_passport_parties` - set or remove a passport's economic-operator parties (manufacturer, importer, etc.).
 - `tracepass_epcis` - export, capture, and query a passport's GS1 EPCIS 2.0 supply-chain events.
 - `tracepass_templates` - list and get the DPP category field schemas, each field traced to the EU instrument that mandates it.
+- `tracepass_access_grants` - share restricted passport data with a partner through an access grant and manage the grants issued (list, get, create, update, revoke, activity). The secret token is returned once on create. Needs an OAuth connection approved for the `access_grants:read` / `access_grants:write` scopes, or an API key with "May manage access grants" switched on in the dashboard; authority roles stay dashboard-only.
 - `tracepass_scope` - check whether a product type needs a Digital Product Passport (check), read the company's catalogue-wide scope report (catalogue_report), and trigger or poll a catalogue refresh run (catalogue_run, catalogue_run_status).
 - `tracepass_passport_lifecycle` - irreversible and public-facing passport and product lifecycle actions (record_registration, undo_registration, place_on_market, suspend, archive, archive_product); the assistant must confirm with the user before each call.
 
@@ -131,6 +132,7 @@ Each tool's full action set:
 | `tracepass_templates`          | `list`, `get`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `tracepass_scope`              | `check`, `catalogue_report`, `catalogue_run`, `catalogue_run_status`                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `tracepass_passport_lifecycle` | `record_registration`, `undo_registration`, `place_on_market`, `suspend`, `suspend_by_serial`, `archive`, `archive_by_serial`, `archive_product`                                                                                                                                                                                                                                                                                                                                                                     |
+| `tracepass_access_grants`      | `list`, `get`, `create`, `update`, `revoke`, `activity`                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 Restricted and authority passport data is read through access grants the owner issues in the TracePass dashboard (role, scope, purpose, expiry); this server has no tool to manage grants. A GTIN-only address (no serial) answers a public model page of the product, not a unit's passport.
 

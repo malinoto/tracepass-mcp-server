@@ -66,15 +66,15 @@ the hosted endpoint and the local package.**
     `disclaimer` as a separate final text block ("End your answer with this line,
     word for word"), always last. Left only inside the JSON, models drop it from most
     answers.
-  **A tool argument must exist in the v1 request.** `/api/v1/scope/check` is strict
-  (an undeclared field or fact is 400 `invalid_input`), so an argument the tool
-  advertises but the API lacks fails on every call that uses it. The model then
-  retries without it, so nothing looks broken. A test checks `scope_check`'s posted
-  body against the published OpenAPI schema.
-  Its registry entry is `server.compliance.json` (`eu.tracepass/compliance`), a
-  separate listing from `server.json`. Its behaviour is measured by an eval set in
-  the private runner repo; a tool-description change can move the scores, so re-run
-  it after one.
+    **A tool argument must exist in the v1 request.** `/api/v1/scope/check` is strict
+    (an undeclared field or fact is 400 `invalid_input`), so an argument the tool
+    advertises but the API lacks fails on every call that uses it. The model then
+    retries without it, so nothing looks broken. A test checks `scope_check`'s posted
+    body against the published OpenAPI schema.
+    Its registry entry is `server.compliance.json` (`eu.tracepass/compliance`), a
+    separate listing from `server.json`. Its behaviour is measured by an eval set in
+    the private runner repo; a tool-description change can move the scores, so re-run
+    it after one.
 
 **Auth: the hosted server supports BOTH a `tp_` API key AND OAuth 2.0 — and it's
 a pass-through, not a branch.** `src/http.ts` forwards the client's
@@ -85,7 +85,7 @@ token. The MCP server never inspects the token type. OAuth-capable clients
 `/.well-known/oauth-protected-resource` challenge; the local `stdio` form is
 API-key-only (`TRACEPASS_API_KEY`) because a subprocess has no browser for the
 OAuth consent step. **Consequence:** `401` responses from the hosted endpoint are
-*normal* — they're the RFC 9728 start-auth signal an OAuth client gets before it
+_normal_ — they're the RFC 9728 start-auth signal an OAuth client gets before it
 has a token, plus token-expiry retries. A 401 here is not a fault; the path
 works with both `api_key` and `oauth` (both show 200s in `apiRequestLog`). Don't "fix" the 401s by removing the challenge.
 
@@ -94,13 +94,14 @@ discovery — `initialize`, `tools/list`, `prompts/list`, `resources/list`,
 `ping`, etc. (`PUBLIC_METHODS` in `src/http.ts`) — are served WITHOUT a
 credential; only methods whose handlers hit the v1 API (`tools/call`,
 `resources/read`, `prompts/get`) require a Bearer token. **Why:** MCP catalogs
-+ scanners (Glama and some others) probe unauthenticated — when `tools/list` was
-gated behind auth, they got 401 and listed the server as **"0 tools"** although the
-tools existed. Discovery must precede auth. The gate is fail-closed (unparseable
-/ unknown / batched-mixed body → require auth), and `tools/call` still returns a
-real 401 + `WWW-Authenticate`. Don't re-gate `tools/list`/`initialize` — you'll
-re-break catalog discovery. Expected live behaviour: anon `tools/list` → the full
-tool list, `tools/call` → 401.
+
+- scanners (Glama and some others) probe unauthenticated — when `tools/list` was
+  gated behind auth, they got 401 and listed the server as **"0 tools"** although the
+  tools existed. Discovery must precede auth. The gate is fail-closed (unparseable
+  / unknown / batched-mixed body → require auth), and `tools/call` still returns a
+  real 401 + `WWW-Authenticate`. Don't re-gate `tools/list`/`initialize` — you'll
+  re-break catalog discovery. Expected live behaviour: anon `tools/list` → the full
+  tool list, `tools/call` → 401.
 
 **mcppedia is a SEPARATE case — it does NOT introspect the live server; it parses
 the GitHub README.** Its `bots/extract-schemas.ts` feeds the README to Claude
@@ -127,7 +128,7 @@ negligible. Don't "optimize" this into direct lib calls.
 - **Resource tools, not ~23 flat ones** (`src/tools.ts`: `tracepass_products`,
   `tracepass_passports`, `tracepass_passport_fields`, `tracepass_passport_parties`,
   `tracepass_epcis`, `tracepass_templates`, `tracepass_scope`,
-  `tracepass_passport_lifecycle`; `SERVER_CARD` in `src/http.ts`
+  `tracepass_passport_lifecycle`, `tracepass_access_grants`; `SERVER_CARD` in `src/http.ts`
   must list the same set, which `tests/tools.test.ts` enforces; the action count grows, so count it from `buildTools()` rather than quoting one). Each takes `action`
   (enum) + `args` (shape depends on `action`). MCP `inputSchema` can't branch on
   `action`, so `args` is declared permissively and each handler validates against
@@ -194,6 +195,7 @@ which holds the full steps.
   those in sync if tool/config surface changes.
 
 ---
-*The v1 API contract is owned by the TracePass platform; release procedures and
+
+_The v1 API contract is owned by the TracePass platform; release procedures and
 cross-repo conventions live in the private workspace tooling, not in this public
-repo.*
+repo._

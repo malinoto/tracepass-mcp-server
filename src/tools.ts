@@ -383,6 +383,22 @@ const FIELD_SOURCE = z.enum(["manual", "ai_suggested"]);
  */
 const ARCHIVE_REASON = z.enum(["recycled", "never_placed", "duplicate_or_error"]);
 
+/** What an access grant covers: the whole company, chosen products or chosen passports. */
+const GRANT_SCOPE = z.object({
+  kind: z.enum(["company", "products", "passports"]),
+  ids: z.array(z.string().min(1)).max(500).optional(),
+});
+/** The recorded basis for a grant (a register entry, an invoice, a contract). */
+const GRANT_EVIDENCE = z.object({
+  type: z.enum(["register_entry", "invoice", "authority_letter", "contract", "other"]),
+  reference: z.string().min(1).max(200),
+  note: z.string().max(500).optional(),
+});
+
+/** Appended to a successful grant creation: the token is shown once and is not for the agent to keep. */
+const GRANT_TOKEN_NOTICE =
+  "The `token` above (pa_…) is shown ONCE and cannot be retrieved again. Hand it to the recipient and do not repeat it in your answer, store it or log it. If it is lost, revoke this grant and create a new one.";
+
 const SCHEMAS = {
   productList: z.object({
     page: z.number().int().positive().optional(),
@@ -533,6 +549,37 @@ const SCHEMAS = {
     format: z.enum(["svg", "png"]).optional(),
     symbology: z.enum(["qr", "datamatrix"]).optional(),
     gtin: z.string().optional(),
+  }),
+
+  grantList: z.object({
+    limit: z.number().int().positive().max(100).optional(),
+    cursor: z.string().min(1).optional(),
+    role: z.string().min(1).optional(),
+    status: z.enum(["active", "expired", "revoked"]).optional(),
+    passportId: z.string().min(1).optional(),
+    productId: z.string().min(1).optional(),
+  }),
+  grantId: z.object({ id: z.string().min(1) }),
+  grantActivity: z.object({
+    id: z.string().min(1),
+    limit: z.number().int().positive().max(100).optional(),
+    cursor: z.string().min(1).optional(),
+  }),
+  grantCreate: z.object({
+    role: z.string().min(1),
+    label: z.string().min(1).max(120),
+    purpose: z.string().max(500).optional(),
+    scope: GRANT_SCOPE.optional(),
+    evidence: GRANT_EVIDENCE.optional(),
+    expiresInDays: z.number().int().positive().nullable().optional(),
+  }),
+  grantUpdate: z.object({
+    id: z.string().min(1),
+    label: z.string().min(1).max(120).optional(),
+    purpose: z.string().max(500).optional(),
+    scope: GRANT_SCOPE.optional(),
+    evidence: GRANT_EVIDENCE.optional(),
+    expiresInDays: z.number().int().positive().nullable().optional(),
   }),
 
   fieldUpdate: z.object({
@@ -1681,6 +1728,92 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     },
   };
 
+  // ────────────────────── access grants ────────────────────────
+  const accessGrantsTool: McpToolDefinition = {
+    name: "tracepass_access_grants",
+    title: "TracePass access grants",
+    description:
+      'Share restricted passport data with a partner (repairer, recycler, purchaser...) through an access grant, and see or end the grants already issued. A grant names a role, a scope (company, chosen products or chosen passports), a purpose, optional evidence and an expiry (default 12 months). Needs an OAuth connection approved for access grants or an API key with "May manage access grants" switched on (403 access_grants_not_enabled); writing needs an admin. Authority roles (market surveillance, notified body, commission, customs) are dashboard-only (400 role_dashboard_only).\n\n' +
+      "IMPORTANT: `create` returns the secret pa_ token ONCE. Hand it to the recipient and do not repeat it, store it or put it in a log. It cannot be shown again; if lost, revoke the grant and create a new one. A confirmed grant gives a third party access to restricted data: confirm the recipient, role, scope and purpose with the user first.\n\n" +
+      "Actions (pass via `action`; `{…}` is the `args` object). Reads never return a token.\n- list — { limit? (≤100), cursor?, role?, status? (active|expired|revoked), passportId?, productId? }.\n- get — { id }.\n- create — { role, label, purpose?, scope? ({ kind: company } | { kind: products|passports, ids[] }), evidence? ({ type: register_entry|invoice|authority_letter|contract|other, reference, note? }), expiresInDays? (null = no expiry, where the role allows) }. WRITE.\n- update — { id, label?, purpose?, scope?, evidence?, expiresInDays? }; at least one. WRITE.\n- revoke — { id }. WRITE, ends the grant at once; repeating it is safe.\n- activity — { id, limit? (≤100), cursor? }. The grant's access log.",
+    inputSchema: {
+      action: z.enum(["list", "get", "create", "update", "revoke", "activity"]),
+      args: z
+        .object({
+          id: z.string().optional(),
+          role: z.string().optional(),
+          label: z.string().optional(),
+          purpose: z.string().optional(),
+          scope: z.record(z.string(), z.unknown()).optional(),
+          evidence: z.record(z.string(), z.unknown()).optional(),
+          expiresInDays: z.number().nullable().optional(),
+          status: z.string().optional(),
+          passportId: z.string().optional(),
+          productId: z.string().optional(),
+          limit: z.number().optional(),
+          cursor: z.string().optional(),
+        })
+        .partial()
+        .optional(),
+    },
+    outputSchema: API_OUTPUT_SCHEMA,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (a) => {
+      const action = String(a.action);
+      const tool = "tracepass_access_grants";
+      switch (action) {
+        case "list": {
+          const p = parseArgs(SCHEMAS.grantList, a.args, tool, action);
+          if (isErr(p)) return p;
+          return apiResult(await client.get(`/api/v1/access-grants${qs(p)}`));
+        }
+        case "get": {
+          const p = parseArgs(SCHEMAS.grantId, a.args, tool, action);
+          if (isErr(p)) return p;
+          return apiResult(await client.get(`/api/v1/access-grants/${seg(p.id)}`));
+        }
+        case "create": {
+          const p = parseArgs(SCHEMAS.grantCreate, a.args, tool, action);
+          if (isErr(p)) return p;
+          const res = await client.post("/api/v1/access-grants", p);
+          const result = apiResult(res);
+          const token = (res.body as { token?: unknown } | null)?.token;
+          if (res.ok && typeof token === "string") {
+            result.content.push({ type: "text", text: GRANT_TOKEN_NOTICE });
+          }
+          return result;
+        }
+        case "update": {
+          const p = parseArgs(SCHEMAS.grantUpdate, a.args, tool, action);
+          if (isErr(p)) return p;
+          const { id, ...patch } = p;
+          return apiResult(await client.patch(`/api/v1/access-grants/${seg(id)}`, patch));
+        }
+        case "revoke": {
+          const p = parseArgs(SCHEMAS.grantId, a.args, tool, action);
+          if (isErr(p)) return p;
+          return apiResult(await client.delete(`/api/v1/access-grants/${seg(p.id)}`));
+        }
+        case "activity": {
+          const p = parseArgs(SCHEMAS.grantActivity, a.args, tool, action);
+          if (isErr(p)) return p;
+          return apiResult(
+            await client.get(
+              `/api/v1/access-grants/${seg(p.id)}/activity${qs({ limit: p.limit, cursor: p.cursor })}`,
+            ),
+          );
+        }
+        default:
+          return errorResult(`Unknown action "${action}" for tracepass_access_grants.`);
+      }
+    },
+  };
+
   return [
     productsTool,
     passportsTool,
@@ -1690,5 +1823,6 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     templatesTool,
     scopeTool,
     lifecycleTool,
+    accessGrantsTool,
   ];
 }
