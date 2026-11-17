@@ -208,6 +208,7 @@ export const SERVER_CARD = {
       "tracepass_templates",
       "tracepass_scope",
       "tracepass_passport_lifecycle",
+      "tracepass_access_grants",
     ],
     resources: [
       "tracepass://products",
@@ -258,10 +259,19 @@ const PROTECTED_RESOURCE_METADATA = {
     "documents:write",
     "suppliers:read",
     "suppliers:write",
+    "access_grants:read",
+    "access_grants:write",
     "offline_access",
   ],
   bearer_methods_supported: ["header"],
 } as const;
+
+/**
+ * The scopes the 401 challenge on /mcp asks a client to request by default. The
+ * access-grant scopes are advertised in the metadata but left out here, so a
+ * client asks for them only when the user wants to manage grants.
+ */
+const DEFAULT_CHALLENGE_SCOPE = "passports:read passports:write regulatory:read offline_access";
 
 /**
  * RFC 9728 Protected Resource Metadata for the compliance endpoint.
@@ -435,6 +445,7 @@ function sendAuthChallenge(res: ServerResponse, reason: "missing" | "invalid"): 
     "WWW-Authenticate",
     'Bearer realm="TracePass MCP", error="invalid_token", ' +
       `resource_metadata="https://ai.tracepass.eu${PROTECTED_RESOURCE_METADATA_PATH}", ` +
+      `scope="${DEFAULT_CHALLENGE_SCOPE}", ` +
       `error_description="${desc}"`,
   );
   sendJson(res, 401, {

@@ -38,10 +38,11 @@ function stubClient(overrides: Partial<Record<"get" | "post", () => Promise<Stub
 }
 
 describe("buildTools — tool surface", () => {
-  it("exposes exactly 8 grouped tools", () => {
+  it("exposes exactly 9 grouped tools", () => {
     const { client } = stubClient();
     const tools = buildTools(client);
     expect(tools.map((t) => t.name).sort()).toEqual([
+      "tracepass_access_grants",
       "tracepass_epcis",
       "tracepass_passport_fields",
       "tracepass_passport_lifecycle",
@@ -90,6 +91,57 @@ describe("tracepass_products — action routing", () => {
     expect((calls[0] ?? expect.unreachable("calls[0] is missing")).path).toBe(
       "/api/v1/products?limit=10",
     );
+  });
+
+  it("get_links routes to GET /api/v1/products/{id}/links with format, limit and cursor", async () => {
+    const { tool, calls } = productsTool();
+    await tool.handler({
+      action: "get_links",
+      args: { id: "p1", format: "csv", limit: 5000, cursor: "abc" },
+    });
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).method).toBe("GET");
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).path).toBe(
+      "/api/v1/products/p1/links?format=csv&limit=5000&cursor=abc",
+    );
+  });
+
+  it("get_links without options sends no query string", async () => {
+    const { tool, calls } = productsTool();
+    await tool.handler({ action: "get_links", args: { id: "p1" } });
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).path).toBe(
+      "/api/v1/products/p1/links",
+    );
+  });
+
+  it("get_links rejects zip, an oversized limit and a missing id, with no HTTP call", async () => {
+    const { tool, calls } = productsTool();
+    for (const args of [{ id: "p1", format: "zip" }, { id: "p1", limit: 5001 }, {}]) {
+      const r = await tool.handler({ action: "get_links", args });
+      expect(r.isError).toBe(true);
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  it("get_model_qr routes to GET /api/v1/products/{id}/links/model-qr with format and gtin", async () => {
+    const { tool, calls } = productsTool();
+    await tool.handler({
+      action: "get_model_qr",
+      args: { id: "p1", format: "png", gtin: "09506000134369" },
+    });
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).method).toBe("GET");
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).path).toBe(
+      "/api/v1/products/p1/links/model-qr?format=png&gtin=09506000134369",
+    );
+  });
+
+  it("get_model_qr rejects a gtin that is not 14 digits, with no HTTP call", async () => {
+    const { tool, calls } = productsTool();
+    const r = await tool.handler({
+      action: "get_model_qr",
+      args: { id: "p1", gtin: "9506000134369" },
+    });
+    expect(r.isError).toBe(true);
+    expect(calls).toHaveLength(0);
   });
 
   it("get routes to GET /api/v1/products/{id}", async () => {
@@ -2033,5 +2085,139 @@ describe("tracepass_scope — platform error bodies are read by type", () => {
     const text = (r.content[0] ?? expect.unreachable("no content")).text;
     expect(text).toContain("Catalogue run already in progress.");
     expect(text).not.toContain("Existing run id");
+  });
+});
+
+describe("tracepass_access_grants — routing and the one-time token", () => {
+  function grantsTool(overrides: Parameters<typeof stubClient>[0] = {}) {
+    const stub = stubClient(overrides);
+    return { tool: named(buildTools(stub.client), "tracepass_access_grants"), calls: stub.calls };
+  }
+
+  it("list, get, revoke and activity route to the access-grants endpoints", async () => {
+    const { tool, calls } = grantsTool();
+    await tool.handler({ action: "list", args: { status: "active", limit: 20, role: "recycler" } });
+    await tool.handler({ action: "get", args: { id: "g1" } });
+    await tool.handler({ action: "revoke", args: { id: "g1" } });
+    await tool.handler({ action: "activity", args: { id: "g1", limit: 5, cursor: "c" } });
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([
+      "GET /api/v1/access-grants?limit=20&role=recycler&status=active",
+      "GET /api/v1/access-grants/g1",
+      "DELETE /api/v1/access-grants/g1",
+      "GET /api/v1/access-grants/g1/activity?limit=5&cursor=c",
+    ]);
+  });
+
+  it("create posts the grant body and update patches without the id", async () => {
+    const { tool, calls } = grantsTool();
+    const body = {
+      role: "recycler",
+      label: "Acme Recycling",
+      scope: { kind: "products", ids: ["a".repeat(24)] },
+      evidence: { type: "contract", reference: "C-1" },
+      expiresInDays: 365,
+    };
+    await tool.handler({ action: "create", args: body });
+    await tool.handler({ action: "update", args: { id: "g1", purpose: "x" } });
+    expect(calls[0]).toMatchObject({ method: "POST", path: "/api/v1/access-grants", body });
+    expect(calls[1]).toMatchObject({
+      method: "PATCH",
+      path: "/api/v1/access-grants/g1",
+      body: { purpose: "x" },
+    });
+  });
+
+  it("a created grant's result tells the agent to hand the token over and not repeat it", async () => {
+    const { tool } = grantsTool({
+      post: () =>
+        Promise.resolve({ status: 201, ok: true, body: { id: "g1", token: "pa_secret" } }),
+    });
+    const r = await tool.handler({ action: "create", args: { role: "recycler", label: "A" } });
+    expect(r.isError).toBeUndefined();
+    const notice = r.content[r.content.length - 1]?.text ?? "";
+    expect(r.content.length).toBe(2);
+    expect(notice).toMatch(/ONCE/);
+    expect(notice).toMatch(/do not repeat/);
+    expect(notice).not.toMatch(/pa_secret/);
+  });
+
+  it("an idempotent replay without a token gets no token notice", async () => {
+    const { tool } = grantsTool({
+      post: () =>
+        Promise.resolve({ status: 201, ok: true, body: { id: "g1", tokenDelivered: true } }),
+    });
+    const r = await tool.handler({ action: "create", args: { role: "recycler", label: "A" } });
+    expect(r.content).toHaveLength(1);
+  });
+
+  it("rejects an update with no id and a create with no label, with no HTTP call", async () => {
+    const { tool, calls } = grantsTool();
+    expect((await tool.handler({ action: "update", args: { label: "x" } })).isError).toBe(true);
+    expect((await tool.handler({ action: "create", args: { role: "recycler" } })).isError).toBe(
+      true,
+    );
+    expect(calls).toHaveLength(0);
+  });
+
+  it("scope: company takes no ids; products and passports need at least one", async () => {
+    const { tool, calls } = grantsTool();
+    const create = (scope: unknown) =>
+      tool.handler({ action: "create", args: { role: "recycler", label: "A", scope } });
+    expect((await create({ kind: "company", ids: ["a".repeat(24)] })).isError).toBe(true);
+    expect((await create({ kind: "products" })).isError).toBe(true);
+    expect((await create({ kind: "passports", ids: [] })).isError).toBe(true);
+    expect(calls).toHaveLength(0);
+    expect((await create({ kind: "company" })).isError).toBeUndefined();
+    expect((await create({ kind: "products", ids: ["a".repeat(24)] })).isError).toBeUndefined();
+  });
+
+  it("expiresInDays takes 1 to 1825 or null, on create and update", async () => {
+    const { tool, calls } = grantsTool();
+    const create = (d: unknown) =>
+      tool.handler({ action: "create", args: { role: "recycler", label: "A", expiresInDays: d } });
+    expect((await create(1826)).isError).toBe(true);
+    expect((await create(0)).isError).toBe(true);
+    expect(calls).toHaveLength(0);
+    expect((await create(1825)).isError).toBeUndefined();
+    expect((await create(null)).isError).toBeUndefined();
+    expect(
+      (await tool.handler({ action: "update", args: { id: "g1", expiresInDays: 1826 } })).isError,
+    ).toBe(true);
+    await tool.handler({ action: "update", args: { id: "g1", expiresInDays: null } });
+    expect(calls[calls.length - 1]).toMatchObject({ body: { expiresInDays: null } });
+  });
+
+  it("a 403 for a missing OAuth scope tells the user to reconnect with access_grants", async () => {
+    const { tool } = grantsTool({
+      get: () =>
+        Promise.resolve({
+          status: 403,
+          ok: false,
+          body: {
+            error: "forbidden",
+            message: "This access token is missing the required scope: access_grants:read",
+          },
+        }),
+    });
+    const r = await tool.handler({ action: "list" });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]?.text).toMatch(/reconnect/);
+    expect(r.content[0]?.text).toMatch(/access_grants/);
+  });
+
+  it("the description says authority grants are dashboard-only for update and revoke too", () => {
+    const { tool } = grantsTool();
+    expect(tool.description).toMatch(/dashboard-only end to end/);
+    expect(tool.description).toMatch(/role_dashboard_only/);
+  });
+
+  it("the OAuth metadata of /mcp declares the access-grant scopes", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync(new URL("../src/http.ts", import.meta.url), "utf8");
+    const block = /PROTECTED_RESOURCE_METADATA = \{[\s\S]*?scopes_supported: \[([^\]]*)\]/.exec(
+      src,
+    );
+    expect(block?.[1]).toContain('"access_grants:read"');
+    expect(block?.[1]).toContain('"access_grants:write"');
   });
 });

@@ -383,6 +383,51 @@ const FIELD_SOURCE = z.enum(["manual", "ai_suggested"]);
  */
 const ARCHIVE_REASON = z.enum(["recycled", "never_placed", "duplicate_or_error"]);
 
+/** What an access grant covers: the whole company, chosen products or chosen passports. */
+const GRANT_SCOPE = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("company") }).strict(),
+  z
+    .object({ kind: z.literal("products"), ids: z.array(z.string().min(1)).min(1).max(500) })
+    .strict(),
+  z
+    .object({ kind: z.literal("passports"), ids: z.array(z.string().min(1)).min(1).max(500) })
+    .strict(),
+]);
+/** Days a grant lasts: 1 to 1825, or null for no expiry. */
+const GRANT_EXPIRES = z.number().int().min(1).max(1825).nullable();
+/** The recorded basis for a grant (a register entry, an invoice, a contract). */
+const GRANT_EVIDENCE = z.object({
+  type: z.enum(["register_entry", "invoice", "authority_letter", "contract", "other"]),
+  reference: z.string().min(1).max(200),
+  note: z.string().max(500).optional(),
+});
+
+/**
+ * Render a grants response; a 403 for a missing OAuth scope tells the user how to fix it.
+ * @param res the platform response
+ * @param res.status HTTP status code
+ * @param res.ok true for 2xx
+ * @param res.body parsed body
+ * @returns the tool result
+ */
+function grantResult(res: { status: number; ok: boolean; body: unknown }): ToolResult {
+  const body = (res.body ?? {}) as Record<string, unknown>;
+  if (
+    res.status === 403 &&
+    typeof body.message === "string" &&
+    /missing (one of )?the required scopes?/i.test(body.message)
+  ) {
+    return errorResult(
+      'This connection lacks permission for access grants. Do not retry: tell the user to reconnect TracePass and grant the "access_grants" permissions (read to view grants, write to create or change them; writing also needs an admin).',
+    );
+  }
+  return apiResult(res);
+}
+
+/** Appended to a successful grant creation: the token is shown once and is not for the agent to keep. */
+const GRANT_TOKEN_NOTICE =
+  "The `token` above (pa_…) is shown ONCE and cannot be retrieved again. Hand it to the recipient and do not repeat it in your answer, store it or log it. If it is lost, revoke this grant and create a new one.";
+
 const SCHEMAS = {
   productList: z.object({
     page: z.number().int().positive().optional(),
@@ -392,6 +437,21 @@ const SCHEMAS = {
     search: z.string().optional(),
   }),
   productGet: z.object({ id: z.string().min(1) }),
+  // zip is left out: the client reads a body as text, which would corrupt a binary archive.
+  productLinks: z.object({
+    id: z.string().min(1),
+    format: z.enum(["json", "csv"]).optional(),
+    limit: z.number().int().positive().max(5000).optional(),
+    cursor: z.string().min(1).optional(),
+  }),
+  productModelQr: z.object({
+    id: z.string().min(1),
+    format: z.enum(["svg", "png"]).optional(),
+    gtin: z
+      .string()
+      .regex(/^[0-9]{14}$/, "gtin must be 14 digits")
+      .optional(),
+  }),
   productCreate: z.object({
     name: z.string().min(1).max(200),
     model: z.string().min(1).max(100),
@@ -518,6 +578,37 @@ const SCHEMAS = {
     format: z.enum(["svg", "png"]).optional(),
     symbology: z.enum(["qr", "datamatrix"]).optional(),
     gtin: z.string().optional(),
+  }),
+
+  grantList: z.object({
+    limit: z.number().int().positive().max(100).optional(),
+    cursor: z.string().min(1).optional(),
+    role: z.string().min(1).optional(),
+    status: z.enum(["active", "expired", "revoked"]).optional(),
+    passportId: z.string().min(1).optional(),
+    productId: z.string().min(1).optional(),
+  }),
+  grantId: z.object({ id: z.string().min(1) }),
+  grantActivity: z.object({
+    id: z.string().min(1),
+    limit: z.number().int().positive().max(100).optional(),
+    cursor: z.string().min(1).optional(),
+  }),
+  grantCreate: z.object({
+    role: z.string().min(1),
+    label: z.string().min(1).max(120),
+    purpose: z.string().max(500).optional(),
+    scope: GRANT_SCOPE.optional(),
+    evidence: GRANT_EVIDENCE.optional(),
+    expiresInDays: GRANT_EXPIRES.optional(),
+  }),
+  grantUpdate: z.object({
+    id: z.string().min(1),
+    label: z.string().min(1).max(120).optional(),
+    purpose: z.string().max(500).optional(),
+    scope: GRANT_SCOPE.optional(),
+    evidence: GRANT_EVIDENCE.optional(),
+    expiresInDays: GRANT_EXPIRES.optional(),
   }),
 
   fieldUpdate: z.object({
@@ -714,9 +805,17 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     title: "TracePass products",
     description:
       "Manage the TracePass product catalogue. A product is the catalogue layer — one product can have many passports (one per serialised unit). Products are not billable on their own. Archive is in tracepass_passport_lifecycle.\n\n" +
-      "Actions (pass via `action`; `{…}` is the `args` object):\n- list — { page?, limit? (≤100), category?, status?, search? }. Read-only.\n- get — { id }. Read-only.\n- create — { name, model, category, description? }. `category` is one of the 13 DPP categories (tracepass_templates list).\n- update — { id, name?, model?, description? }; at least one field.\n- create_batch — { products: [ { name, model, category, description? }, … ] }, up to 100. Partial-success: per-item status, so some can be created while others error. The batch consumes N writes upfront; if that would exceed the daily cap NOTHING is created (429).",
+      "Actions (pass via `action`; `{…}` is the `args` object):\n- list — { page?, limit? (≤100), category?, status?, search? }. Read-only.\n- get — { id }. Read-only.\n- create — { name, model, category, description? }. `category` is one of the 13 DPP categories (tracepass_templates list).\n- update — { id, name?, model?, description? }; at least one field.\n- get_links — { id, format? (json|csv), limit? (≤5000), cursor? (json: prior nextCursor) }. Every PUBLISHED passport's serial, passportUrl, status (json adds qrApiUrl, needs your API credentials) plus the model page URL, for a dealer asking for passport links.\n- get_model_qr — { id, format? (svg|png), gtin? (14 digits) }. QR of the model page. 404 model_not_found; 400 gtin_required (several GTINs) or invalid_gtin.\n- create_batch — { products: [ { name, model, category, description? }, … ] }, up to 100. Partial-success: per-item status, so some can be created while others error. The batch consumes N writes upfront; if that would exceed the daily cap NOTHING is created (429).",
     inputSchema: {
-      action: z.enum(["list", "get", "create", "create_batch", "update"]),
+      action: z.enum([
+        "list",
+        "get",
+        "create",
+        "create_batch",
+        "update",
+        "get_links",
+        "get_model_qr",
+      ]),
       args: z
         .object({
           id: z.string().optional(),
@@ -728,6 +827,9 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           limit: z.number().optional(),
           status: z.string().optional(),
           search: z.string().optional(),
+          format: z.string().optional(),
+          gtin: z.string().optional(),
+          cursor: z.string().optional(),
           products: z.array(z.record(z.string(), z.unknown())).optional(),
         })
         .partial()
@@ -769,6 +871,24 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           const { id, ...patch } = p;
           return apiResult(await client.patch(`/api/v1/products/${seg(id)}`, patch));
         }
+        case "get_links": {
+          const p = parseArgs(SCHEMAS.productLinks, a.args, "tracepass_products", action);
+          if (isErr(p)) return p;
+          return apiResult(
+            await client.get(
+              `/api/v1/products/${seg(p.id)}/links${qs({ format: p.format, limit: p.limit, cursor: p.cursor })}`,
+            ),
+          );
+        }
+        case "get_model_qr": {
+          const p = parseArgs(SCHEMAS.productModelQr, a.args, "tracepass_products", action);
+          if (isErr(p)) return p;
+          return apiResult(
+            await client.get(
+              `/api/v1/products/${seg(p.id)}/links/model-qr${qs({ format: p.format, gtin: p.gtin })}`,
+            ),
+          );
+        }
         default:
           if (action === "archive") {
             return errorResult(
@@ -789,7 +909,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "IMPORTANT: `create` makes a DRAFT passport: no plan DPP slot, never billed. The slot, and any overage past the plan cap, is taken when it is published in the TracePass dashboard, not through this tool. Each create counts against the daily write budget.\n\n" +
       "EU DPP REGISTRY (battery): the operator registers a passport itself, on the Registry website under its own EU Login. TracePass prepares what it submits and records what it reports; it never submits to the Registry and never verifies the outcome. The acceptance environment has no legal effect; production is recorded with record_registration (tracepass_passport_lifecycle). Paid plan; an OAuth app must act for an admin or owner.\n\n" +
       "Identifier schemes (EN 18219): gs1 | iso15459 | iec61406 | did | doi; batteries accept ONLY gs1 and iso15459. Shapes, lineage, snapshots, measurements, refusal codes: resource tracepass://reference/passports.\n\n" +
-      "Actions (pass via `action`; `{…}` is the `args` object). Read-only unless marked WRITE. A *_by_serial action takes { serial, gtin? } instead of `id` (on 409 ambiguous_serial pass `gtin`).\n- list — { page?, limit? (≤100), productId?, status?, search? }. status ∈ draft|in_review|approved|published|suspended|expired|archived.\n- get, get_by_serial — { id, format? (summary|full), lang? }.\n- compliance — { id }. compliant | compliant_with_warnings | incomplete, with regulation-cited findings and byRegulation[]. A regulation absent from byRegulation raised no finding, which is not the same as passed.\n- registry_readiness — { id }. Battery only. { ready, findings[] }: the Registry's FORMAL pre-submission check, not the compliance verdict.\n- prepare_registry_upi — { id }. WRITE, battery, published only. { upi, preparedAt } for the operator to paste into the Registry form. Submits nothing.\n- prepare_registry_upload_file — { passportIds (1–100) }. WRITE, battery. { xml, filename, included, excluded }: the operator uploads `xml` on the Registry website; TracePass does not. 1 write per included passport.\n- record_acceptance_test — { id, result: passed|failed, errorCode? }. WRITE, battery, published only. Records what the operator reports from the ACCEPTANCE environment: no legal effect, not verified. Undo: undo_registration (acceptance).\n- create — { productId, identifier?, gtin?, serialNumber?, lineage? }. Draft, not billed. identifier preferred, or legacy gtin + serialNumber. Battery: only gs1/iso15459, else 400. Duplicate: 409. lineage (battery): a repurposed, remanufactured or reused battery needs a NEW passport linked to the original(s) (Art. 77(7)); immutable after create.\n- get_qr, get_qr_by_serial — { id, format? (svg|png), symbology? (qr|datamatrix) }.\n- list_snapshots — { id, page?, limit?, at? (ISO 8601) }; get_snapshot — { id, snapshotId }. EN 18221 change archive (`at` = the snapshot valid then). 1 read each.\n- get_condition_flags, _by_serial — { id }. Approved yes/no facts that gate conditional duties; an approved flag can make fields required and block publish. 1 read.\n- set_condition_flags, _by_serial — { id, flags: Record<flagKey, boolean|null> }. WRITE; null clears. WARNING: approving a flag can make fields required and block publishing if empty — fix them before or right after.\n- capture_measurements, _by_serial — { id, measurements: [ { fieldKey, value, measuredAt (ISO 8601), externalId?, unit? } ] (≤500) }. WRITE, battery, published only. Over-life data from the customer's equipment; metered against the monthly measurement allowance, not the write budget.\n- list_measurements, _by_serial — { id, fieldKey?, from?, to?, limit? (≤200), cursor? }; latest_measurements, _by_serial — { id }. Read-only.",
+      "Actions (pass via `action`; `{…}` is the `args` object). Read-only unless marked WRITE. A *_by_serial action takes { serial, gtin? } instead of `id` (on 409 ambiguous_serial pass `gtin`).\n- list — { page?, limit? (≤100), productId?, status?, search? }. status ∈ draft|in_review|approved|published|suspended|expired|archived.\n- get, get_by_serial — { id, format? (summary|full), lang? }.\n- compliance — { id }. compliant | compliant_with_warnings | incomplete, with regulation-cited findings and byRegulation[]. A regulation absent from byRegulation raised no finding, which is not the same as passed.\n- registry_readiness — { id }. Battery only. { ready, findings[] }: the Registry's FORMAL pre-submission check, not the compliance verdict.\n- prepare_registry_upi — { id }. WRITE, battery, published only. { upi, preparedAt } for the operator to paste into the Registry form. Submits nothing.\n- prepare_registry_upload_file — { passportIds (1–100) }. WRITE, battery. { xml, filename, included, excluded }: the operator uploads `xml` on the Registry website; TracePass does not. 1 write per included passport.\n- record_acceptance_test — { id, result: passed|failed, errorCode? }. WRITE, battery, published only. Records what the operator reports from the ACCEPTANCE environment: no legal effect, not verified. Undo: undo_registration (acceptance).\n- create — { productId, identifier?, gtin?, serialNumber?, lineage? }. Draft, not billed. identifier preferred, or legacy gtin + serialNumber. Battery: only gs1/iso15459, else 400. Duplicate: 409. lineage (battery): a repurposed, remanufactured or reused battery needs a NEW passport linked to the original(s) (Art. 77(7)); immutable after create.\n- get_qr, get_qr_by_serial — { id, format? (svg|png), symbology? (qr|datamatrix) }. One passport's QR; the bare GTIN URL is the product's model page (see products get_links).\n- list_snapshots — { id, page?, limit?, at? (ISO 8601) }; get_snapshot — { id, snapshotId }. EN 18221 change archive (`at` = the snapshot valid then). Entries carry contentHash, hashMethod (jcs-sha256 = RFC 8785 + SHA-256; older: sorted-json-sha256), previousHash and, in the list, chainLink plus a chain verdict. 1 read each.\n- get_condition_flags, _by_serial — { id }. Approved yes/no facts that gate conditional duties; an approved flag can make fields required and block publish. 1 read.\n- set_condition_flags, _by_serial — { id, flags: Record<flagKey, boolean|null> }. WRITE; null clears. WARNING: approving a flag can make fields required and block publishing if empty — fix them before or right after.\n- capture_measurements, _by_serial — { id, measurements: [ { fieldKey, value, measuredAt (ISO 8601), externalId?, unit? } ] (≤500) }. WRITE, battery, published only. Over-life data from the customer's equipment; metered against the monthly measurement allowance, not the write budget.\n- list_measurements, _by_serial — { id, fieldKey?, from?, to?, limit? (≤200), cursor? }; latest_measurements, _by_serial — { id }. Read-only.",
     inputSchema: {
       action: z.enum([
         "list",
@@ -1493,9 +1613,9 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     name: "tracepass_passport_lifecycle",
     title: "TracePass passport lifecycle (irreversible actions)",
     description:
-      "WARNING: Every action here changes what the public sees or is a legal act, some irreversible. `archive` permanently removes the public QR code (it 404s forever). `record_registration` records the economic operator's registration in the production EU DPP Registry and locks the passport's operator and facility identifiers. `place_on_market` submits a registration to an EN 18222 registry API. The assistant MUST confirm with the user before each call. Use `suspend` (reversible — public QR shows 'suspended') as the safe alternative to archive when a change might need to be undone; a passport placed on the market cannot be suspended, because it must stay public.\n\n" +
+      "WARNING: Every action here changes what the public sees or is a legal act, some irreversible. `archive` permanently takes the passport off public view (its URL shows an archive notice; only an authority access grant still reads it). `record_registration` records the economic operator's registration in the production EU DPP Registry and locks the passport's operator and facility identifiers. `place_on_market` submits a registration to an EN 18222 registry API. The assistant MUST confirm with the user before each call. Use `suspend` (reversible — public QR shows 'suspended') as the safe alternative to archive when a change might need to be undone; a passport placed on the market cannot be suspended, because it must stay public.\n\n" +
       "EU DPP REGISTRY: the operator registers a battery passport itself, on the Registry website under its own EU Login; TracePass never submits to the Registry and never verifies the outcome. The acceptance environment has no legal effect; only a production registration counts. Paid plan; a connected app (OAuth) must act for an admin or owner. Refusal codes: resource tracepass://reference/lifecycle.\n\n" +
-      "Actions (pass via `action`; `{…}` is the `args` object). All are WRITEs (1 write each). A *_by_serial action takes { serial, gtin? } instead of `id` (on 409 ambiguous_serial pass `gtin`).\n- record_registration — { id, placedOnMarketAt? (YYYY-MM-DD), registrationId? }. Battery, published only. Records that the operator has registered this passport in the PRODUCTION EU DPP Registry, as the operator states it; TracePass does not check it. Confirm with the user first, and only after the operator has registered on the Registry website. Effects: marked placed on the market; operator and facility identifiers locked (409 operator_locked); webhook fires.\n- undo_registration — { id, environment: production|acceptance }. Undoes a mistaken record; production unlocks the operator identifiers (a delivered webhook is not recalled). Changes nothing in the Registry. Confirm with the user first.\n- place_on_market — { id }. Battery, published only. Submits to the EN 18222 registry API in the account's registry settings. NOT the way into the EU DPP Registry, which does not accept it: use prepare_registry_upi / prepare_registry_upload_file, then record_registration. A legal act for the economic operator — confirm with the user first. ASYNCHRONOUS: answers 202 \"placing\"; follow placeOnMarketStatus (placing → placed | rejected) by reading the passport. 409 codes include registry_host_not_allowed (the configured registry address is not allowed; check the URL) and registry_not_ready (run registry_readiness).\n- suspend, suspend_by_serial — { id }. Reversible — public QR shows 'suspended'. Refused with 409 passport_placed_on_market once the passport is placed on the market or its registration is under way.\n- archive, archive_by_serial — { id, reason? }. IRREVERSIBLE and destructive — confirm with the user first. The public QR permanently 404s. reason is REQUIRED for battery passports (400 reason_required): recycled, never_placed (never placed on the market or put into service) or duplicate_or_error; never_placed is refused (409 reason_contradicts_placement) once placed on the market.\n- archive_product — { id }. Archives a PRODUCT (not a passport). Reversible — soft-archives it from the catalogue. 409 while any non-archived passport references it; archive those first.",
+      "Actions (pass via `action`; `{…}` is the `args` object). All are WRITEs (1 write each). A *_by_serial action takes { serial, gtin? } instead of `id` (on 409 ambiguous_serial pass `gtin`).\n- record_registration — { id, placedOnMarketAt? (YYYY-MM-DD), registrationId? }. Battery, published only. Records that the operator has registered this passport in the PRODUCTION EU DPP Registry, as the operator states it; TracePass does not check it. Confirm with the user first, and only after the operator has registered on the Registry website. Effects: marked placed on the market; operator and facility identifiers locked (409 operator_locked); webhook fires.\n- undo_registration — { id, environment: production|acceptance }. Undoes a mistaken record; production unlocks the operator identifiers (a delivered webhook is not recalled). Changes nothing in the Registry. Confirm with the user first.\n- place_on_market — { id }. Battery, published only. Submits to the EN 18222 registry API in the account's registry settings. NOT the way into the EU DPP Registry, which does not accept it: use prepare_registry_upi / prepare_registry_upload_file, then record_registration. A legal act for the economic operator — confirm with the user first. ASYNCHRONOUS: answers 202 \"placing\"; follow placeOnMarketStatus (placing → placed | rejected) by reading the passport. 409 codes include registry_host_not_allowed (the configured registry address is not allowed; check the URL) and registry_not_ready (run registry_readiness).\n- suspend, suspend_by_serial — { id }. Reversible — public QR shows 'suspended'. Refused with 409 passport_placed_on_market once the passport is placed on the market or its registration is under way.\n- archive, archive_by_serial — { id, reason? }. IRREVERSIBLE and destructive — confirm with the user first. Its URL then shows an archive notice (machine formats 404); only an authority grant still reads it. reason is REQUIRED for battery passports (400 reason_required): recycled, never_placed (never placed on the market or put into service) or duplicate_or_error; never_placed is refused (409 reason_contradicts_placement) once placed on the market.\n- archive_product — { id }. Archives a PRODUCT (not a passport). Reversible — soft-archives it from the catalogue. 409 while any non-archived passport references it; archive those first.",
     inputSchema: {
       action: z
         .enum([
@@ -1509,7 +1629,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           "archive_product",
         ])
         .describe(
-          "All actions require user confirmation. archive is IRREVERSIBLE (QR 404s forever); suspend is reversible.",
+          "All actions require user confirmation. archive is IRREVERSIBLE (public URL becomes an archive notice); suspend is reversible.",
         ),
       args: z
         .object({
@@ -1637,6 +1757,92 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     },
   };
 
+  // ────────────────────── access grants ────────────────────────
+  const accessGrantsTool: McpToolDefinition = {
+    name: "tracepass_access_grants",
+    title: "TracePass access grants",
+    description:
+      'Share restricted passport data with a partner (repairer, recycler, purchaser...) through an access grant, and see or end the grants already issued. A grant names a role, a scope (company, chosen products or chosen passports), a purpose, optional evidence and an expiry (default 12 months). Needs an OAuth connection approved for access grants or an API key with "May manage access grants" switched on (403 access_grants_not_enabled); writing needs an admin. Authority roles (e.g. market surveillance) are dashboard-only end to end: create, update and revoke of such a grant are refused (400 role_dashboard_only).\n\n' +
+      "IMPORTANT: `create` returns the secret pa_ token ONCE. Hand it to the recipient and do not repeat it, store it or put it in a log. It cannot be shown again; if lost, revoke the grant and create a new one. A confirmed grant gives a third party access to restricted data: confirm the recipient, role, scope and purpose with the user first.\n\n" +
+      "Actions (pass via `action`; `{…}` is the `args` object). Reads never return a token.\n- list — { limit? (≤100), cursor?, role?, status? (active|expired|revoked), passportId?, productId? }.\n- get — { id }.\n- create — { role, label, purpose?, scope? ({ kind: company } with no ids, or { kind: products|passports, ids[] } with at least one id), evidence? ({ type: register_entry|invoice|authority_letter|contract|other, reference, note? }), expiresInDays? (1-1825; null = no expiry) }. WRITE.\n- update — { id, label?, purpose?, scope?, evidence?, expiresInDays? }; at least one. WRITE.\n- revoke — { id }. WRITE, ends the grant at once; repeating it is safe.\n- activity — { id, limit? (≤100), cursor? }. The grant's access log.",
+    inputSchema: {
+      action: z.enum(["list", "get", "create", "update", "revoke", "activity"]),
+      args: z
+        .object({
+          id: z.string().optional(),
+          role: z.string().optional(),
+          label: z.string().optional(),
+          purpose: z.string().optional(),
+          scope: z.object({ kind: z.string(), ids: z.array(z.string()).optional() }).optional(),
+          evidence: z.record(z.string(), z.unknown()).optional(),
+          expiresInDays: z.number().nullable().optional(),
+          status: z.string().optional(),
+          passportId: z.string().optional(),
+          productId: z.string().optional(),
+          limit: z.number().optional(),
+          cursor: z.string().optional(),
+        })
+        .partial()
+        .optional(),
+    },
+    outputSchema: API_OUTPUT_SCHEMA,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    handler: async (a) => {
+      const action = String(a.action);
+      const tool = "tracepass_access_grants";
+      switch (action) {
+        case "list": {
+          const p = parseArgs(SCHEMAS.grantList, a.args, tool, action);
+          if (isErr(p)) return p;
+          return grantResult(await client.get(`/api/v1/access-grants${qs(p)}`));
+        }
+        case "get": {
+          const p = parseArgs(SCHEMAS.grantId, a.args, tool, action);
+          if (isErr(p)) return p;
+          return grantResult(await client.get(`/api/v1/access-grants/${seg(p.id)}`));
+        }
+        case "create": {
+          const p = parseArgs(SCHEMAS.grantCreate, a.args, tool, action);
+          if (isErr(p)) return p;
+          const res = await client.post("/api/v1/access-grants", p);
+          const result = grantResult(res);
+          const token = (res.body as { token?: unknown } | null)?.token;
+          if (res.ok && typeof token === "string") {
+            result.content.push({ type: "text", text: GRANT_TOKEN_NOTICE });
+          }
+          return result;
+        }
+        case "update": {
+          const p = parseArgs(SCHEMAS.grantUpdate, a.args, tool, action);
+          if (isErr(p)) return p;
+          const { id, ...patch } = p;
+          return grantResult(await client.patch(`/api/v1/access-grants/${seg(id)}`, patch));
+        }
+        case "revoke": {
+          const p = parseArgs(SCHEMAS.grantId, a.args, tool, action);
+          if (isErr(p)) return p;
+          return grantResult(await client.delete(`/api/v1/access-grants/${seg(p.id)}`));
+        }
+        case "activity": {
+          const p = parseArgs(SCHEMAS.grantActivity, a.args, tool, action);
+          if (isErr(p)) return p;
+          return grantResult(
+            await client.get(
+              `/api/v1/access-grants/${seg(p.id)}/activity${qs({ limit: p.limit, cursor: p.cursor })}`,
+            ),
+          );
+        }
+        default:
+          return errorResult(`Unknown action "${action}" for tracepass_access_grants.`);
+      }
+    },
+  };
+
   return [
     productsTool,
     passportsTool,
@@ -1646,5 +1852,6 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     templatesTool,
     scopeTool,
     lifecycleTool,
+    accessGrantsTool,
   ];
 }

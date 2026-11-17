@@ -183,3 +183,38 @@ describe("SEC-08 — oversized JSON-RPC batch returns 400", () => {
     expect(res.status).not.toBe(400);
   });
 });
+
+describe("the /mcp 401 challenge asks for the default scopes only", () => {
+  it("names scope without the access-grant scopes, while the metadata still advertises them", async () => {
+    const srv = await startTestServer();
+    try {
+      const res = await fetch(`http://127.0.0.1:${String(srv.port)}/mcp`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json, text/event-stream",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "tracepass_products", arguments: { action: "list" } },
+        }),
+      });
+      expect(res.status).toBe(401);
+      const challenge = res.headers.get("www-authenticate") ?? "";
+      expect(challenge).toContain(
+        'scope="passports:read passports:write regulatory:read offline_access"',
+      );
+      expect(challenge).not.toContain("access_grants");
+      await res.body?.cancel();
+      const meta = await fetch(
+        `http://127.0.0.1:${String(srv.port)}/.well-known/oauth-protected-resource`,
+      );
+      const scopes = ((await meta.json()) as { scopes_supported: string[] }).scopes_supported;
+      expect(scopes).toEqual(expect.arrayContaining(["access_grants:read", "access_grants:write"]));
+    } finally {
+      await srv.close();
+    }
+  });
+});
