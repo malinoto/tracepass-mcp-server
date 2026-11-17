@@ -192,7 +192,7 @@ export function registerResources(server: McpServer, client: TracePassClient): v
     {
       title: "Passport snapshot list",
       description:
-        "The snapshot history of a passport (newest first). A snapshot is written on publish and after every change to a published, suspended, expired or archived passport (EN 18221 change archive); each entry carries the snapshot id, version, reason (e.g. published, field_edit, status_change, baseline), actor (who caused it, when known), snapshotAt timestamp, contentHash, hashValid (re-verified on read), restorable flag, and field count. Attach this to ground the model in a passport's change history for compliance or ERP audit; for the version valid at a given date use the list_snapshots action with `at`. tracepass://passport/{id}/snapshots.",
+        "The snapshot history of a passport (newest first). A snapshot is written on publish and after every change to a published, suspended, expired or archived passport (EN 18221 change archive); each entry carries the snapshot id, version, reason (e.g. published, field_edit, status_change, baseline), actor (who caused it, when known), snapshotAt timestamp, contentHash, hashMethod (jcs-sha256 for new snapshots, sorted-json-sha256 for older ones), previousHash (hash chain), hashValid (re-verified on read), chainLink (ok, broken or unchained), and a list-level chain verdict, restorable flag, and field count. Attach this to ground the model in a passport's change history for compliance or ERP audit; for the version valid at a given date use the list_snapshots action with `at`. tracepass://passport/{id}/snapshots.",
       mimeType: "application/json",
     },
     async (uri, variables) => {
