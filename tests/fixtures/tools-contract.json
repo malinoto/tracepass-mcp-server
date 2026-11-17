@@ -1,1018 +1,1173 @@
 [
-  {
-    "name": "tracepass_products",
-    "title": "TracePass products",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "action": {
-          "type": "string",
-          "enum": ["list", "get", "create", "create_batch", "update", "get_links", "get_model_qr"]
-        },
-        "args": {
-          "type": "object",
-          "properties": {
-            "id": {
-              "type": "string"
-            },
-            "name": {
-              "type": "string"
-            },
-            "model": {
-              "type": "string"
-            },
-            "category": {
-              "type": "string"
-            },
-            "description": {
-              "type": "string"
-            },
-            "page": {
-              "type": "number"
-            },
-            "limit": {
-              "type": "number"
-            },
-            "status": {
-              "type": "string"
-            },
-            "search": {
-              "type": "string"
-            },
-            "format": {
-              "type": "string"
-            },
-            "gtin": {
-              "type": "string"
-            },
-            "cursor": {
-              "type": "string"
-            },
-            "products": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "propertyNames": {
-                  "type": "string"
-                },
-                "additionalProperties": {}
-              }
-            }
-          }
-        }
+ {
+  "name": "tracepass_products",
+  "title": "TracePass products",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "action": {
+     "type": "string",
+     "enum": [
+      "list",
+      "get",
+      "create",
+      "create_batch",
+      "update",
+      "get_links",
+      "get_model_qr"
+     ]
+    },
+    "args": {
+     "type": "object",
+     "properties": {
+      "id": {
+       "type": "string"
       },
-      "required": ["action"],
-      "$schema": "http://json-schema.org/draft-07/schema#"
-    },
-    "outputSchema": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "items": {
-          "type": "array",
-          "items": {}
-        },
-        "total": {
-          "type": "number"
-        },
-        "page": {
-          "type": "number"
-        },
-        "limit": {
-          "type": "number"
-        },
-        "totalPages": {
-          "type": "number"
-        },
-        "result": {},
-        "error": {
-          "type": ["string", "null"]
-        },
-        "message": {
-          "type": ["string", "null"]
-        }
+      "name": {
+       "type": "string"
       },
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": false
-    },
-    "annotations": {
-      "readOnlyHint": false,
-      "destructiveHint": true,
-      "idempotentHint": false,
-      "openWorldHint": false
-    },
-    "execution": {
-      "taskSupport": "forbidden"
+      "model": {
+       "type": "string"
+      },
+      "category": {
+       "type": "string"
+      },
+      "description": {
+       "type": "string"
+      },
+      "page": {
+       "type": "number"
+      },
+      "limit": {
+       "type": "number"
+      },
+      "status": {
+       "type": "string"
+      },
+      "search": {
+       "type": "string"
+      },
+      "format": {
+       "type": "string"
+      },
+      "gtin": {
+       "type": "string"
+      },
+      "cursor": {
+       "type": "string"
+      },
+      "products": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "propertyNames": {
+         "type": "string"
+        },
+        "additionalProperties": {}
+       }
+      }
+     }
     }
+   },
+   "required": [
+    "action"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
   },
-  {
-    "name": "tracepass_passports",
-    "title": "TracePass passports",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "action": {
-          "type": "string",
-          "enum": [
-            "list",
-            "get",
-            "get_by_serial",
-            "compliance",
-            "registry_readiness",
-            "prepare_registry_upi",
-            "prepare_registry_upload_file",
-            "record_acceptance_test",
-            "get_condition_flags",
-            "get_condition_flags_by_serial",
-            "set_condition_flags",
-            "set_condition_flags_by_serial",
-            "capture_measurements",
-            "capture_measurements_by_serial",
-            "list_measurements",
-            "list_measurements_by_serial",
-            "latest_measurements",
-            "latest_measurements_by_serial",
-            "create",
-            "get_qr",
-            "get_qr_by_serial",
-            "list_snapshots",
-            "get_snapshot"
-          ]
-        },
-        "args": {
-          "type": "object",
-          "properties": {
-            "id": {
-              "type": "string"
-            },
-            "passportIds": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "result": {
-              "type": "string",
-              "enum": ["passed", "failed"]
-            },
-            "errorCode": {
-              "type": "string"
-            },
-            "serial": {
-              "type": "string"
-            },
-            "gtin": {
-              "type": "string"
-            },
-            "productId": {
-              "type": "string"
-            },
-            "identifier": {
-              "type": "object",
-              "propertyNames": {
-                "type": "string"
-              },
-              "additionalProperties": {}
-            },
-            "serialNumber": {
-              "type": "string"
-            },
-            "lineage": {
-              "type": "object",
-              "properties": {
-                "predecessors": {
-                  "maxItems": 10,
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "identifier": {
-                        "type": "string",
-                        "maxLength": 2000
-                      },
-                      "internalPassportId": {
-                        "type": "string"
-                      },
-                      "trigger": {
-                        "type": "string",
-                        "enum": [
-                          "preparation_for_reuse",
-                          "preparation_for_repurposing",
-                          "repurposing",
-                          "remanufacturing"
-                        ]
-                      }
-                    },
-                    "required": ["trigger"]
-                  }
-                },
-                "noPredecessorReason": {
-                  "type": "string",
-                  "maxLength": 500
-                }
-              },
-              "required": ["predecessors"]
-            },
-            "format": {
-              "type": "string"
-            },
-            "symbology": {
-              "type": "string"
-            },
-            "at": {
-              "type": "string"
-            },
-            "lang": {
-              "type": "string"
-            },
-            "page": {
-              "type": "number"
-            },
-            "limit": {
-              "type": "number"
-            },
-            "status": {
-              "type": "string"
-            },
-            "search": {
-              "type": "string"
-            },
-            "snapshotId": {
-              "type": "string"
-            },
-            "measurements": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "fieldKey": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "value": {},
-                  "measuredAt": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "externalId": {
-                    "type": "string"
-                  },
-                  "unit": {
-                    "type": "string"
-                  }
-                },
-                "required": ["fieldKey", "value", "measuredAt"]
-              }
-            },
-            "fieldKey": {
-              "type": "string"
-            },
-            "from": {
-              "type": "string"
-            },
-            "to": {
-              "type": "string"
-            },
-            "cursor": {
-              "type": "string"
-            },
-            "flags": {
-              "type": "object",
-              "propertyNames": {
-                "type": "string"
-              },
-              "additionalProperties": {
-                "type": ["boolean", "null"]
-              }
-            }
-          }
-        }
-      },
-      "required": ["action"],
-      "$schema": "http://json-schema.org/draft-07/schema#"
+  "outputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string"
     },
-    "outputSchema": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "items": {
-          "type": "array",
-          "items": {}
-        },
-        "total": {
-          "type": "number"
-        },
-        "page": {
-          "type": "number"
-        },
-        "limit": {
-          "type": "number"
-        },
-        "totalPages": {
-          "type": "number"
-        },
-        "result": {},
-        "error": {
-          "type": ["string", "null"]
-        },
-        "message": {
-          "type": ["string", "null"]
-        }
-      },
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": false
+    "items": {
+     "type": "array",
+     "items": {}
     },
-    "annotations": {
-      "readOnlyHint": false,
-      "destructiveHint": true,
-      "idempotentHint": false,
-      "openWorldHint": false
+    "total": {
+     "type": "number"
     },
-    "execution": {
-      "taskSupport": "forbidden"
+    "page": {
+     "type": "number"
+    },
+    "limit": {
+     "type": "number"
+    },
+    "totalPages": {
+     "type": "number"
+    },
+    "result": {},
+    "error": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "message": {
+     "type": [
+      "string",
+      "null"
+     ]
     }
+   },
+   "$schema": "http://json-schema.org/draft-07/schema#",
+   "additionalProperties": false
   },
-  {
-    "name": "tracepass_passport_fields",
-    "title": "TracePass passport fields",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "action": {
-          "type": "string",
-          "enum": ["update", "update_by_serial"]
-        },
-        "args": {
-          "type": "object",
-          "properties": {
-            "id": {
-              "type": "string"
-            },
-            "serial": {
-              "type": "string"
-            },
-            "gtin": {
-              "type": "string"
-            },
-            "fieldKey": {
-              "type": "string"
-            },
-            "value": {},
-            "source": {
-              "type": "string",
-              "enum": ["manual", "ai_suggested"]
-            }
-          }
-        }
-      },
-      "required": ["action"],
-      "$schema": "http://json-schema.org/draft-07/schema#"
-    },
-    "outputSchema": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "items": {
-          "type": "array",
-          "items": {}
-        },
-        "total": {
-          "type": "number"
-        },
-        "page": {
-          "type": "number"
-        },
-        "limit": {
-          "type": "number"
-        },
-        "totalPages": {
-          "type": "number"
-        },
-        "result": {},
-        "error": {
-          "type": ["string", "null"]
-        },
-        "message": {
-          "type": ["string", "null"]
-        }
-      },
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": false
-    },
-    "annotations": {
-      "readOnlyHint": false,
-      "destructiveHint": true,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
-    "execution": {
-      "taskSupport": "forbidden"
-    }
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "idempotentHint": false,
+   "openWorldHint": false
   },
-  {
-    "name": "tracepass_passport_parties",
-    "title": "TracePass passport parties",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "action": {
-          "type": "string",
-          "enum": ["set", "remove"]
-        },
-        "args": {
-          "type": "object",
-          "properties": {
-            "id": {
-              "type": "string"
-            },
-            "role": {
-              "type": "string"
-            },
-            "legalName": {
-              "type": "string"
-            },
-            "gln": {
-              "type": "string"
-            },
-            "country": {
-              "type": "string"
-            },
-            "url": {
-              "type": "string"
-            },
-            "tradeName": {
-              "type": "string"
-            },
-            "postalAddress": {
-              "type": "string"
-            },
-            "email": {
-              "type": "string"
-            },
-            "legacyOperatorId": {
-              "type": "string"
-            },
-            "operatorIdentifier": {
-              "type": "object",
-              "propertyNames": {
-                "type": "string"
-              },
-              "additionalProperties": {}
-            },
-            "facilityIdentifier": {
-              "type": "object",
-              "propertyNames": {
-                "type": "string"
-              },
-              "additionalProperties": {}
-            }
-          }
-        }
-      },
-      "required": ["action"],
-      "$schema": "http://json-schema.org/draft-07/schema#"
-    },
-    "outputSchema": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "items": {
-          "type": "array",
-          "items": {}
-        },
-        "total": {
-          "type": "number"
-        },
-        "page": {
-          "type": "number"
-        },
-        "limit": {
-          "type": "number"
-        },
-        "totalPages": {
-          "type": "number"
-        },
-        "result": {},
-        "error": {
-          "type": ["string", "null"]
-        },
-        "message": {
-          "type": ["string", "null"]
-        }
-      },
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": false
-    },
-    "annotations": {
-      "readOnlyHint": false,
-      "destructiveHint": true,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
-    "execution": {
-      "taskSupport": "forbidden"
-    }
-  },
-  {
-    "name": "tracepass_epcis",
-    "title": "TracePass EPCIS 2.0",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "action": {
-          "type": "string",
-          "enum": ["export", "export_by_serial", "capture", "capture_job", "query"]
-        },
-        "args": {
-          "type": "object",
-          "properties": {
-            "id": {
-              "type": "string"
-            },
-            "serial": {
-              "type": "string"
-            },
-            "gtin": {
-              "type": "string"
-            },
-            "events": {},
-            "jobId": {
-              "type": "string"
-            },
-            "params": {
-              "type": "object",
-              "propertyNames": {
-                "type": "string"
-              },
-              "additionalProperties": {
-                "type": "string"
-              }
-            }
-          }
-        }
-      },
-      "required": ["action"],
-      "$schema": "http://json-schema.org/draft-07/schema#"
-    },
-    "outputSchema": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "items": {
-          "type": "array",
-          "items": {}
-        },
-        "total": {
-          "type": "number"
-        },
-        "page": {
-          "type": "number"
-        },
-        "limit": {
-          "type": "number"
-        },
-        "totalPages": {
-          "type": "number"
-        },
-        "result": {},
-        "error": {
-          "type": ["string", "null"]
-        },
-        "message": {
-          "type": ["string", "null"]
-        }
-      },
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": false
-    },
-    "annotations": {
-      "readOnlyHint": false,
-      "destructiveHint": false,
-      "idempotentHint": false,
-      "openWorldHint": false
-    },
-    "execution": {
-      "taskSupport": "forbidden"
-    }
-  },
-  {
-    "name": "tracepass_templates",
-    "title": "TracePass DPP templates (regulatory schemas)",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "action": {
-          "type": "string",
-          "enum": ["list", "get"]
-        },
-        "args": {
-          "type": "object",
-          "properties": {
-            "category": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "required": ["action"],
-      "$schema": "http://json-schema.org/draft-07/schema#"
-    },
-    "outputSchema": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "items": {
-          "type": "array",
-          "items": {}
-        },
-        "total": {
-          "type": "number"
-        },
-        "page": {
-          "type": "number"
-        },
-        "limit": {
-          "type": "number"
-        },
-        "totalPages": {
-          "type": "number"
-        },
-        "result": {},
-        "error": {
-          "type": ["string", "null"]
-        },
-        "message": {
-          "type": ["string", "null"]
-        }
-      },
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": false
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
-    "execution": {
-      "taskSupport": "forbidden"
-    }
-  },
-  {
-    "name": "tracepass_scope",
-    "title": "TracePass DPP scope checker",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "action": {
-          "type": "string",
-          "enum": ["check", "catalogue_report", "catalogue_run", "catalogue_run_status"]
-        },
-        "args": {
-          "type": "object",
-          "properties": {
-            "category": {
-              "type": "string"
-            },
-            "facts": {
-              "type": "object",
-              "propertyNames": {
-                "type": "string"
-              },
-              "additionalProperties": {}
-            },
-            "role": {
-              "type": "string"
-            },
-            "placedOnMarket": {
-              "anyOf": [
-                {
-                  "type": "object",
-                  "properties": {
-                    "date": {
-                      "type": "string"
-                    },
-                    "precision": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["date"]
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "lifecycleEvent": {
-              "type": ["string", "null"]
-            },
-            "contains": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "label": {
-                    "type": "string"
-                  },
-                  "facts": {
-                    "type": "object",
-                    "propertyNames": {
-                      "type": "string"
-                    },
-                    "additionalProperties": {}
-                  }
-                }
-              }
-            },
-            "productId": {
-              "type": ["string", "null"]
-            },
-            "passportId": {
-              "type": ["string", "null"]
-            },
-            "locale": {
-              "type": "string"
-            },
-            "classification": {
-              "type": "string"
-            },
-            "act": {
-              "type": "string"
-            },
-            "changed": {
-              "type": "boolean"
-            },
-            "q": {
-              "type": "string"
-            },
-            "cursor": {
-              "type": "string"
-            },
-            "limit": {
-              "type": "number"
-            },
-            "runId": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "required": ["action"],
-      "$schema": "http://json-schema.org/draft-07/schema#"
-    },
-    "outputSchema": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "items": {
-          "type": "array",
-          "items": {}
-        },
-        "total": {
-          "type": "number"
-        },
-        "page": {
-          "type": "number"
-        },
-        "limit": {
-          "type": "number"
-        },
-        "totalPages": {
-          "type": "number"
-        },
-        "result": {},
-        "error": {
-          "type": ["string", "null"]
-        },
-        "message": {
-          "type": ["string", "null"]
-        }
-      },
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": false
-    },
-    "annotations": {
-      "readOnlyHint": false,
-      "destructiveHint": false,
-      "idempotentHint": false,
-      "openWorldHint": false
-    },
-    "execution": {
-      "taskSupport": "forbidden"
-    }
-  },
-  {
-    "name": "tracepass_passport_lifecycle",
-    "title": "TracePass passport lifecycle (irreversible actions)",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "action": {
-          "type": "string",
-          "enum": [
-            "record_registration",
-            "undo_registration",
-            "place_on_market",
-            "suspend",
-            "suspend_by_serial",
-            "archive",
-            "archive_by_serial",
-            "archive_product"
-          ]
-        },
-        "args": {
-          "type": "object",
-          "properties": {
-            "id": {
-              "type": "string"
-            },
-            "placedOnMarketAt": {
-              "type": "string"
-            },
-            "registrationId": {
-              "type": "string"
-            },
-            "environment": {
-              "type": "string",
-              "enum": ["production", "acceptance"]
-            },
-            "serial": {
-              "type": "string"
-            },
-            "gtin": {
-              "type": "string"
-            },
-            "reason": {
-              "type": "string",
-              "enum": ["recycled", "never_placed", "duplicate_or_error"]
-            }
-          }
-        }
-      },
-      "required": ["action"],
-      "$schema": "http://json-schema.org/draft-07/schema#"
-    },
-    "outputSchema": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "items": {
-          "type": "array",
-          "items": {}
-        },
-        "total": {
-          "type": "number"
-        },
-        "page": {
-          "type": "number"
-        },
-        "limit": {
-          "type": "number"
-        },
-        "totalPages": {
-          "type": "number"
-        },
-        "result": {},
-        "error": {
-          "type": ["string", "null"]
-        },
-        "message": {
-          "type": ["string", "null"]
-        }
-      },
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": false
-    },
-    "annotations": {
-      "readOnlyHint": false,
-      "destructiveHint": true,
-      "idempotentHint": false,
-      "openWorldHint": false
-    },
-    "execution": {
-      "taskSupport": "forbidden"
-    }
-  },
-  {
-    "name": "tracepass_access_grants",
-    "title": "TracePass access grants",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "action": {
-          "type": "string",
-          "enum": ["list", "get", "create", "update", "revoke", "activity"]
-        },
-        "args": {
-          "type": "object",
-          "properties": {
-            "id": {
-              "type": "string"
-            },
-            "role": {
-              "type": "string"
-            },
-            "label": {
-              "type": "string"
-            },
-            "purpose": {
-              "type": "string"
-            },
-            "scope": {
-              "type": "object",
-              "propertyNames": {
-                "type": "string"
-              },
-              "additionalProperties": {}
-            },
-            "evidence": {
-              "type": "object",
-              "propertyNames": {
-                "type": "string"
-              },
-              "additionalProperties": {}
-            },
-            "expiresInDays": {
-              "type": ["number", "null"]
-            },
-            "status": {
-              "type": "string"
-            },
-            "passportId": {
-              "type": "string"
-            },
-            "productId": {
-              "type": "string"
-            },
-            "limit": {
-              "type": "number"
-            },
-            "cursor": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "required": ["action"],
-      "$schema": "http://json-schema.org/draft-07/schema#"
-    },
-    "outputSchema": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "items": {
-          "type": "array",
-          "items": {}
-        },
-        "total": {
-          "type": "number"
-        },
-        "page": {
-          "type": "number"
-        },
-        "limit": {
-          "type": "number"
-        },
-        "totalPages": {
-          "type": "number"
-        },
-        "result": {},
-        "error": {
-          "type": ["string", "null"]
-        },
-        "message": {
-          "type": ["string", "null"]
-        }
-      },
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": false
-    },
-    "annotations": {
-      "readOnlyHint": false,
-      "destructiveHint": true,
-      "idempotentHint": false,
-      "openWorldHint": false
-    },
-    "execution": {
-      "taskSupport": "forbidden"
-    }
+  "execution": {
+   "taskSupport": "forbidden"
   }
+ },
+ {
+  "name": "tracepass_passports",
+  "title": "TracePass passports",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "action": {
+     "type": "string",
+     "enum": [
+      "list",
+      "get",
+      "get_by_serial",
+      "compliance",
+      "registry_readiness",
+      "prepare_registry_upi",
+      "prepare_registry_upload_file",
+      "record_acceptance_test",
+      "get_condition_flags",
+      "get_condition_flags_by_serial",
+      "set_condition_flags",
+      "set_condition_flags_by_serial",
+      "capture_measurements",
+      "capture_measurements_by_serial",
+      "list_measurements",
+      "list_measurements_by_serial",
+      "latest_measurements",
+      "latest_measurements_by_serial",
+      "create",
+      "get_qr",
+      "get_qr_by_serial",
+      "list_snapshots",
+      "get_snapshot"
+     ]
+    },
+    "args": {
+     "type": "object",
+     "properties": {
+      "id": {
+       "type": "string"
+      },
+      "passportIds": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      },
+      "result": {
+       "type": "string",
+       "enum": [
+        "passed",
+        "failed"
+       ]
+      },
+      "errorCode": {
+       "type": "string"
+      },
+      "serial": {
+       "type": "string"
+      },
+      "gtin": {
+       "type": "string"
+      },
+      "productId": {
+       "type": "string"
+      },
+      "identifier": {
+       "type": "object",
+       "propertyNames": {
+        "type": "string"
+       },
+       "additionalProperties": {}
+      },
+      "serialNumber": {
+       "type": "string"
+      },
+      "lineage": {
+       "type": "object",
+       "properties": {
+        "predecessors": {
+         "maxItems": 10,
+         "type": "array",
+         "items": {
+          "type": "object",
+          "properties": {
+           "identifier": {
+            "type": "string",
+            "maxLength": 2000
+           },
+           "internalPassportId": {
+            "type": "string"
+           },
+           "trigger": {
+            "type": "string",
+            "enum": [
+             "preparation_for_reuse",
+             "preparation_for_repurposing",
+             "repurposing",
+             "remanufacturing"
+            ]
+           }
+          },
+          "required": [
+           "trigger"
+          ]
+         }
+        },
+        "noPredecessorReason": {
+         "type": "string",
+         "maxLength": 500
+        }
+       },
+       "required": [
+        "predecessors"
+       ]
+      },
+      "format": {
+       "type": "string"
+      },
+      "symbology": {
+       "type": "string"
+      },
+      "at": {
+       "type": "string"
+      },
+      "lang": {
+       "type": "string"
+      },
+      "page": {
+       "type": "number"
+      },
+      "limit": {
+       "type": "number"
+      },
+      "status": {
+       "type": "string"
+      },
+      "search": {
+       "type": "string"
+      },
+      "snapshotId": {
+       "type": "string"
+      },
+      "measurements": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "fieldKey": {
+          "type": "string",
+          "minLength": 1
+         },
+         "value": {},
+         "measuredAt": {
+          "type": "string",
+          "minLength": 1
+         },
+         "externalId": {
+          "type": "string"
+         },
+         "unit": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "fieldKey",
+         "value",
+         "measuredAt"
+        ]
+       }
+      },
+      "fieldKey": {
+       "type": "string"
+      },
+      "from": {
+       "type": "string"
+      },
+      "to": {
+       "type": "string"
+      },
+      "cursor": {
+       "type": "string"
+      },
+      "flags": {
+       "type": "object",
+       "propertyNames": {
+        "type": "string"
+       },
+       "additionalProperties": {
+        "type": [
+         "boolean",
+         "null"
+        ]
+       }
+      }
+     }
+    }
+   },
+   "required": [
+    "action"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "outputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "items": {
+     "type": "array",
+     "items": {}
+    },
+    "total": {
+     "type": "number"
+    },
+    "page": {
+     "type": "number"
+    },
+    "limit": {
+     "type": "number"
+    },
+    "totalPages": {
+     "type": "number"
+    },
+    "result": {},
+    "error": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "message": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   },
+   "$schema": "http://json-schema.org/draft-07/schema#",
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "idempotentHint": false,
+   "openWorldHint": false
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "tracepass_passport_fields",
+  "title": "TracePass passport fields",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "action": {
+     "type": "string",
+     "enum": [
+      "update",
+      "update_by_serial"
+     ]
+    },
+    "args": {
+     "type": "object",
+     "properties": {
+      "id": {
+       "type": "string"
+      },
+      "serial": {
+       "type": "string"
+      },
+      "gtin": {
+       "type": "string"
+      },
+      "fieldKey": {
+       "type": "string"
+      },
+      "value": {},
+      "source": {
+       "type": "string",
+       "enum": [
+        "manual",
+        "ai_suggested"
+       ]
+      }
+     }
+    }
+   },
+   "required": [
+    "action"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "outputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "items": {
+     "type": "array",
+     "items": {}
+    },
+    "total": {
+     "type": "number"
+    },
+    "page": {
+     "type": "number"
+    },
+    "limit": {
+     "type": "number"
+    },
+    "totalPages": {
+     "type": "number"
+    },
+    "result": {},
+    "error": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "message": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   },
+   "$schema": "http://json-schema.org/draft-07/schema#",
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "idempotentHint": true,
+   "openWorldHint": false
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "tracepass_passport_parties",
+  "title": "TracePass passport parties",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "action": {
+     "type": "string",
+     "enum": [
+      "set",
+      "remove"
+     ]
+    },
+    "args": {
+     "type": "object",
+     "properties": {
+      "id": {
+       "type": "string"
+      },
+      "role": {
+       "type": "string"
+      },
+      "legalName": {
+       "type": "string"
+      },
+      "gln": {
+       "type": "string"
+      },
+      "country": {
+       "type": "string"
+      },
+      "url": {
+       "type": "string"
+      },
+      "tradeName": {
+       "type": "string"
+      },
+      "postalAddress": {
+       "type": "string"
+      },
+      "email": {
+       "type": "string"
+      },
+      "legacyOperatorId": {
+       "type": "string"
+      },
+      "operatorIdentifier": {
+       "type": "object",
+       "propertyNames": {
+        "type": "string"
+       },
+       "additionalProperties": {}
+      },
+      "facilityIdentifier": {
+       "type": "object",
+       "propertyNames": {
+        "type": "string"
+       },
+       "additionalProperties": {}
+      }
+     }
+    }
+   },
+   "required": [
+    "action"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "outputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "items": {
+     "type": "array",
+     "items": {}
+    },
+    "total": {
+     "type": "number"
+    },
+    "page": {
+     "type": "number"
+    },
+    "limit": {
+     "type": "number"
+    },
+    "totalPages": {
+     "type": "number"
+    },
+    "result": {},
+    "error": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "message": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   },
+   "$schema": "http://json-schema.org/draft-07/schema#",
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "idempotentHint": true,
+   "openWorldHint": false
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "tracepass_epcis",
+  "title": "TracePass EPCIS 2.0",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "action": {
+     "type": "string",
+     "enum": [
+      "export",
+      "export_by_serial",
+      "capture",
+      "capture_job",
+      "query"
+     ]
+    },
+    "args": {
+     "type": "object",
+     "properties": {
+      "id": {
+       "type": "string"
+      },
+      "serial": {
+       "type": "string"
+      },
+      "gtin": {
+       "type": "string"
+      },
+      "events": {},
+      "jobId": {
+       "type": "string"
+      },
+      "params": {
+       "type": "object",
+       "propertyNames": {
+        "type": "string"
+       },
+       "additionalProperties": {
+        "type": "string"
+       }
+      }
+     }
+    }
+   },
+   "required": [
+    "action"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "outputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "items": {
+     "type": "array",
+     "items": {}
+    },
+    "total": {
+     "type": "number"
+    },
+    "page": {
+     "type": "number"
+    },
+    "limit": {
+     "type": "number"
+    },
+    "totalPages": {
+     "type": "number"
+    },
+    "result": {},
+    "error": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "message": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   },
+   "$schema": "http://json-schema.org/draft-07/schema#",
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "tracepass_templates",
+  "title": "TracePass DPP templates (regulatory schemas)",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "action": {
+     "type": "string",
+     "enum": [
+      "list",
+      "get"
+     ]
+    },
+    "args": {
+     "type": "object",
+     "properties": {
+      "category": {
+       "type": "string"
+      }
+     }
+    }
+   },
+   "required": [
+    "action"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "outputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "items": {
+     "type": "array",
+     "items": {}
+    },
+    "total": {
+     "type": "number"
+    },
+    "page": {
+     "type": "number"
+    },
+    "limit": {
+     "type": "number"
+    },
+    "totalPages": {
+     "type": "number"
+    },
+    "result": {},
+    "error": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "message": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   },
+   "$schema": "http://json-schema.org/draft-07/schema#",
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "tracepass_scope",
+  "title": "TracePass DPP scope checker",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "action": {
+     "type": "string",
+     "enum": [
+      "check",
+      "catalogue_report",
+      "catalogue_run",
+      "catalogue_run_status"
+     ]
+    },
+    "args": {
+     "type": "object",
+     "properties": {
+      "category": {
+       "type": "string"
+      },
+      "facts": {
+       "type": "object",
+       "propertyNames": {
+        "type": "string"
+       },
+       "additionalProperties": {}
+      },
+      "role": {
+       "type": "string"
+      },
+      "placedOnMarket": {
+       "anyOf": [
+        {
+         "type": "object",
+         "properties": {
+          "date": {
+           "type": "string"
+          },
+          "precision": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "date"
+         ]
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "lifecycleEvent": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "contains": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "label": {
+          "type": "string"
+         },
+         "facts": {
+          "type": "object",
+          "propertyNames": {
+           "type": "string"
+          },
+          "additionalProperties": {}
+         }
+        }
+       }
+      },
+      "productId": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "passportId": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "locale": {
+       "type": "string"
+      },
+      "classification": {
+       "type": "string"
+      },
+      "act": {
+       "type": "string"
+      },
+      "changed": {
+       "type": "boolean"
+      },
+      "q": {
+       "type": "string"
+      },
+      "cursor": {
+       "type": "string"
+      },
+      "limit": {
+       "type": "number"
+      },
+      "runId": {
+       "type": "string"
+      }
+     }
+    }
+   },
+   "required": [
+    "action"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "outputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "items": {
+     "type": "array",
+     "items": {}
+    },
+    "total": {
+     "type": "number"
+    },
+    "page": {
+     "type": "number"
+    },
+    "limit": {
+     "type": "number"
+    },
+    "totalPages": {
+     "type": "number"
+    },
+    "result": {},
+    "error": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "message": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   },
+   "$schema": "http://json-schema.org/draft-07/schema#",
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "tracepass_passport_lifecycle",
+  "title": "TracePass passport lifecycle (irreversible actions)",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "action": {
+     "type": "string",
+     "enum": [
+      "record_registration",
+      "undo_registration",
+      "place_on_market",
+      "suspend",
+      "suspend_by_serial",
+      "archive",
+      "archive_by_serial",
+      "archive_product"
+     ]
+    },
+    "args": {
+     "type": "object",
+     "properties": {
+      "id": {
+       "type": "string"
+      },
+      "placedOnMarketAt": {
+       "type": "string"
+      },
+      "registrationId": {
+       "type": "string"
+      },
+      "environment": {
+       "type": "string",
+       "enum": [
+        "production",
+        "acceptance"
+       ]
+      },
+      "serial": {
+       "type": "string"
+      },
+      "gtin": {
+       "type": "string"
+      },
+      "reason": {
+       "type": "string",
+       "enum": [
+        "recycled",
+        "never_placed",
+        "duplicate_or_error"
+       ]
+      }
+     }
+    }
+   },
+   "required": [
+    "action"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "outputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "items": {
+     "type": "array",
+     "items": {}
+    },
+    "total": {
+     "type": "number"
+    },
+    "page": {
+     "type": "number"
+    },
+    "limit": {
+     "type": "number"
+    },
+    "totalPages": {
+     "type": "number"
+    },
+    "result": {},
+    "error": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "message": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   },
+   "$schema": "http://json-schema.org/draft-07/schema#",
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "idempotentHint": false,
+   "openWorldHint": false
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "tracepass_access_grants",
+  "title": "TracePass access grants",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "action": {
+     "type": "string",
+     "enum": [
+      "list",
+      "get",
+      "create",
+      "update",
+      "revoke",
+      "activity"
+     ]
+    },
+    "args": {
+     "type": "object",
+     "properties": {
+      "id": {
+       "type": "string"
+      },
+      "role": {
+       "type": "string"
+      },
+      "label": {
+       "type": "string"
+      },
+      "purpose": {
+       "type": "string"
+      },
+      "scope": {
+       "type": "object",
+       "properties": {
+        "kind": {
+         "type": "string"
+        },
+        "ids": {
+         "type": "array",
+         "items": {
+          "type": "string"
+         }
+        }
+       },
+       "required": [
+        "kind"
+       ]
+      },
+      "evidence": {
+       "type": "object",
+       "propertyNames": {
+        "type": "string"
+       },
+       "additionalProperties": {}
+      },
+      "expiresInDays": {
+       "type": [
+        "number",
+        "null"
+       ]
+      },
+      "status": {
+       "type": "string"
+      },
+      "passportId": {
+       "type": "string"
+      },
+      "productId": {
+       "type": "string"
+      },
+      "limit": {
+       "type": "number"
+      },
+      "cursor": {
+       "type": "string"
+      }
+     }
+    }
+   },
+   "required": [
+    "action"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "outputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "items": {
+     "type": "array",
+     "items": {}
+    },
+    "total": {
+     "type": "number"
+    },
+    "page": {
+     "type": "number"
+    },
+    "limit": {
+     "type": "number"
+    },
+    "totalPages": {
+     "type": "number"
+    },
+    "result": {},
+    "error": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "message": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   },
+   "$schema": "http://json-schema.org/draft-07/schema#",
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "idempotentHint": false,
+   "openWorldHint": false
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ }
 ]

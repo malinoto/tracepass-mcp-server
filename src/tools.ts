@@ -384,16 +384,45 @@ const FIELD_SOURCE = z.enum(["manual", "ai_suggested"]);
 const ARCHIVE_REASON = z.enum(["recycled", "never_placed", "duplicate_or_error"]);
 
 /** What an access grant covers: the whole company, chosen products or chosen passports. */
-const GRANT_SCOPE = z.object({
-  kind: z.enum(["company", "products", "passports"]),
-  ids: z.array(z.string().min(1)).max(500).optional(),
-});
+const GRANT_SCOPE = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("company") }).strict(),
+  z
+    .object({ kind: z.literal("products"), ids: z.array(z.string().min(1)).min(1).max(500) })
+    .strict(),
+  z
+    .object({ kind: z.literal("passports"), ids: z.array(z.string().min(1)).min(1).max(500) })
+    .strict(),
+]);
+/** Days a grant lasts: 1 to 1825, or null for no expiry. */
+const GRANT_EXPIRES = z.number().int().min(1).max(1825).nullable();
 /** The recorded basis for a grant (a register entry, an invoice, a contract). */
 const GRANT_EVIDENCE = z.object({
   type: z.enum(["register_entry", "invoice", "authority_letter", "contract", "other"]),
   reference: z.string().min(1).max(200),
   note: z.string().max(500).optional(),
 });
+
+/**
+ * Render a grants response; a 403 for a missing OAuth scope tells the user how to fix it.
+ * @param res the platform response
+ * @param res.status HTTP status code
+ * @param res.ok true for 2xx
+ * @param res.body parsed body
+ * @returns the tool result
+ */
+function grantResult(res: { status: number; ok: boolean; body: unknown }): ToolResult {
+  const body = (res.body ?? {}) as Record<string, unknown>;
+  if (
+    res.status === 403 &&
+    typeof body.message === "string" &&
+    /missing (one of )?the required scopes?/i.test(body.message)
+  ) {
+    return errorResult(
+      'This connection lacks permission for access grants. Do not retry: tell the user to reconnect TracePass and grant the "access_grants" permissions (read to view grants, write to create or change them; writing also needs an admin).',
+    );
+  }
+  return apiResult(res);
+}
 
 /** Appended to a successful grant creation: the token is shown once and is not for the agent to keep. */
 const GRANT_TOKEN_NOTICE =
@@ -571,7 +600,7 @@ const SCHEMAS = {
     purpose: z.string().max(500).optional(),
     scope: GRANT_SCOPE.optional(),
     evidence: GRANT_EVIDENCE.optional(),
-    expiresInDays: z.number().int().positive().nullable().optional(),
+    expiresInDays: GRANT_EXPIRES.optional(),
   }),
   grantUpdate: z.object({
     id: z.string().min(1),
@@ -579,7 +608,7 @@ const SCHEMAS = {
     purpose: z.string().max(500).optional(),
     scope: GRANT_SCOPE.optional(),
     evidence: GRANT_EVIDENCE.optional(),
-    expiresInDays: z.number().int().positive().nullable().optional(),
+    expiresInDays: GRANT_EXPIRES.optional(),
   }),
 
   fieldUpdate: z.object({
@@ -1733,9 +1762,9 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     name: "tracepass_access_grants",
     title: "TracePass access grants",
     description:
-      'Share restricted passport data with a partner (repairer, recycler, purchaser...) through an access grant, and see or end the grants already issued. A grant names a role, a scope (company, chosen products or chosen passports), a purpose, optional evidence and an expiry (default 12 months). Needs an OAuth connection approved for access grants or an API key with "May manage access grants" switched on (403 access_grants_not_enabled); writing needs an admin. Authority roles (market surveillance, notified body, commission, customs) are dashboard-only (400 role_dashboard_only).\n\n' +
+      'Share restricted passport data with a partner (repairer, recycler, purchaser...) through an access grant, and see or end the grants already issued. A grant names a role, a scope (company, chosen products or chosen passports), a purpose, optional evidence and an expiry (default 12 months). Needs an OAuth connection approved for access grants or an API key with "May manage access grants" switched on (403 access_grants_not_enabled); writing needs an admin. Authority roles (e.g. market surveillance) are dashboard-only end to end: create, update and revoke of such a grant are refused (400 role_dashboard_only).\n\n' +
       "IMPORTANT: `create` returns the secret pa_ token ONCE. Hand it to the recipient and do not repeat it, store it or put it in a log. It cannot be shown again; if lost, revoke the grant and create a new one. A confirmed grant gives a third party access to restricted data: confirm the recipient, role, scope and purpose with the user first.\n\n" +
-      "Actions (pass via `action`; `{…}` is the `args` object). Reads never return a token.\n- list — { limit? (≤100), cursor?, role?, status? (active|expired|revoked), passportId?, productId? }.\n- get — { id }.\n- create — { role, label, purpose?, scope? ({ kind: company } | { kind: products|passports, ids[] }), evidence? ({ type: register_entry|invoice|authority_letter|contract|other, reference, note? }), expiresInDays? (null = no expiry, where the role allows) }. WRITE.\n- update — { id, label?, purpose?, scope?, evidence?, expiresInDays? }; at least one. WRITE.\n- revoke — { id }. WRITE, ends the grant at once; repeating it is safe.\n- activity — { id, limit? (≤100), cursor? }. The grant's access log.",
+      "Actions (pass via `action`; `{…}` is the `args` object). Reads never return a token.\n- list — { limit? (≤100), cursor?, role?, status? (active|expired|revoked), passportId?, productId? }.\n- get — { id }.\n- create — { role, label, purpose?, scope? ({ kind: company } with no ids, or { kind: products|passports, ids[] } with at least one id), evidence? ({ type: register_entry|invoice|authority_letter|contract|other, reference, note? }), expiresInDays? (1-1825; null = no expiry) }. WRITE.\n- update — { id, label?, purpose?, scope?, evidence?, expiresInDays? }; at least one. WRITE.\n- revoke — { id }. WRITE, ends the grant at once; repeating it is safe.\n- activity — { id, limit? (≤100), cursor? }. The grant's access log.",
     inputSchema: {
       action: z.enum(["list", "get", "create", "update", "revoke", "activity"]),
       args: z
@@ -1744,7 +1773,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           role: z.string().optional(),
           label: z.string().optional(),
           purpose: z.string().optional(),
-          scope: z.record(z.string(), z.unknown()).optional(),
+          scope: z.object({ kind: z.string(), ids: z.array(z.string()).optional() }).optional(),
           evidence: z.record(z.string(), z.unknown()).optional(),
           expiresInDays: z.number().nullable().optional(),
           status: z.string().optional(),
@@ -1770,18 +1799,18 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
         case "list": {
           const p = parseArgs(SCHEMAS.grantList, a.args, tool, action);
           if (isErr(p)) return p;
-          return apiResult(await client.get(`/api/v1/access-grants${qs(p)}`));
+          return grantResult(await client.get(`/api/v1/access-grants${qs(p)}`));
         }
         case "get": {
           const p = parseArgs(SCHEMAS.grantId, a.args, tool, action);
           if (isErr(p)) return p;
-          return apiResult(await client.get(`/api/v1/access-grants/${seg(p.id)}`));
+          return grantResult(await client.get(`/api/v1/access-grants/${seg(p.id)}`));
         }
         case "create": {
           const p = parseArgs(SCHEMAS.grantCreate, a.args, tool, action);
           if (isErr(p)) return p;
           const res = await client.post("/api/v1/access-grants", p);
-          const result = apiResult(res);
+          const result = grantResult(res);
           const token = (res.body as { token?: unknown } | null)?.token;
           if (res.ok && typeof token === "string") {
             result.content.push({ type: "text", text: GRANT_TOKEN_NOTICE });
@@ -1792,17 +1821,17 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           const p = parseArgs(SCHEMAS.grantUpdate, a.args, tool, action);
           if (isErr(p)) return p;
           const { id, ...patch } = p;
-          return apiResult(await client.patch(`/api/v1/access-grants/${seg(id)}`, patch));
+          return grantResult(await client.patch(`/api/v1/access-grants/${seg(id)}`, patch));
         }
         case "revoke": {
           const p = parseArgs(SCHEMAS.grantId, a.args, tool, action);
           if (isErr(p)) return p;
-          return apiResult(await client.delete(`/api/v1/access-grants/${seg(p.id)}`));
+          return grantResult(await client.delete(`/api/v1/access-grants/${seg(p.id)}`));
         }
         case "activity": {
           const p = parseArgs(SCHEMAS.grantActivity, a.args, tool, action);
           if (isErr(p)) return p;
-          return apiResult(
+          return grantResult(
             await client.get(
               `/api/v1/access-grants/${seg(p.id)}/activity${qs({ limit: p.limit, cursor: p.cursor })}`,
             ),

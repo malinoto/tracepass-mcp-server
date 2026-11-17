@@ -2159,6 +2159,58 @@ describe("tracepass_access_grants — routing and the one-time token", () => {
     expect(calls).toHaveLength(0);
   });
 
+  it("scope: company takes no ids; products and passports need at least one", async () => {
+    const { tool, calls } = grantsTool();
+    const create = (scope: unknown) =>
+      tool.handler({ action: "create", args: { role: "recycler", label: "A", scope } });
+    expect((await create({ kind: "company", ids: ["a".repeat(24)] })).isError).toBe(true);
+    expect((await create({ kind: "products" })).isError).toBe(true);
+    expect((await create({ kind: "passports", ids: [] })).isError).toBe(true);
+    expect(calls).toHaveLength(0);
+    expect((await create({ kind: "company" })).isError).toBeUndefined();
+    expect((await create({ kind: "products", ids: ["a".repeat(24)] })).isError).toBeUndefined();
+  });
+
+  it("expiresInDays takes 1 to 1825 or null, on create and update", async () => {
+    const { tool, calls } = grantsTool();
+    const create = (d: unknown) =>
+      tool.handler({ action: "create", args: { role: "recycler", label: "A", expiresInDays: d } });
+    expect((await create(1826)).isError).toBe(true);
+    expect((await create(0)).isError).toBe(true);
+    expect(calls).toHaveLength(0);
+    expect((await create(1825)).isError).toBeUndefined();
+    expect((await create(null)).isError).toBeUndefined();
+    expect(
+      (await tool.handler({ action: "update", args: { id: "g1", expiresInDays: 1826 } })).isError,
+    ).toBe(true);
+    await tool.handler({ action: "update", args: { id: "g1", expiresInDays: null } });
+    expect(calls[calls.length - 1]).toMatchObject({ body: { expiresInDays: null } });
+  });
+
+  it("a 403 for a missing OAuth scope tells the user to reconnect with access_grants", async () => {
+    const { tool } = grantsTool({
+      get: () =>
+        Promise.resolve({
+          status: 403,
+          ok: false,
+          body: {
+            error: "forbidden",
+            message: "This access token is missing the required scope: access_grants:read",
+          },
+        }),
+    });
+    const r = await tool.handler({ action: "list" });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]?.text).toMatch(/reconnect/);
+    expect(r.content[0]?.text).toMatch(/access_grants/);
+  });
+
+  it("the description says authority grants are dashboard-only for update and revoke too", () => {
+    const { tool } = grantsTool();
+    expect(tool.description).toMatch(/dashboard-only end to end/);
+    expect(tool.description).toMatch(/role_dashboard_only/);
+  });
+
   it("the OAuth metadata of /mcp declares the access-grant scopes", async () => {
     const { readFileSync } = await import("node:fs");
     const src = readFileSync(new URL("../src/http.ts", import.meta.url), "utf8");

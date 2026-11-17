@@ -74,8 +74,8 @@ export function createMcpServer(config: CreateMcpServerConfig): McpServer {
       "legal effect). TracePass never submits to the Registry and never " +
       "verifies the outcome. " +
       "Restricted and authority passport data is read through access grants " +
-      "the owner issues in the TracePass dashboard; there is no tool to manage " +
-      "grants. A GTIN-only address (no serial) answers a public model page of " +
+      "the owner issues; tracepass_access_grants manages them (authority roles " +
+      "are dashboard-only). A GTIN-only address (no serial) answers a public model page of " +
       "the product, not a unit's passport.",
   });
 
