@@ -30,7 +30,7 @@ import { errorResult } from "./result.js";
  */
 export const MCP_SERVER_INFO = {
   name: "tracepass",
-  version: "1.27.0",
+  version: "1.28.0",
 } as const;
 
 /** What the main server needs to reach the v1 API on behalf of one caller. */
