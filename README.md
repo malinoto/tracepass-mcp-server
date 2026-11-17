@@ -27,13 +27,13 @@ The server accepts **either** of TracePass's two v1 auth methods on the
 same `Authorization: Bearer …` header — it forwards whatever you send to
 the API, which decides. Pick the one that fits how you're connecting:
 
-| | **API key** | **OAuth 2.0** |
-|---|---|---|
-| Best for | A single user, scripts, server-to-server | AI assistants / apps acting **on a user's behalf** |
-| What you send | A static `tp_…` key as a Bearer token | A scoped access token obtained via the OAuth flow |
-| Setup | Mint at **Developer → API Keys** | The user clicks **Connect** and approves scopes |
-| Scope | All-or-nothing (the whole workspace) | Exactly the scopes the user granted; revocable |
-| Works with | Hosted **and** local (npx) | Hosted endpoint only (needs a browser consent step) |
+|               | **API key**                              | **OAuth 2.0**                                       |
+| ------------- | ---------------------------------------- | --------------------------------------------------- |
+| Best for      | A single user, scripts, server-to-server | AI assistants / apps acting **on a user's behalf**  |
+| What you send | A static `tp_…` key as a Bearer token    | A scoped access token obtained via the OAuth flow   |
+| Setup         | Mint at **Developer → API Keys**         | The user clicks **Connect** and approves scopes     |
+| Scope         | All-or-nothing (the whole workspace)     | Exactly the scopes the user granted; revocable      |
+| Works with    | Hosted **and** local (npx)               | Hosted endpoint only (needs a browser consent step) |
 
 **Which should an AI assistant use?** If your MCP client supports OAuth
 (Claude.ai, ChatGPT, and others), prefer **OAuth** — the user authorizes
@@ -95,13 +95,13 @@ OAuth consent step, so it's API-key only, via the `TRACEPASS_API_KEY` env:
 
 Optional env vars:
 
-| Var | Default | Purpose |
-|---|---|---|
-| `TRACEPASS_BASE_URL` | `https://app.tracepass.eu` | Override the TracePass API base URL (e.g. point at a local stack). |
+| Var                         | Default                    | Purpose                                                                                                                               |
+| --------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `TRACEPASS_BASE_URL`        | `https://app.tracepass.eu` | Override the TracePass API base URL (e.g. point at a local stack).                                                                    |
 | `TRACEPASS_AUTH_SERVER_URL` | `https://app.tracepass.eu` | Public OAuth authorization-server origin advertised in discovery metadata. Set this when `TRACEPASS_BASE_URL` is an internal address. |
-| `MCP_BODY_LIMIT_BYTES` | `1048576` (1 MB) | Maximum request body size. Requests over the limit are rejected with 413 before reaching the SDK. |
-| `MCP_BATCH_LIMIT` | `10` | Maximum JSON-RPC messages in a single batch request. Oversized batches are rejected with 400 `batch_too_large`. |
-| `PORT` | `8080` | Listen port for the hosted HTTP service. |
+| `MCP_BODY_LIMIT_BYTES`      | `1048576` (1 MB)           | Maximum request body size. Requests over the limit are rejected with 413 before reaching the SDK.                                     |
+| `MCP_BATCH_LIMIT`           | `10`                       | Maximum JSON-RPC messages in a single batch request. Oversized batches are rejected with 400 `batch_too_large`.                       |
+| `PORT`                      | `8080`                     | Listen port for the hosted HTTP service.                                                                                              |
 
 The hosted endpoint accepts **POST only** on `/mcp`, `/compliance/mcp`, and the supplier paths. GET and DELETE are rejected with 405 to prevent the SDK's stateless transport from opening an unbounded SSE stream.
 
@@ -110,7 +110,7 @@ The hosted endpoint accepts **POST only** on `/mcp`, `/compliance/mcp`, and the 
 The TracePass v1 API operations are grouped into **8 tools**.
 Each takes an action enum plus action-specific arguments. The tools are:
 
-- `tracepass_products` - manage the product catalogue (list, get, create, create_batch, update products).
+- `tracepass_products` - manage the product catalogue (list, get, create, create_batch, update products; get_links lists every published passport link of a product plus its model page, get_model_qr renders the model page QR).
 - `tracepass_passports` - manage Digital Product Passports (list, get, compliance check, registry-readiness check, prepare an EU DPP Registry registration, record an acceptance test, get/set condition flags, create, get QR, list snapshots, get snapshot), by id or by serial. Passports are identified via GS1 or four additional EN 18219 schemes (iso15459, iec61406, did, doi); battery passports accept only gs1 and iso15459 (Art. 77(3)). **Condition flags** are approved yes/no facts (e.g. battery: `hasBMS`, `rechargeable`, `externalStorageOnly`, `isStationaryBess`) that gate conditional legal duties — setting an approved flag may make additional fields required and block publishing if those fields are empty.
 - `tracepass_passport_fields` - update a passport's category-specific data fields, by id or by serial.
 - `tracepass_passport_parties` - set or remove a passport's economic-operator parties (manufacturer, importer, etc.).
@@ -121,21 +121,23 @@ Each takes an action enum plus action-specific arguments. The tools are:
 
 Each tool's full action set:
 
-| Tool | Actions |
-|------|---------|
-| `tracepass_products` | `list`, `get`, `create`, `create_batch`, `update` |
-| `tracepass_passports` | `list`, `get`, `get_by_serial`, `compliance`, `registry_readiness`, `prepare_registry_upi`, `prepare_registry_upload_file`, `record_acceptance_test`, `get_condition_flags`, `get_condition_flags_by_serial`, `set_condition_flags`, `set_condition_flags_by_serial`, `capture_measurements`, `capture_measurements_by_serial`, `list_measurements`, `list_measurements_by_serial`, `latest_measurements`, `latest_measurements_by_serial`, `create`, `get_qr`, `get_qr_by_serial`, `list_snapshots`, `get_snapshot` |
-| `tracepass_passport_fields` | `update`, `update_by_serial` |
-| `tracepass_passport_parties` | `set`, `remove` |
-| `tracepass_epcis` | `export`, `export_by_serial`, `capture`, `capture_job`, `query` |
-| `tracepass_templates` | `list`, `get` |
-| `tracepass_scope` | `check`, `catalogue_report`, `catalogue_run`, `catalogue_run_status` |
-| `tracepass_passport_lifecycle` | `record_registration`, `undo_registration`, `place_on_market`, `suspend`, `suspend_by_serial`, `archive`, `archive_by_serial`, `archive_product` |
+| Tool                           | Actions                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tracepass_products`           | `list`, `get`, `create`, `create_batch`, `update`, `get_links`, `get_model_qr`                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `tracepass_passports`          | `list`, `get`, `get_by_serial`, `compliance`, `registry_readiness`, `prepare_registry_upi`, `prepare_registry_upload_file`, `record_acceptance_test`, `get_condition_flags`, `get_condition_flags_by_serial`, `set_condition_flags`, `set_condition_flags_by_serial`, `capture_measurements`, `capture_measurements_by_serial`, `list_measurements`, `list_measurements_by_serial`, `latest_measurements`, `latest_measurements_by_serial`, `create`, `get_qr`, `get_qr_by_serial`, `list_snapshots`, `get_snapshot` |
+| `tracepass_passport_fields`    | `update`, `update_by_serial`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `tracepass_passport_parties`   | `set`, `remove`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `tracepass_epcis`              | `export`, `export_by_serial`, `capture`, `capture_job`, `query`                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `tracepass_templates`          | `list`, `get`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `tracepass_scope`              | `check`, `catalogue_report`, `catalogue_run`, `catalogue_run_status`                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `tracepass_passport_lifecycle` | `record_registration`, `undo_registration`, `place_on_market`, `suspend`, `suspend_by_serial`, `archive`, `archive_by_serial`, `archive_product`                                                                                                                                                                                                                                                                                                                                                                     |
+
+Restricted and authority passport data is read through access grants the owner issues in the TracePass dashboard (role, scope, purpose, expiry); this server has no tool to manage grants. A GTIN-only address (no serial) answers a public model page of the product, not a unit's passport.
 
 **Changed in 1.24.0:** `archive`, `archive_by_serial`, `suspend`, `suspend_by_serial`, and `place_on_market` moved from `tracepass_passports` to `tracepass_passport_lifecycle`; `archive` on products moved there as `archive_product`. This separates irreversible and public-facing actions so a client's "always allow" on the read-only passport tool no longer also allows them. Calls to the old names on the old tools return an error naming the new tool.
 
 The **`*_by_serial`** actions address a passport by the customer's own serial
-number instead of its TracePass id. A serial is unique only *within a GTIN*, so
+number instead of its TracePass id. A serial is unique only _within a GTIN_, so
 if the same serial exists under two GTINs in your account a serial-only call
 returns **409 `ambiguous_serial`** — pass the optional `gtin` arg to disambiguate
 (or use the by-id action). The same `gtin` disambiguator applies to every
@@ -149,7 +151,7 @@ conditional rules. Read-only; use it to gap-check a passport, fix the
 cited gaps, then re-check.
 
 A **`compliant` verdict means this passport satisfies the rules encoded here**,
-not *this product may be placed on the market*. The field specifications are
+not _this product may be placed on the market_. The field specifications are
 hand-authored from the regulations, not an official EU artefact, and delegated
 acts are still landing. It is not legal advice.
 
@@ -160,7 +162,11 @@ linked to the original one(s) (Battery Regulation Art. 77(7)). Pass a
 `lineage` block to `tracepass_passports` `create`:
 
 ```json
-{ "predecessors": [ { "internalPassportId": "<your original passport id>", "trigger": "repurposing" } ] }
+{
+  "predecessors": [
+    { "internalPassportId": "<your original passport id>", "trigger": "repurposing" }
+  ]
+}
 ```
 
 A predecessor is named by `internalPassportId` (one of your own passports)
@@ -222,9 +228,10 @@ descriptions tell the model so:
   takes no plan DPP slot and is not billed; the slot, and any overage
   past the plan cap, is taken when the passport is published in the
   TracePass dashboard. Each create counts against the daily write budget.
-- **`tracepass_passport_lifecycle` `archive`** is irreversible — the public QR
-  permanently 404s. Use `suspend` (reversible) when a change might be
-  undone. `record_registration` records the operator's registration in
+- **`tracepass_passport_lifecycle` `archive`** is irreversible — it takes the
+  passport off public view (its URL shows an archive notice, machine formats
+  answer 404, and only an authority access grant still reads it). Use
+  `suspend` (reversible) when a change might be undone. `record_registration` records the operator's registration in
   the production EU DPP Registry and locks the passport's operator
   identifiers. `place_on_market` is a legal act (a registration through an
   EN 18222 registry API).
@@ -280,14 +287,14 @@ headers, `https://ai.tracepass.eu/supplier/mcp` with
 `Authorization: Bearer <token>` works too. The token authorises that one
 request only; there is no account and no OAuth. The assistant can then:
 
-| Tool | What it does |
-|---|---|
-| `get_request` | Start here: who is asking, for which product, and every field asked for, each with its meaning, unit, format and legal source; plus answers already sent and the review outcome |
-| `validate_answers` | A dry run: what would be stored, which keys were not requested, and what does not fit. Writes nothing |
+| Tool                 | What it does                                                                                                                                                                                                              |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `get_request`        | Start here: who is asking, for which product, and every field asked for, each with its meaning, unit, format and legal source; plus answers already sent and the review outcome                                           |
+| `validate_answers`   | A dry run: what would be stored, which keys were not requested, and what does not fit. Writes nothing                                                                                                                     |
 | `get_upload_command` | The best way to attach a datasheet or certificate when the assistant can run shell commands: returns a `curl` command that uploads the file from disk and prints a `documentId` to cite (PDF, Office, CSV, PNG/JPEG/WebP) |
-| `upload_evidence` | Attach a very small file (a few kilobytes) inline as base64; prefer `get_upload_command`, or cite a URL or note |
-| `submit_answers` | Send answers with evidence per value to the requester's human review; can be repeated (answers merge) until reviewed |
-| `get_review_status` | Whether the requester has reviewed them, the outcome, accepted fields, and when the link expires |
+| `upload_evidence`    | Attach a very small file (a few kilobytes) inline as base64; prefer `get_upload_command`, or cite a URL or note                                                                                                           |
+| `submit_answers`     | Send answers with evidence per value to the requester's human review; can be repeated (answers merge) until reviewed                                                                                                      |
+| `get_review_status`  | Whether the requester has reviewed them, the outcome, accepted fields, and when the link expires                                                                                                                          |
 
 Answers go to the requester's human review; they never publish anything on
 their own.
@@ -307,15 +314,15 @@ account when asked. It uses OAuth; no API key is needed. Answers cite their
 source, and each company gets about 100 answers a day. Full guide:
 [tracepass.eu/docs/dpp-assistant](https://www.tracepass.eu/docs/dpp-assistant).
 
-| Tool | What it does |
-|---|---|
-| `scope_check` | Whether EU law requires a passport for a type of product, from when, and what it requires of each role |
-| `required_fields` | The data a passport must contain for a category, with the article requiring each field and who may see it |
-| `what_changed` | Changes in EU passport law and standards for your categories since a date; planned items are marked as not yet law |
-| `registry_guidance` | The EU DPP Registry and the technical side: registration, identifiers, data carriers, formats and standards |
-| `create_draft_passport` | Creates a **draft** passport in your own account; publishing stays with you in TracePass |
-| `report_answer` | Reports an answer you think is wrong or unclear, for review |
-| `get_profile`, `update_profile`, `delete_profile` | The company facts the assistant remembers between questions, so you do not repeat them |
+| Tool                                              | What it does                                                                                                       |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `scope_check`                                     | Whether EU law requires a passport for a type of product, from when, and what it requires of each role             |
+| `required_fields`                                 | The data a passport must contain for a category, with the article requiring each field and who may see it          |
+| `what_changed`                                    | Changes in EU passport law and standards for your categories since a date; planned items are marked as not yet law |
+| `registry_guidance`                               | The EU DPP Registry and the technical side: registration, identifiers, data carriers, formats and standards        |
+| `create_draft_passport`                           | Creates a **draft** passport in your own account; publishing stays with you in TracePass                           |
+| `report_answer`                                   | Reports an answer you think is wrong or unclear, for review                                                        |
+| `get_profile`, `update_profile`, `delete_profile` | The company facts the assistant remembers between questions, so you do not repeat them                             |
 
 ## Development
 

@@ -72,7 +72,11 @@ export function createMcpServer(config: CreateMcpServerConfig): McpServer {
       "and records what it reports (record_registration for production; " +
       "record_acceptance_test for the acceptance environment, which has no " +
       "legal effect). TracePass never submits to the Registry and never " +
-      "verifies the outcome.",
+      "verifies the outcome. " +
+      "Restricted and authority passport data is read through access grants " +
+      "the owner issues in the TracePass dashboard; there is no tool to manage " +
+      "grants. A GTIN-only address (no serial) answers a public model page of " +
+      "the product, not a unit's passport.",
   });
 
   const client = new TracePassClient({

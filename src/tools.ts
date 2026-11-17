@@ -392,6 +392,21 @@ const SCHEMAS = {
     search: z.string().optional(),
   }),
   productGet: z.object({ id: z.string().min(1) }),
+  // zip is left out: the client reads a body as text, which would corrupt a binary archive.
+  productLinks: z.object({
+    id: z.string().min(1),
+    format: z.enum(["json", "csv"]).optional(),
+    limit: z.number().int().positive().max(5000).optional(),
+    cursor: z.string().min(1).optional(),
+  }),
+  productModelQr: z.object({
+    id: z.string().min(1),
+    format: z.enum(["svg", "png"]).optional(),
+    gtin: z
+      .string()
+      .regex(/^[0-9]{14}$/, "gtin must be 14 digits")
+      .optional(),
+  }),
   productCreate: z.object({
     name: z.string().min(1).max(200),
     model: z.string().min(1).max(100),
@@ -714,9 +729,17 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     title: "TracePass products",
     description:
       "Manage the TracePass product catalogue. A product is the catalogue layer — one product can have many passports (one per serialised unit). Products are not billable on their own. Archive is in tracepass_passport_lifecycle.\n\n" +
-      "Actions (pass via `action`; `{…}` is the `args` object):\n- list — { page?, limit? (≤100), category?, status?, search? }. Read-only.\n- get — { id }. Read-only.\n- create — { name, model, category, description? }. `category` is one of the 13 DPP categories (tracepass_templates list).\n- update — { id, name?, model?, description? }; at least one field.\n- create_batch — { products: [ { name, model, category, description? }, … ] }, up to 100. Partial-success: per-item status, so some can be created while others error. The batch consumes N writes upfront; if that would exceed the daily cap NOTHING is created (429).",
+      "Actions (pass via `action`; `{…}` is the `args` object):\n- list — { page?, limit? (≤100), category?, status?, search? }. Read-only.\n- get — { id }. Read-only.\n- create — { name, model, category, description? }. `category` is one of the 13 DPP categories (tracepass_templates list).\n- update — { id, name?, model?, description? }; at least one field.\n- get_links — { id, format? (json|csv), limit? (≤5000), cursor? (json: prior nextCursor) }. Every PUBLISHED passport's serial, passportUrl, status (json adds qrApiUrl, needs your API credentials) plus the model page URL, for a dealer asking for passport links.\n- get_model_qr — { id, format? (svg|png), gtin? (14 digits) }. QR of the model page. 404 model_not_found; 400 gtin_required (several GTINs) or invalid_gtin.\n- create_batch — { products: [ { name, model, category, description? }, … ] }, up to 100. Partial-success: per-item status, so some can be created while others error. The batch consumes N writes upfront; if that would exceed the daily cap NOTHING is created (429).",
     inputSchema: {
-      action: z.enum(["list", "get", "create", "create_batch", "update"]),
+      action: z.enum([
+        "list",
+        "get",
+        "create",
+        "create_batch",
+        "update",
+        "get_links",
+        "get_model_qr",
+      ]),
       args: z
         .object({
           id: z.string().optional(),
@@ -728,6 +751,9 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           limit: z.number().optional(),
           status: z.string().optional(),
           search: z.string().optional(),
+          format: z.string().optional(),
+          gtin: z.string().optional(),
+          cursor: z.string().optional(),
           products: z.array(z.record(z.string(), z.unknown())).optional(),
         })
         .partial()
@@ -769,6 +795,24 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           const { id, ...patch } = p;
           return apiResult(await client.patch(`/api/v1/products/${seg(id)}`, patch));
         }
+        case "get_links": {
+          const p = parseArgs(SCHEMAS.productLinks, a.args, "tracepass_products", action);
+          if (isErr(p)) return p;
+          return apiResult(
+            await client.get(
+              `/api/v1/products/${seg(p.id)}/links${qs({ format: p.format, limit: p.limit, cursor: p.cursor })}`,
+            ),
+          );
+        }
+        case "get_model_qr": {
+          const p = parseArgs(SCHEMAS.productModelQr, a.args, "tracepass_products", action);
+          if (isErr(p)) return p;
+          return apiResult(
+            await client.get(
+              `/api/v1/products/${seg(p.id)}/links/model-qr${qs({ format: p.format, gtin: p.gtin })}`,
+            ),
+          );
+        }
         default:
           if (action === "archive") {
             return errorResult(
@@ -789,7 +833,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
       "IMPORTANT: `create` makes a DRAFT passport: no plan DPP slot, never billed. The slot, and any overage past the plan cap, is taken when it is published in the TracePass dashboard, not through this tool. Each create counts against the daily write budget.\n\n" +
       "EU DPP REGISTRY (battery): the operator registers a passport itself, on the Registry website under its own EU Login. TracePass prepares what it submits and records what it reports; it never submits to the Registry and never verifies the outcome. The acceptance environment has no legal effect; production is recorded with record_registration (tracepass_passport_lifecycle). Paid plan; an OAuth app must act for an admin or owner.\n\n" +
       "Identifier schemes (EN 18219): gs1 | iso15459 | iec61406 | did | doi; batteries accept ONLY gs1 and iso15459. Shapes, lineage, snapshots, measurements, refusal codes: resource tracepass://reference/passports.\n\n" +
-      "Actions (pass via `action`; `{…}` is the `args` object). Read-only unless marked WRITE. A *_by_serial action takes { serial, gtin? } instead of `id` (on 409 ambiguous_serial pass `gtin`).\n- list — { page?, limit? (≤100), productId?, status?, search? }. status ∈ draft|in_review|approved|published|suspended|expired|archived.\n- get, get_by_serial — { id, format? (summary|full), lang? }.\n- compliance — { id }. compliant | compliant_with_warnings | incomplete, with regulation-cited findings and byRegulation[]. A regulation absent from byRegulation raised no finding, which is not the same as passed.\n- registry_readiness — { id }. Battery only. { ready, findings[] }: the Registry's FORMAL pre-submission check, not the compliance verdict.\n- prepare_registry_upi — { id }. WRITE, battery, published only. { upi, preparedAt } for the operator to paste into the Registry form. Submits nothing.\n- prepare_registry_upload_file — { passportIds (1–100) }. WRITE, battery. { xml, filename, included, excluded }: the operator uploads `xml` on the Registry website; TracePass does not. 1 write per included passport.\n- record_acceptance_test — { id, result: passed|failed, errorCode? }. WRITE, battery, published only. Records what the operator reports from the ACCEPTANCE environment: no legal effect, not verified. Undo: undo_registration (acceptance).\n- create — { productId, identifier?, gtin?, serialNumber?, lineage? }. Draft, not billed. identifier preferred, or legacy gtin + serialNumber. Battery: only gs1/iso15459, else 400. Duplicate: 409. lineage (battery): a repurposed, remanufactured or reused battery needs a NEW passport linked to the original(s) (Art. 77(7)); immutable after create.\n- get_qr, get_qr_by_serial — { id, format? (svg|png), symbology? (qr|datamatrix) }.\n- list_snapshots — { id, page?, limit?, at? (ISO 8601) }; get_snapshot — { id, snapshotId }. EN 18221 change archive (`at` = the snapshot valid then). 1 read each.\n- get_condition_flags, _by_serial — { id }. Approved yes/no facts that gate conditional duties; an approved flag can make fields required and block publish. 1 read.\n- set_condition_flags, _by_serial — { id, flags: Record<flagKey, boolean|null> }. WRITE; null clears. WARNING: approving a flag can make fields required and block publishing if empty — fix them before or right after.\n- capture_measurements, _by_serial — { id, measurements: [ { fieldKey, value, measuredAt (ISO 8601), externalId?, unit? } ] (≤500) }. WRITE, battery, published only. Over-life data from the customer's equipment; metered against the monthly measurement allowance, not the write budget.\n- list_measurements, _by_serial — { id, fieldKey?, from?, to?, limit? (≤200), cursor? }; latest_measurements, _by_serial — { id }. Read-only.",
+      "Actions (pass via `action`; `{…}` is the `args` object). Read-only unless marked WRITE. A *_by_serial action takes { serial, gtin? } instead of `id` (on 409 ambiguous_serial pass `gtin`).\n- list — { page?, limit? (≤100), productId?, status?, search? }. status ∈ draft|in_review|approved|published|suspended|expired|archived.\n- get, get_by_serial — { id, format? (summary|full), lang? }.\n- compliance — { id }. compliant | compliant_with_warnings | incomplete, with regulation-cited findings and byRegulation[]. A regulation absent from byRegulation raised no finding, which is not the same as passed.\n- registry_readiness — { id }. Battery only. { ready, findings[] }: the Registry's FORMAL pre-submission check, not the compliance verdict.\n- prepare_registry_upi — { id }. WRITE, battery, published only. { upi, preparedAt } for the operator to paste into the Registry form. Submits nothing.\n- prepare_registry_upload_file — { passportIds (1–100) }. WRITE, battery. { xml, filename, included, excluded }: the operator uploads `xml` on the Registry website; TracePass does not. 1 write per included passport.\n- record_acceptance_test — { id, result: passed|failed, errorCode? }. WRITE, battery, published only. Records what the operator reports from the ACCEPTANCE environment: no legal effect, not verified. Undo: undo_registration (acceptance).\n- create — { productId, identifier?, gtin?, serialNumber?, lineage? }. Draft, not billed. identifier preferred, or legacy gtin + serialNumber. Battery: only gs1/iso15459, else 400. Duplicate: 409. lineage (battery): a repurposed, remanufactured or reused battery needs a NEW passport linked to the original(s) (Art. 77(7)); immutable after create.\n- get_qr, get_qr_by_serial — { id, format? (svg|png), symbology? (qr|datamatrix) }. One passport's QR; the bare GTIN URL is the product's model page (see products get_links).\n- list_snapshots — { id, page?, limit?, at? (ISO 8601) }; get_snapshot — { id, snapshotId }. EN 18221 change archive (`at` = the snapshot valid then). 1 read each.\n- get_condition_flags, _by_serial — { id }. Approved yes/no facts that gate conditional duties; an approved flag can make fields required and block publish. 1 read.\n- set_condition_flags, _by_serial — { id, flags: Record<flagKey, boolean|null> }. WRITE; null clears. WARNING: approving a flag can make fields required and block publishing if empty — fix them before or right after.\n- capture_measurements, _by_serial — { id, measurements: [ { fieldKey, value, measuredAt (ISO 8601), externalId?, unit? } ] (≤500) }. WRITE, battery, published only. Over-life data from the customer's equipment; metered against the monthly measurement allowance, not the write budget.\n- list_measurements, _by_serial — { id, fieldKey?, from?, to?, limit? (≤200), cursor? }; latest_measurements, _by_serial — { id }. Read-only.",
     inputSchema: {
       action: z.enum([
         "list",
@@ -1493,9 +1537,9 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
     name: "tracepass_passport_lifecycle",
     title: "TracePass passport lifecycle (irreversible actions)",
     description:
-      "WARNING: Every action here changes what the public sees or is a legal act, some irreversible. `archive` permanently removes the public QR code (it 404s forever). `record_registration` records the economic operator's registration in the production EU DPP Registry and locks the passport's operator and facility identifiers. `place_on_market` submits a registration to an EN 18222 registry API. The assistant MUST confirm with the user before each call. Use `suspend` (reversible — public QR shows 'suspended') as the safe alternative to archive when a change might need to be undone; a passport placed on the market cannot be suspended, because it must stay public.\n\n" +
+      "WARNING: Every action here changes what the public sees or is a legal act, some irreversible. `archive` permanently takes the passport off public view (its URL shows an archive notice; only an authority access grant still reads it). `record_registration` records the economic operator's registration in the production EU DPP Registry and locks the passport's operator and facility identifiers. `place_on_market` submits a registration to an EN 18222 registry API. The assistant MUST confirm with the user before each call. Use `suspend` (reversible — public QR shows 'suspended') as the safe alternative to archive when a change might need to be undone; a passport placed on the market cannot be suspended, because it must stay public.\n\n" +
       "EU DPP REGISTRY: the operator registers a battery passport itself, on the Registry website under its own EU Login; TracePass never submits to the Registry and never verifies the outcome. The acceptance environment has no legal effect; only a production registration counts. Paid plan; a connected app (OAuth) must act for an admin or owner. Refusal codes: resource tracepass://reference/lifecycle.\n\n" +
-      "Actions (pass via `action`; `{…}` is the `args` object). All are WRITEs (1 write each). A *_by_serial action takes { serial, gtin? } instead of `id` (on 409 ambiguous_serial pass `gtin`).\n- record_registration — { id, placedOnMarketAt? (YYYY-MM-DD), registrationId? }. Battery, published only. Records that the operator has registered this passport in the PRODUCTION EU DPP Registry, as the operator states it; TracePass does not check it. Confirm with the user first, and only after the operator has registered on the Registry website. Effects: marked placed on the market; operator and facility identifiers locked (409 operator_locked); webhook fires.\n- undo_registration — { id, environment: production|acceptance }. Undoes a mistaken record; production unlocks the operator identifiers (a delivered webhook is not recalled). Changes nothing in the Registry. Confirm with the user first.\n- place_on_market — { id }. Battery, published only. Submits to the EN 18222 registry API in the account's registry settings. NOT the way into the EU DPP Registry, which does not accept it: use prepare_registry_upi / prepare_registry_upload_file, then record_registration. A legal act for the economic operator — confirm with the user first. ASYNCHRONOUS: answers 202 \"placing\"; follow placeOnMarketStatus (placing → placed | rejected) by reading the passport. 409 codes include registry_host_not_allowed (the configured registry address is not allowed; check the URL) and registry_not_ready (run registry_readiness).\n- suspend, suspend_by_serial — { id }. Reversible — public QR shows 'suspended'. Refused with 409 passport_placed_on_market once the passport is placed on the market or its registration is under way.\n- archive, archive_by_serial — { id, reason? }. IRREVERSIBLE and destructive — confirm with the user first. The public QR permanently 404s. reason is REQUIRED for battery passports (400 reason_required): recycled, never_placed (never placed on the market or put into service) or duplicate_or_error; never_placed is refused (409 reason_contradicts_placement) once placed on the market.\n- archive_product — { id }. Archives a PRODUCT (not a passport). Reversible — soft-archives it from the catalogue. 409 while any non-archived passport references it; archive those first.",
+      "Actions (pass via `action`; `{…}` is the `args` object). All are WRITEs (1 write each). A *_by_serial action takes { serial, gtin? } instead of `id` (on 409 ambiguous_serial pass `gtin`).\n- record_registration — { id, placedOnMarketAt? (YYYY-MM-DD), registrationId? }. Battery, published only. Records that the operator has registered this passport in the PRODUCTION EU DPP Registry, as the operator states it; TracePass does not check it. Confirm with the user first, and only after the operator has registered on the Registry website. Effects: marked placed on the market; operator and facility identifiers locked (409 operator_locked); webhook fires.\n- undo_registration — { id, environment: production|acceptance }. Undoes a mistaken record; production unlocks the operator identifiers (a delivered webhook is not recalled). Changes nothing in the Registry. Confirm with the user first.\n- place_on_market — { id }. Battery, published only. Submits to the EN 18222 registry API in the account's registry settings. NOT the way into the EU DPP Registry, which does not accept it: use prepare_registry_upi / prepare_registry_upload_file, then record_registration. A legal act for the economic operator — confirm with the user first. ASYNCHRONOUS: answers 202 \"placing\"; follow placeOnMarketStatus (placing → placed | rejected) by reading the passport. 409 codes include registry_host_not_allowed (the configured registry address is not allowed; check the URL) and registry_not_ready (run registry_readiness).\n- suspend, suspend_by_serial — { id }. Reversible — public QR shows 'suspended'. Refused with 409 passport_placed_on_market once the passport is placed on the market or its registration is under way.\n- archive, archive_by_serial — { id, reason? }. IRREVERSIBLE and destructive — confirm with the user first. Its URL then shows an archive notice (machine formats 404); only an authority grant still reads it. reason is REQUIRED for battery passports (400 reason_required): recycled, never_placed (never placed on the market or put into service) or duplicate_or_error; never_placed is refused (409 reason_contradicts_placement) once placed on the market.\n- archive_product — { id }. Archives a PRODUCT (not a passport). Reversible — soft-archives it from the catalogue. 409 while any non-archived passport references it; archive those first.",
     inputSchema: {
       action: z
         .enum([
@@ -1509,7 +1553,7 @@ export function buildTools(client: TracePassClient): McpToolDefinition[] {
           "archive_product",
         ])
         .describe(
-          "All actions require user confirmation. archive is IRREVERSIBLE (QR 404s forever); suspend is reversible.",
+          "All actions require user confirmation. archive is IRREVERSIBLE (public URL becomes an archive notice); suspend is reversible.",
         ),
       args: z
         .object({

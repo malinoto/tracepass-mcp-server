@@ -20,8 +20,8 @@ import { createMcpServer } from "../src/server.js";
 import { REFERENCE_DOCS } from "../src/reference.js";
 import { named } from "./helpers.js";
 
-/** Upper bound for the serialised `tools/list` result, in bytes. Was 56348 before the cut. */
-const BUDGET_BYTES = 28_000;
+/** Upper bound for the serialised `tools/list` result, in bytes. Was 56348 before the cut; 28000 before get_links / get_model_qr. */
+const BUDGET_BYTES = 28_500;
 
 async function connect(): Promise<Client> {
   const server = createMcpServer({ baseUrl: "https://example.invalid", apiKey: "tp_test" });
@@ -126,7 +126,7 @@ describe("safety guidance stays in the descriptions", () => {
   it("lifecycle: irreversible archive, suspend as the reversible alternative, confirm first", async () => {
     const d = named(await listTools(), "tracepass_passport_lifecycle").description ?? "";
     expect(d).toMatch(/^WARNING:/);
-    expect(d).toMatch(/`archive` permanently removes the public QR code \(it 404s forever\)/);
+    expect(d).toMatch(/`archive` permanently takes the passport off public view/);
     expect(d).toMatch(/MUST confirm with the user before each call/);
     expect(d).toMatch(/`suspend` \(reversible/);
     expect(d).toMatch(/cannot be suspended/);

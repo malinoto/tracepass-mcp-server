@@ -92,6 +92,57 @@ describe("tracepass_products — action routing", () => {
     );
   });
 
+  it("get_links routes to GET /api/v1/products/{id}/links with format, limit and cursor", async () => {
+    const { tool, calls } = productsTool();
+    await tool.handler({
+      action: "get_links",
+      args: { id: "p1", format: "csv", limit: 5000, cursor: "abc" },
+    });
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).method).toBe("GET");
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).path).toBe(
+      "/api/v1/products/p1/links?format=csv&limit=5000&cursor=abc",
+    );
+  });
+
+  it("get_links without options sends no query string", async () => {
+    const { tool, calls } = productsTool();
+    await tool.handler({ action: "get_links", args: { id: "p1" } });
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).path).toBe(
+      "/api/v1/products/p1/links",
+    );
+  });
+
+  it("get_links rejects zip, an oversized limit and a missing id, with no HTTP call", async () => {
+    const { tool, calls } = productsTool();
+    for (const args of [{ id: "p1", format: "zip" }, { id: "p1", limit: 5001 }, {}]) {
+      const r = await tool.handler({ action: "get_links", args });
+      expect(r.isError).toBe(true);
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  it("get_model_qr routes to GET /api/v1/products/{id}/links/model-qr with format and gtin", async () => {
+    const { tool, calls } = productsTool();
+    await tool.handler({
+      action: "get_model_qr",
+      args: { id: "p1", format: "png", gtin: "09506000134369" },
+    });
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).method).toBe("GET");
+    expect((calls[0] ?? expect.unreachable("calls[0] is missing")).path).toBe(
+      "/api/v1/products/p1/links/model-qr?format=png&gtin=09506000134369",
+    );
+  });
+
+  it("get_model_qr rejects a gtin that is not 14 digits, with no HTTP call", async () => {
+    const { tool, calls } = productsTool();
+    const r = await tool.handler({
+      action: "get_model_qr",
+      args: { id: "p1", gtin: "9506000134369" },
+    });
+    expect(r.isError).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
   it("get routes to GET /api/v1/products/{id}", async () => {
     const { tool, calls } = productsTool();
     await tool.handler({ action: "get", args: { id: "p1" } });
