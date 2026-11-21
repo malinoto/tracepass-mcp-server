@@ -58,6 +58,19 @@ export function clientIpFromForwardedFor(value: string | string[] | undefined): 
   return first && isIP(first) !== 0 ? first : undefined;
 }
 
+/**
+ * The end user's IP of an inbound request: the one place this repo reads the
+ * client-address header (the shared lint rule refuses ad hoc reads elsewhere).
+ * @param req the inbound request, or anything carrying its headers
+ * @param req.headers the request's headers
+ * @returns the first `X-Forwarded-For` entry when it is a valid IP, otherwise undefined
+ */
+export function clientIpOf(req: {
+  headers: Record<string, string | string[] | undefined>;
+}): string | undefined {
+  return clientIpFromForwardedFor(req.headers["x-forwarded-for"]);
+}
+
 /** What a v1 API call gave back: the status, a 2xx flag and the parsed body. */
 export interface TracePassApiResponse {
   /** HTTP status code. */

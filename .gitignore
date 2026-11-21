@@ -7,3 +7,6 @@ npm-debug.log*
 
 # MCP Registry publishing key (Ed25519 private key for eu.tracepass namespace)
 key.pem
+
+# Claude Code session worktrees (full copies of the repo)
+/.claude/worktrees/
