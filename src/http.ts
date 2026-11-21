@@ -52,7 +52,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { createMcpServer, MCP_SERVER_INFO } from "./server.js";
 import { createSupplierMcpServer, matchSupplierPath } from "./supplier-server.js";
 import { createComplianceMcpServer } from "./compliance-server.js";
-import { clientIpFromForwardedFor, envText } from "./api-client.js";
+import { clientIpOf, envText } from "./api-client.js";
 
 /**
  * Swallow the failure of a best-effort close or cancel on a stream or server the
@@ -709,7 +709,7 @@ async function handleRequestAsync(req: IncomingMessage, res: ServerResponse): Pr
         token,
         baseUrl: BASE_URL,
         publicBaseUrl: PUBLIC_AUTH_SERVER_URL,
-        forwardedFor: clientIpFromForwardedFor(req.headers["x-forwarded-for"]),
+        forwardedFor: clientIpOf(req),
       });
       const sTransport = new WebStandardStreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
@@ -783,7 +783,7 @@ async function handleRequestAsync(req: IncomingMessage, res: ServerResponse): Pr
       const cServer = createComplianceMcpServer({
         apiKey: cBearerToken ?? "",
         baseUrl: BASE_URL,
-        forwardedFor: clientIpFromForwardedFor(req.headers["x-forwarded-for"]),
+        forwardedFor: clientIpOf(req),
       });
       const cTransport = new WebStandardStreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
@@ -875,7 +875,7 @@ async function handleRequestAsync(req: IncomingMessage, res: ServerResponse): Pr
     const server = createMcpServer({
       apiKey: bearerToken ?? "",
       baseUrl: BASE_URL,
-      forwardedFor: clientIpFromForwardedFor(req.headers["x-forwarded-for"]),
+      forwardedFor: clientIpOf(req),
     });
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined, // stateless
